@@ -32,6 +32,7 @@ import { useFileUpload } from "@/hooks/use-file-upload";
 import { useRevealItem } from "@/hooks/use-reveal-item";
 import { processMediaAssets } from "@/lib/media/processing";
 import { buildElementFromMedia } from "@/lib/timeline/element-utils";
+import { invokeAction } from "@/lib/actions";
 import { useAssetsPanelStore } from "@/stores/assets-panel-store";
 import type { MediaAsset } from "@/types/assets";
 import { cn } from "@/utils/ui";
@@ -193,6 +194,8 @@ export function MediaView() {
 		return filtered;
 	}, [mediaFiles, sortBy, sortOrder]);
 
+	const hasVideoAssets = filteredMediaItems.some((item) => item.type === "video");
+
 	const previewComponents = useMemo(() => {
 		const previews = new Map<string, React.ReactNode>();
 
@@ -331,6 +334,17 @@ export function MediaView() {
 				<HugeiconsIcon icon={CloudUploadIcon} />
 				{ENABLE_CLIPFORGE_AUTO_EDIT ? "Import Clips" : "Import"}
 			</Button>
+			{ENABLE_CLIPFORGE_AUTO_EDIT && (
+				<Button
+					variant="outline"
+					onClick={() => invokeAction("clipforge-auto-edit-tiktok")}
+					disabled={isProcessing || !hasVideoAssets}
+					size="sm"
+					className="items-center justify-center gap-1.5 ml-1.5"
+				>
+					Auto Edit TikTok
+				</Button>
+			)}
 		</div>
 	);
 

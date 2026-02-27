@@ -8,7 +8,7 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M1: Timeline ops schema, validator, and apply engine integrated with OpenCut undo/redo.
 - [x] M2: Media ingest UI and local metadata storage scaffolding.
 - [x] M3: Silence detection + `REMOVE_SILENCE` implementation.
-- [ ] M4: `Auto Edit TikTok` command to build a draft timeline.
+- [x] M4: `Auto Edit TikTok` command to build a draft timeline.
 - [ ] M5: Caption generator with `Clean Bottom` and `Bold Center` templates.
 - [ ] M6: Chat panel + provider abstraction + ops review/apply flow.
 - [ ] M7: Preview stability and export integration hook.

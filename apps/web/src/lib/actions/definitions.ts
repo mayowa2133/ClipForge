@@ -105,6 +105,10 @@ export const ACTIONS = {
 		category: "editing",
 		defaultShortcuts: ["n"],
 	},
+	"clipforge-auto-edit-tiktok": {
+		description: "Auto Edit TikTok draft",
+		category: "editing",
+	},
 	"select-all": {
 		description: "Select all elements",
 		category: "selection",

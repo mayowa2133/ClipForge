@@ -5,7 +5,10 @@ import {
 	ensureClipForgeProjectData,
 	validateTimelineDiffOps,
 } from "@/lib/clipforge";
-import { ApplyTimelineDiffOpsCommand } from "@/lib/commands";
+import {
+	ApplyTimelineDiffOpsCommand,
+	AutoEditTikTokDraftCommand,
+} from "@/lib/commands";
 import type { MediaAsset } from "@/types/assets";
 import type {
 	ClipMediaMetadata,
@@ -15,6 +18,19 @@ import type {
 
 export class ClipForgeManager {
 	constructor(private editor: EditorCore) {}
+
+	autoEditTikTokDraft(): void {
+		const videoAssets = this.editor.media
+			.getAssets()
+			.filter((asset) => asset.type === "video" && !asset.ephemeral);
+
+		if (videoAssets.length === 0) {
+			throw new Error("Import at least one video clip before auto editing.");
+		}
+
+		const command = new AutoEditTikTokDraftCommand(videoAssets);
+		this.editor.command.execute({ command });
+	}
 
 	initializeMediaMetadata({
 		mediaAssets,

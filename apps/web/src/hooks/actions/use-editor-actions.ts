@@ -5,6 +5,8 @@ import { useActionHandler } from "@/hooks/actions/use-action-handler";
 import { useEditor } from "../use-editor";
 import { useElementSelection } from "../timeline/element/use-element-selection";
 import { getElementsAtTime } from "@/lib/timeline";
+import { toast } from "sonner";
+import { ENABLE_CLIPFORGE_AUTO_EDIT } from "@/constants/feature-flags";
 
 export function useEditorActions() {
 	const editor = useEditor();
@@ -291,6 +293,27 @@ export function useEditorActions() {
 		"toggle-snapping",
 		() => {
 			toggleSnapping();
+		},
+		undefined,
+	);
+
+	useActionHandler(
+		"clipforge-auto-edit-tiktok",
+		() => {
+			if (!ENABLE_CLIPFORGE_AUTO_EDIT) {
+				toast.error("ClipForge auto edit is disabled.");
+				return;
+			}
+
+			try {
+				editor.clipforge.autoEditTikTokDraft();
+				toast.success("Auto Edit TikTok draft created.");
+			} catch (error) {
+				toast.error("Auto Edit TikTok failed", {
+					description:
+						error instanceof Error ? error.message : "Please try again.",
+				});
+			}
 		},
 		undefined,
 	);
