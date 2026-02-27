@@ -319,6 +319,36 @@ export function useEditorActions() {
 	);
 
 	useActionHandler(
+		"clipforge-export-best-effort",
+		() => {
+			if (!ENABLE_CLIPFORGE_AUTO_EDIT) {
+				toast.error("ClipForge export is disabled.");
+				return;
+			}
+
+			void (async () => {
+				try {
+					const artifact = await editor.clipforge.exportBestEffort();
+					const anchor = document.createElement("a");
+					anchor.href = artifact.url;
+					anchor.download = artifact.fileName;
+					anchor.click();
+
+					toast.success("Export artifact ready.", {
+						description: artifact.message,
+					});
+				} catch (error) {
+					toast.error("Export failed.", {
+						description:
+							error instanceof Error ? error.message : "Please try again.",
+					});
+				}
+			})();
+		},
+		undefined,
+	);
+
+	useActionHandler(
 		"undo",
 		() => {
 			editor.command.undo();

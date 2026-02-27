@@ -335,15 +335,26 @@ export function MediaView() {
 				{ENABLE_CLIPFORGE_AUTO_EDIT ? "Import Clips" : "Import"}
 			</Button>
 			{ENABLE_CLIPFORGE_AUTO_EDIT && (
-				<Button
-					variant="outline"
-					onClick={() => invokeAction("clipforge-auto-edit-tiktok")}
-					disabled={isProcessing || !hasVideoAssets}
-					size="sm"
-					className="items-center justify-center gap-1.5 ml-1.5"
-				>
-					Auto Edit TikTok
-				</Button>
+				<>
+					<Button
+						variant="outline"
+						onClick={() => invokeAction("clipforge-auto-edit-tiktok")}
+						disabled={isProcessing || !hasVideoAssets}
+						size="sm"
+						className="items-center justify-center gap-1.5 ml-1.5"
+					>
+						Auto Edit TikTok
+					</Button>
+					<Button
+						variant="outline"
+						onClick={() => invokeAction("clipforge-export-best-effort")}
+						disabled={isProcessing}
+						size="sm"
+						className="items-center justify-center gap-1.5 ml-1.5"
+					>
+						Export
+					</Button>
+				</>
 			)}
 		</div>
 	);

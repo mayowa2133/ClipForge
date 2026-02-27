@@ -1,5 +1,6 @@
 import type { EditorCore } from "@/core";
 import {
+	BestEffortExportIntegration,
 	buildEmptyMediaMetadata,
 	detectSilenceRegions,
 	ensureClipForgeProjectData,
@@ -17,6 +18,8 @@ import type {
 } from "@/types/clipforge";
 
 export class ClipForgeManager {
+	private exportIntegration = new BestEffortExportIntegration();
+
 	constructor(private editor: EditorCore) {}
 
 	autoEditTikTokDraft(): void {
@@ -30,6 +33,7 @@ export class ClipForgeManager {
 
 		const command = new AutoEditTikTokDraftCommand(videoAssets);
 		this.editor.command.execute({ command });
+		this.stabilizePreview();
 	}
 
 	initializeMediaMetadata({
@@ -185,11 +189,32 @@ export class ClipForgeManager {
 
 		const command = new ApplyTimelineDiffOpsCommand(validation.ops, source);
 		this.editor.command.execute({ command });
+		this.stabilizePreview();
 
 		return {
 			applied: true,
 			ops: validation.ops,
 			errors: [],
 		};
+	}
+
+	async exportBestEffort(): Promise<{
+		status: "exported" | "preview-artifact";
+		url: string;
+		fileName: string;
+		mimeType: string;
+		message: string;
+	}> {
+		return this.exportIntegration.exportBestEffort({
+			editor: this.editor,
+		});
+	}
+
+	private stabilizePreview(): void {
+		const currentTime = this.editor.playback.getCurrentTime();
+		const totalDuration = this.editor.timeline.getTotalDuration();
+		this.editor.playback.seek({
+			time: Math.min(Math.max(currentTime, 0), totalDuration),
+		});
 	}
 }

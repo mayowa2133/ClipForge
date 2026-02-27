@@ -109,6 +109,10 @@ export const ACTIONS = {
 		description: "Auto Edit TikTok draft",
 		category: "editing",
 	},
+	"clipforge-export-best-effort": {
+		description: "Export with ClipForge best-effort integration",
+		category: "controls",
+	},
 	"select-all": {
 		description: "Select all elements",
 		category: "selection",
