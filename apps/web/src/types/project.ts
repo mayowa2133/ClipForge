@@ -1,4 +1,5 @@
 import type { TScene } from "./timeline";
+import type { ClipForgeProjectData } from "./clipforge";
 
 export type TBackground =
 	| {
@@ -44,6 +45,7 @@ export interface TProject {
 	settings: TProjectSettings;
 	version: number;
 	timelineViewState?: TTimelineViewState;
+	clipforge?: ClipForgeProjectData;
 }
 
 export type TProjectSortKey = "createdAt" | "updatedAt" | "name" | "duration";

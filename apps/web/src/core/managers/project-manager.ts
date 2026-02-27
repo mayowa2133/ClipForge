@@ -29,6 +29,7 @@ import {
 import { DEFAULT_TIMELINE_VIEW_STATE } from "@/constants/timeline-constants";
 import { loadFonts } from "@/lib/fonts/google-fonts";
 import { collectFontFamilies } from "@/lib/timeline/element-utils";
+import { buildDefaultClipForgeProjectData } from "@/lib/clipforge";
 
 export interface MigrationState {
 	isMigrating: boolean;
@@ -95,6 +96,7 @@ export class ProjectManager {
 				},
 			},
 			version: CURRENT_PROJECT_VERSION,
+			clipforge: buildDefaultClipForgeProjectData(),
 		};
 
 		this.active = newProject;

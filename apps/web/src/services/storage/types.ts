@@ -5,6 +5,7 @@ import type {
 	TTimelineViewState,
 } from "@/types/project";
 import type { TScene } from "@/types/timeline";
+import type { SerializedClipForgeProjectData } from "@/types/clipforge";
 
 export interface StorageAdapter<T> {
 	get(key: string): Promise<T | null>;
@@ -41,10 +42,14 @@ export type SerializedProjectMetadata = Omit<
 	updatedAt: string;
 };
 
-export type SerializedProject = Omit<TProject, "metadata" | "scenes"> & {
+export type SerializedProject = Omit<
+	TProject,
+	"metadata" | "scenes" | "clipforge"
+> & {
 	metadata: SerializedProjectMetadata;
 	scenes: SerializedScene[];
 	timelineViewState?: TTimelineViewState;
+	clipforge?: SerializedClipForgeProjectData;
 };
 
 export interface StorageConfig {

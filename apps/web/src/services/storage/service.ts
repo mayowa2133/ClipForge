@@ -10,11 +10,17 @@ import type {
 	SerializedScene,
 } from "./types";
 import type { SavedSoundsData, SavedSound, SoundEffect } from "@/types/sounds";
+import type {
+	ClipForgeProjectData,
+	SerializedClipForgeProjectData,
+	SerializedTimelineDiffAuditEntry,
+} from "@/types/clipforge";
 import {
 	migrations,
 	runStorageMigrations,
 } from "@/services/storage/migrations";
 import type { Bookmark, TimelineTrack, TScene } from "@/types/timeline";
+import { buildDefaultClipForgeProjectData } from "@/lib/clipforge";
 
 function normalizeBookmarks({ raw }: { raw: unknown }): Bookmark[] {
 	if (!Array.isArray(raw)) return [];
@@ -135,6 +141,7 @@ class StorageService {
 			settings: project.settings,
 			version: project.version,
 			timelineViewState: project.timelineViewState,
+			clipforge: serializeClipForgeData({ clipforge: project.clipforge }),
 		};
 
 		await this.projectsAdapter.set(project.metadata.id, serializedProject);
@@ -181,6 +188,9 @@ class StorageService {
 			settings: serializedProject.settings,
 			version: serializedProject.version,
 			timelineViewState: serializedProject.timelineViewState,
+			clipforge: deserializeClipForgeData({
+				clipforge: serializedProject.clipforge,
+			}),
 		};
 
 		return { project };
@@ -486,6 +496,38 @@ class StorageService {
 	isFullySupported(): boolean {
 		return this.isIndexedDBSupported() && this.isOPFSSupported();
 	}
+}
+
+function serializeClipForgeData({
+	clipforge,
+}: {
+	clipforge?: ClipForgeProjectData;
+}): SerializedClipForgeProjectData {
+	const source = clipforge ?? buildDefaultClipForgeProjectData();
+	return {
+		...source,
+		opsAudit: source.opsAudit.map(
+			(entry): SerializedTimelineDiffAuditEntry => ({
+				...entry,
+				createdAt: entry.createdAt.toISOString(),
+			}),
+		),
+	};
+}
+
+function deserializeClipForgeData({
+	clipforge,
+}: {
+	clipforge?: SerializedClipForgeProjectData;
+}): ClipForgeProjectData {
+	const source = clipforge ?? serializeClipForgeData({ clipforge: undefined });
+	return {
+		...source,
+		opsAudit: source.opsAudit.map((entry) => ({
+			...entry,
+			createdAt: new Date(entry.createdAt),
+		})),
+	};
 }
 
 export const storageService = new StorageService();
