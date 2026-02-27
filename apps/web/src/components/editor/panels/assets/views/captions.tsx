@@ -18,13 +18,16 @@ import type {
 } from "@/types/transcription";
 import { transcriptionService } from "@/services/transcription/service";
 import { decodeAudioToFloat32 } from "@/lib/media/audio";
-import { buildCaptionChunks } from "@/lib/transcription/caption";
+import { generateCaptionChunks, getCaptionTemplate } from "@/lib/clipforge";
 import { Spinner } from "@/components/ui/spinner";
 import { Label } from "@/components/ui/label";
 
 export function Captions() {
 	const [selectedLanguage, setSelectedLanguage] =
 		useState<TranscriptionLanguage>("auto");
+	const [selectedTemplate, setSelectedTemplate] = useState<
+		"clean-bottom" | "bold-center"
+	>("clean-bottom");
 	const [isProcessing, setIsProcessing] = useState(false);
 	const [processingStep, setProcessingStep] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -61,7 +64,20 @@ export function Captions() {
 			});
 
 			setProcessingStep("Generating captions...");
-			const captionChunks = buildCaptionChunks({ segments: result.segments });
+			const captionChunks = generateCaptionChunks({
+				segments: result.segments,
+				options: {
+					maxCharsPerLine: selectedTemplate === "bold-center" ? 22 : 30,
+					maxLines: 2,
+					minDisplaySeconds: 0.85,
+					maxWordsPerChunk: 10,
+				},
+			});
+			const template = getCaptionTemplate({ styleId: selectedTemplate });
+			const activeProject = editor.project.getActive();
+			const canvasHeight = activeProject?.settings.canvasSize.height ?? 1080;
+			const positionY =
+				template.position === "bottom" ? Math.round(canvasHeight * 0.35) : 0;
 
 			const captionTrackId = editor.timeline.addTrack({
 				type: "text",
@@ -78,11 +94,42 @@ export function Captions() {
 						content: caption.text,
 						duration: caption.duration,
 						startTime: caption.startTime,
-						fontSize: 65,
-						fontWeight: "bold",
+						fontFamily: template.font,
+						fontSize: template.size,
+						fontWeight:
+							template.style_id === "bold-center" ? "bold" : "normal",
+						textAlign: "center",
+						background: {
+							...DEFAULT_TEXT_ELEMENT.background,
+							color: template.outline ? "#000000" : "transparent",
+							paddingX: template.outline ? 24 : 0,
+							paddingY: template.outline ? 12 : 0,
+						},
+						transform: {
+							...DEFAULT_TEXT_ELEMENT.transform,
+							position: {
+								...DEFAULT_TEXT_ELEMENT.transform.position,
+								y: positionY,
+							},
+						},
 					},
 				});
 			}
+
+			editor.clipforge.applyOps({
+				source: "manual",
+				ops: [
+					{
+						type: "SET_CAPTION_STYLE",
+						style_id: template.style_id,
+						font: template.font,
+						size: template.size,
+						position: template.position,
+						outline: template.outline,
+						highlight_mode: template.highlight_mode,
+					},
+				],
+			});
 		} catch (error) {
 			console.error("Transcription failed:", error);
 			setError(
@@ -125,6 +172,24 @@ export function Captions() {
 								{language.name}
 							</SelectItem>
 						))}
+					</SelectContent>
+				</Select>
+			</div>
+
+			<div className="flex flex-col gap-3">
+				<Label>Template</Label>
+				<Select
+					value={selectedTemplate}
+					onValueChange={(value) =>
+						setSelectedTemplate(value as "clean-bottom" | "bold-center")
+					}
+				>
+					<SelectTrigger>
+						<SelectValue placeholder="Select template" />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="clean-bottom">Clean Bottom</SelectItem>
+						<SelectItem value="bold-center">Bold Center</SelectItem>
 					</SelectContent>
 				</Select>
 			</div>

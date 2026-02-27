@@ -9,7 +9,7 @@ export const CLIPFORGE_SCHEMA_VERSION = 1;
 const CLEAN_BOTTOM_STYLE: CaptionStyleTemplate = {
 	style_id: "clean-bottom",
 	font: "Arial",
-	size: 18,
+	size: 56,
 	position: "bottom",
 	outline: false,
 	highlight_mode: "none",
@@ -18,7 +18,7 @@ const CLEAN_BOTTOM_STYLE: CaptionStyleTemplate = {
 const BOLD_CENTER_STYLE: CaptionStyleTemplate = {
 	style_id: "bold-center",
 	font: "Arial",
-	size: 24,
+	size: 74,
 	position: "center",
 	outline: true,
 	highlight_mode: "line",

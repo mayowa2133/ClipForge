@@ -33,7 +33,7 @@ function buildDefaultClipForgeRecord(): ProjectRecord {
 			"clean-bottom": {
 				style_id: "clean-bottom",
 				font: "Arial",
-				size: 18,
+				size: 56,
 				position: "bottom",
 				outline: false,
 				highlight_mode: "none",
@@ -41,7 +41,7 @@ function buildDefaultClipForgeRecord(): ProjectRecord {
 			"bold-center": {
 				style_id: "bold-center",
 				font: "Arial",
-				size: 24,
+				size: 74,
 				position: "center",
 				outline: true,
 				highlight_mode: "line",
