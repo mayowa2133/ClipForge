@@ -3,3 +3,4 @@ export * from "./ops-validator";
 export * from "./timeline-op-engine";
 export * from "./project-data";
 export * from "./transcription";
+export * from "./silence-detection";

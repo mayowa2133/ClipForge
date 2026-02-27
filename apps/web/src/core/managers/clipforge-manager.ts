@@ -1,6 +1,7 @@
 import type { EditorCore } from "@/core";
 import {
 	buildEmptyMediaMetadata,
+	detectSilenceRegions,
 	ensureClipForgeProjectData,
 	validateTimelineDiffOps,
 } from "@/lib/clipforge";
@@ -88,6 +89,39 @@ export class ClipForgeManager {
 			},
 		});
 		this.editor.save.markDirty();
+	}
+
+	detectAndStoreSilenceMap({
+		mediaId,
+		samples,
+		sampleRate,
+	}: {
+		mediaId: string;
+		samples: Float32Array;
+		sampleRate: number;
+	}): void {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) return;
+
+		const projectWithClipForge = ensureClipForgeProjectData({
+			project: activeProject,
+		});
+
+		const existing =
+			projectWithClipForge.clipforge.mediaMetadataById[mediaId] ??
+			buildEmptyMediaMetadata();
+		const silenceRegions = detectSilenceRegions({
+			samples,
+			sampleRate,
+		});
+
+		this.upsertMediaMetadata({
+			mediaId,
+			metadata: {
+				...existing,
+				silenceRegions,
+			},
+		});
 	}
 
 	validateOps({
