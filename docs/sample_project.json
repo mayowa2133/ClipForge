@@ -1,0 +1,75 @@
+{
+  "metadata": {
+    "id": "sample-clipforge-project",
+    "name": "ClipForge Sample",
+    "duration": 9.2,
+    "createdAt": "2026-02-27T10:00:00.000Z",
+    "updatedAt": "2026-02-27T10:00:00.000Z"
+  },
+  "currentSceneId": "scene-main",
+  "settings": {
+    "fps": 30,
+    "canvasSize": {
+      "width": 1080,
+      "height": 1920
+    },
+    "background": {
+      "type": "color",
+      "color": "#000000"
+    }
+  },
+  "version": 8,
+  "clipforge": {
+    "schemaVersion": 1,
+    "activeCaptionStyleId": "clean-bottom",
+    "mediaMetadataById": {
+      "clip-001": {
+        "words": [],
+        "segments": [],
+        "silenceRegions": [
+          { "start_ms": 1120, "end_ms": 1520 }
+        ]
+      }
+    },
+    "captionStylesById": {
+      "clean-bottom": {
+        "style_id": "clean-bottom",
+        "font": "Arial",
+        "size": 56,
+        "position": "bottom",
+        "outline": false,
+        "highlight_mode": "none"
+      },
+      "bold-center": {
+        "style_id": "bold-center",
+        "font": "Arial",
+        "size": 74,
+        "position": "center",
+        "outline": true,
+        "highlight_mode": "line"
+      }
+    },
+    "opsAudit": []
+  },
+  "scenes": [
+    {
+      "id": "scene-main",
+      "name": "Main",
+      "isMain": true,
+      "bookmarks": [],
+      "createdAt": "2026-02-27T10:00:00.000Z",
+      "updatedAt": "2026-02-27T10:00:00.000Z",
+      "tracks": [
+        {
+          "id": "video-main",
+          "name": "Main video",
+          "type": "video",
+          "isMain": true,
+          "muted": false,
+          "hidden": false,
+          "elements": []
+        }
+      ]
+    }
+  ]
+}

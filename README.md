@@ -86,6 +86,28 @@ The application will be available at [http://localhost:3000](http://localhost:30
 
 The `.env.example` has sensible defaults that match the Docker Compose config — it should work out of the box.
 
+## ClipForge MVP (this fork)
+
+ClipForge is implemented as an in-place OpenCut extension (same editor shell, timeline, and undo/redo system).
+
+### Enable ClipForge features
+
+Set the following in `apps/web/.env.local`:
+
+```bash
+ENABLE_CLIPFORGE_AUTO_EDIT=true
+ENABLE_CLIPFORGE_CHAT=true
+```
+
+### MVP workflow
+
+1. Go to `Assets` panel and click `Import Clips`.
+2. Click `Auto Edit TikTok` to build a 9:16 draft timeline.
+3. Open `Captions` tab and generate captions using `Clean Bottom` or `Bold Center`.
+4. Open `Chat` tab, request edits in plain English, review JSON ops, then click `Apply`.
+5. Use normal OpenCut `Undo/Redo` shortcuts.
+6. Click `Export` for best-effort export (binary export if available, otherwise preview artifact JSON).
+
 ### Self-Hosting with Docker
 
 To run everything (including a production build of the app) in Docker:

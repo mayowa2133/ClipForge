@@ -12,7 +12,7 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M5: Caption generator with `Clean Bottom` and `Bold Center` templates.
 - [x] M6: Chat panel + provider abstraction + ops review/apply flow.
 - [x] M7: Preview stability and export integration hook.
-- [ ] M8: Tests, docs completion, and sample project.
+- [x] M8: Tests, docs completion, and sample project.
 
 ## Working Rules
 

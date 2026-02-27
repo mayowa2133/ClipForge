@@ -1,0 +1,52 @@
+// Bun Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ClipForge integration flow ingest 3 clips -> auto edit -> apply chat ops -> stable snapshot 1`] = `
+{
+  "canvas": {
+    "height": 1920,
+    "width": 1080,
+  },
+  "clipforge": {
+    "activeCaptionStyleId": "clean-bottom",
+    "opsAuditTypes": [
+      [
+        "SET_ASPECT_RATIO",
+        "REMOVE_SILENCE",
+      ],
+      [
+        "MAKE_VERSION",
+        "SET_CAPTION_STYLE",
+      ],
+    ],
+  },
+  "duration": 8.4,
+  "tracks": [
+    {
+      "segments": [
+        {
+          "content": null,
+          "duration": 2.8,
+          "mediaId": "clip-001",
+          "start": 0,
+          "type": "video",
+        },
+        {
+          "content": null,
+          "duration": 3.2,
+          "mediaId": "clip-002",
+          "start": 2.8,
+          "type": "video",
+        },
+        {
+          "content": null,
+          "duration": 2.4,
+          "mediaId": "clip-003",
+          "start": 6,
+          "type": "video",
+        },
+      ],
+      "type": "video",
+    },
+  ],
+}
+`;
