@@ -25,6 +25,7 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ENABLE_CLIPFORGE_AUTO_EDIT } from "@/constants/feature-flags";
 import { TIMELINE_CONSTANTS } from "@/constants/timeline-constants";
 import { useEditor } from "@/hooks/use-editor";
 import { useFileUpload } from "@/hooks/use-file-upload";
@@ -79,10 +80,20 @@ export function MediaView() {
 				onProgress: (progress: { progress: number }) =>
 					setProgress(progress.progress),
 			});
+			const importedAssets: MediaAsset[] = [];
 			for (const asset of processedAssets) {
-				await editor.media.addMediaAsset({
+				const importedAsset = await editor.media.addMediaAsset({
 					projectId: activeProject.metadata.id,
 					asset,
+				});
+				if (importedAsset) {
+					importedAssets.push(importedAsset);
+				}
+			}
+
+			if (importedAssets.length > 0) {
+				editor.clipforge.initializeMediaMetadata({
+					mediaAssets: importedAssets,
 				});
 			}
 		} catch (error) {
@@ -96,7 +107,9 @@ export function MediaView() {
 
 	const { isDragOver, dragProps, openFilePicker, fileInputProps } =
 		useFileUpload({
-			accept: "image/*,video/*,audio/*",
+			accept: ENABLE_CLIPFORGE_AUTO_EDIT
+				? "video/*,audio/*"
+				: "image/*,video/*,audio/*",
 			multiple: true,
 			onFilesSelected: (files) => processFiles({ files }),
 		});
@@ -316,7 +329,7 @@ export function MediaView() {
 				className="items-center justify-center gap-1.5 ml-1.5"
 			>
 				<HugeiconsIcon icon={CloudUploadIcon} />
-				Import
+				{ENABLE_CLIPFORGE_AUTO_EDIT ? "Import Clips" : "Import"}
 			</Button>
 		</div>
 	);

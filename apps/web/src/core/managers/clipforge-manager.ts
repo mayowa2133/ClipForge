@@ -1,10 +1,94 @@
 import type { EditorCore } from "@/core";
-import { validateTimelineDiffOps } from "@/lib/clipforge";
+import {
+	buildEmptyMediaMetadata,
+	ensureClipForgeProjectData,
+	validateTimelineDiffOps,
+} from "@/lib/clipforge";
 import { ApplyTimelineDiffOpsCommand } from "@/lib/commands";
-import type { TimelineDiffOp, TimelineDiffOpSource } from "@/types/clipforge";
+import type { MediaAsset } from "@/types/assets";
+import type {
+	ClipMediaMetadata,
+	TimelineDiffOp,
+	TimelineDiffOpSource,
+} from "@/types/clipforge";
 
 export class ClipForgeManager {
 	constructor(private editor: EditorCore) {}
+
+	initializeMediaMetadata({
+		mediaAssets,
+	}: {
+		mediaAssets: MediaAsset[];
+	}): void {
+		if (mediaAssets.length === 0) return;
+
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) return;
+
+		const projectWithClipForge = ensureClipForgeProjectData({
+			project: activeProject,
+		});
+		const nextMediaMetadataById = {
+			...projectWithClipForge.clipforge.mediaMetadataById,
+		};
+
+		let didChange = false;
+		for (const mediaAsset of mediaAssets) {
+			if (nextMediaMetadataById[mediaAsset.id]) continue;
+			nextMediaMetadataById[mediaAsset.id] = buildEmptyMediaMetadata();
+			didChange = true;
+		}
+
+		if (!didChange) return;
+
+		this.editor.project.setActiveProject({
+			project: {
+				...projectWithClipForge,
+				metadata: {
+					...projectWithClipForge.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...projectWithClipForge.clipforge,
+					mediaMetadataById: nextMediaMetadataById,
+				},
+			},
+		});
+		this.editor.save.markDirty();
+	}
+
+	upsertMediaMetadata({
+		mediaId,
+		metadata,
+	}: {
+		mediaId: string;
+		metadata: ClipMediaMetadata;
+	}): void {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) return;
+
+		const projectWithClipForge = ensureClipForgeProjectData({
+			project: activeProject,
+		});
+
+		this.editor.project.setActiveProject({
+			project: {
+				...projectWithClipForge,
+				metadata: {
+					...projectWithClipForge.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...projectWithClipForge.clipforge,
+					mediaMetadataById: {
+						...projectWithClipForge.clipforge.mediaMetadataById,
+						[mediaId]: metadata,
+					},
+				},
+			},
+		});
+		this.editor.save.markDirty();
+	}
 
 	validateOps({
 		ops,
