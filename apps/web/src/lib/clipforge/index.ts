@@ -6,3 +6,4 @@ export * from "./transcription";
 export * from "./silence-detection";
 export * from "./auto-edit";
 export * from "./caption-generator";
+export * from "./chat";

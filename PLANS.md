@@ -10,7 +10,7 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M3: Silence detection + `REMOVE_SILENCE` implementation.
 - [x] M4: `Auto Edit TikTok` command to build a draft timeline.
 - [x] M5: Caption generator with `Clean Bottom` and `Bold Center` templates.
-- [ ] M6: Chat panel + provider abstraction + ops review/apply flow.
+- [x] M6: Chat panel + provider abstraction + ops review/apply flow.
 - [ ] M7: Preview stability and export integration hook.
 - [ ] M8: Tests, docs completion, and sample project.
 
