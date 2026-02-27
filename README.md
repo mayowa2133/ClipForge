@@ -95,8 +95,8 @@ ClipForge is implemented as an in-place OpenCut extension (same editor shell, ti
 Set the following in `apps/web/.env.local`:
 
 ```bash
-ENABLE_CLIPFORGE_AUTO_EDIT=true
-ENABLE_CLIPFORGE_CHAT=true
+NEXT_PUBLIC_ENABLE_CLIPFORGE_AUTO_EDIT=true
+NEXT_PUBLIC_ENABLE_CLIPFORGE_CHAT=true
 ```
 
 ### MVP workflow
