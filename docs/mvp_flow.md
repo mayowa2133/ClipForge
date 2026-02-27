@@ -14,7 +14,7 @@
 
 ## Flow B: Chat-driven Edits
 
-1. Open the `Chat` tab in the Assets panel.
+1. Open the right-side `Chat` panel from the editor header toggle (or `Ctrl/Cmd + /`).
 2. Enter a plain-English request (for example: `make it faster`).
 3. Chat provider proposes deterministic JSON timeline ops.
 4. Proposed ops are shown in review UI.

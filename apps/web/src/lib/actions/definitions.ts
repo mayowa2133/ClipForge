@@ -113,6 +113,11 @@ export const ACTIONS = {
 		description: "Export with ClipForge best-effort integration",
 		category: "controls",
 	},
+	"clipforge-toggle-chat-panel": {
+		description: "Toggle ClipForge chat panel",
+		category: "controls",
+		defaultShortcuts: ["ctrl+/"],
+	},
 	"select-all": {
 		description: "Select all elements",
 		category: "selection",

@@ -19,11 +19,18 @@ import { ThemeToggle } from "../theme-toggle";
 import { DEFAULT_LOGO_URL, SOCIAL_LINKS } from "@/constants/site-constants";
 import { toast } from "sonner";
 import { useEditor } from "@/hooks/use-editor";
-import { CommandIcon, Logout05Icon } from "@hugeicons/core-free-icons";
+import {
+	CommandIcon,
+	Logout05Icon,
+	MagicWand05Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ShortcutsDialog } from "./dialogs/shortcuts-dialog";
 import Image from "next/image";
 import { cn } from "@/utils/ui";
+import { ENABLE_CLIPFORGE_CHAT } from "@/constants/feature-flags";
+import { useChatPanelStore } from "@/stores/chat-panel-store";
+import { toggleClipForgeChatPanel } from "@/lib/clipforge/chat-panel-toggle";
 
 export function EditorHeader() {
 	return (
@@ -33,10 +40,37 @@ export function EditorHeader() {
 				<EditableProjectName />
 			</div>
 			<nav className="flex items-center gap-2">
+				<ChatPanelToggleButton />
 				<ExportButton />
 				<ThemeToggle />
 			</nav>
 		</header>
+	);
+}
+
+function ChatPanelToggleButton() {
+	const { isOpen, toggle, close } = useChatPanelStore();
+
+	if (!ENABLE_CLIPFORGE_CHAT) {
+		return null;
+	}
+
+	return (
+		<Button
+			variant={isOpen ? "secondary" : "outline"}
+			size="sm"
+			onClick={() =>
+				toggleClipForgeChatPanel({
+					isEnabled: ENABLE_CLIPFORGE_CHAT,
+					toggle,
+					close,
+				})
+			}
+			className="gap-1.5"
+		>
+			<HugeiconsIcon icon={MagicWand05Icon} className="size-4" />
+			Chat
+		</Button>
 	);
 }
 

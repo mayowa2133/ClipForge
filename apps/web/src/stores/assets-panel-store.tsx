@@ -22,7 +22,6 @@ export const TAB_KEYS = [
 	"effects",
 	"transitions",
 	"captions",
-	"chat",
 	"filters",
 	"adjustment",
 	"settings",
@@ -64,10 +63,6 @@ export const tabs = {
 	captions: {
 		icon: createHugeiconsIcon({ icon: ClosedCaptionIcon }),
 		label: "Captions",
-	},
-	chat: {
-		icon: createHugeiconsIcon({ icon: MagicWand05Icon }),
-		label: "Chat",
 	},
 	filters: {
 		icon: createHugeiconsIcon({ icon: ColorsIcon }),

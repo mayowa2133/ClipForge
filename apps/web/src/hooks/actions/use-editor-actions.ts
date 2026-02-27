@@ -6,13 +6,20 @@ import { useEditor } from "../use-editor";
 import { useElementSelection } from "../timeline/element/use-element-selection";
 import { getElementsAtTime } from "@/lib/timeline";
 import { toast } from "sonner";
-import { ENABLE_CLIPFORGE_AUTO_EDIT } from "@/constants/feature-flags";
+import {
+	ENABLE_CLIPFORGE_AUTO_EDIT,
+	ENABLE_CLIPFORGE_CHAT,
+} from "@/constants/feature-flags";
+import { useChatPanelStore } from "@/stores/chat-panel-store";
+import { toggleClipForgeChatPanel } from "@/lib/clipforge/chat-panel-toggle";
 
 export function useEditorActions() {
 	const editor = useEditor();
 	const activeProject = editor.project.getActive();
 	const { selectedElements, setElementSelection } = useElementSelection();
 	const { clipboard, setClipboard, toggleSnapping } = useTimelineStore();
+	const toggleChatPanel = useChatPanelStore((state) => state.toggle);
+	const closeChatPanel = useChatPanelStore((state) => state.close);
 
 	useActionHandler(
 		"toggle-play",
@@ -360,6 +367,18 @@ export function useEditorActions() {
 		"redo",
 		() => {
 			editor.command.redo();
+		},
+		undefined,
+	);
+
+	useActionHandler(
+		"clipforge-toggle-chat-panel",
+		() => {
+			toggleClipForgeChatPanel({
+				isEnabled: ENABLE_CLIPFORGE_CHAT,
+				toggle: toggleChatPanel,
+				close: closeChatPanel,
+			});
 		},
 		undefined,
 	);

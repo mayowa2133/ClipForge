@@ -7,7 +7,7 @@ import {
 	ResizableHandle,
 } from "@/components/ui/resizable";
 import { AssetsPanel } from "@/components/editor/panels/assets";
-import { PropertiesPanel } from "@/components/editor/panels/properties";
+import { RightSidebarPanel } from "@/components/editor/panels/right-sidebar";
 import { Timeline } from "@/components/editor/panels/timeline";
 import { PreviewPanel } from "@/components/editor/panels/preview";
 import { EditorHeader } from "@/components/editor/editor-header";
@@ -60,7 +60,7 @@ function EditorLayout() {
 					onLayout={(sizes) => {
 						setPanel("tools", sizes[0] ?? panels.tools);
 						setPanel("preview", sizes[1] ?? panels.preview);
-						setPanel("properties", sizes[2] ?? panels.properties);
+						setPanel("rightSidebar", sizes[2] ?? panels.rightSidebar);
 					}}
 				>
 					<ResizablePanel
@@ -85,12 +85,12 @@ function EditorLayout() {
 					<ResizableHandle withHandle />
 
 					<ResizablePanel
-						defaultSize={panels.properties}
-						minSize={15}
+						defaultSize={panels.rightSidebar}
+						minSize={20}
 						maxSize={40}
 						className="min-w-0"
 					>
-						<PropertiesPanel />
+						<RightSidebarPanel />
 					</ResizablePanel>
 				</ResizablePanelGroup>
 			</ResizablePanel>

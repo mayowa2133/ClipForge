@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { PanelView } from "@/components/editor/panels/assets/views/base-view";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ENABLE_CLIPFORGE_CHAT } from "@/constants/feature-flags";
@@ -12,7 +11,7 @@ import {
 } from "@/lib/clipforge";
 import type { TimelineDiffOp } from "@/types/clipforge";
 
-export function ChatView() {
+export function ChatContent() {
 	const editor = useEditor();
 	const providerRef = useRef(new HeuristicChatOpsProvider());
 	const [prompt, setPrompt] = useState("");
@@ -80,64 +79,64 @@ export function ChatView() {
 		setErrors([]);
 	};
 
+	if (!ENABLE_CLIPFORGE_CHAT) {
+		return (
+			<div className="text-muted-foreground text-sm">
+				Enable `ENABLE_CLIPFORGE_CHAT=true` to use chat edits.
+			</div>
+		);
+	}
+
 	return (
-		<PanelView title="Chat">
-			{!ENABLE_CLIPFORGE_CHAT ? (
-				<div className="text-muted-foreground text-sm">
-					Enable `ENABLE_CLIPFORGE_CHAT=true` to use chat edits.
-				</div>
-			) : (
-				<div className="flex h-full flex-col gap-3">
-					<div className="flex flex-col gap-2">
-						<Label>Ask ClipForge to edit this timeline</Label>
-						<textarea
-							className="min-h-24 rounded-md border p-2 text-sm"
-							value={prompt}
-							onChange={(event) => setPrompt(event.target.value)}
-							placeholder='Try: "make it faster", "remove more pauses", "bold center captions"'
-						/>
-						<Button onClick={handlePropose} disabled={isLoading}>
-							{isLoading ? "Proposing..." : "Propose Ops"}
+		<div className="flex h-full flex-col gap-3">
+			<div className="flex flex-col gap-2">
+				<Label>Ask ClipForge to edit this timeline</Label>
+				<textarea
+					className="min-h-24 rounded-md border p-2 text-sm"
+					value={prompt}
+					onChange={(event) => setPrompt(event.target.value)}
+					placeholder='Try: "make it faster", "remove more pauses", "bold center captions"'
+				/>
+				<Button onClick={handlePropose} disabled={isLoading}>
+					{isLoading ? "Proposing..." : "Propose Ops"}
+				</Button>
+			</div>
+
+			{proposedOps.length > 0 && (
+				<div className="flex flex-1 flex-col gap-2">
+					<Label>Proposed JSON Ops</Label>
+					<pre className="bg-muted max-h-64 overflow-auto rounded-md border p-3 text-xs">
+						{JSON.stringify(proposedOps, null, 2)}
+					</pre>
+					<div className="flex gap-2">
+						<Button onClick={handleApply} disabled={errors.length > 0}>
+							Apply
+						</Button>
+						<Button
+							variant="outline"
+							onClick={() => {
+								setProposedOps([]);
+								setErrors([]);
+							}}
+						>
+							Cancel
 						</Button>
 					</div>
-
-					{proposedOps.length > 0 && (
-						<div className="flex flex-1 flex-col gap-2">
-							<Label>Proposed JSON Ops</Label>
-							<pre className="bg-muted max-h-64 overflow-auto rounded-md border p-3 text-xs">
-								{JSON.stringify(proposedOps, null, 2)}
-							</pre>
-							<div className="flex gap-2">
-								<Button onClick={handleApply} disabled={errors.length > 0}>
-									Apply
-								</Button>
-								<Button
-									variant="outline"
-									onClick={() => {
-										setProposedOps([]);
-										setErrors([]);
-									}}
-								>
-									Cancel
-								</Button>
-							</div>
-						</div>
-					)}
-
-					{errors.length > 0 && (
-						<div className="rounded-md border border-red-300 bg-red-50 p-3">
-							<p className="mb-1 text-sm font-medium">Validation errors</p>
-							<ul className="list-disc space-y-1 pl-4 text-xs">
-								{errors.map((error, index) => (
-									<li key={`${error.code}-${index}`}>
-										[{error.code}] {error.message}
-									</li>
-								))}
-							</ul>
-						</div>
-					)}
 				</div>
 			)}
-		</PanelView>
+
+			{errors.length > 0 && (
+				<div className="rounded-md border border-red-300 bg-red-50 p-3">
+					<p className="mb-1 text-sm font-medium">Validation errors</p>
+					<ul className="list-disc space-y-1 pl-4 text-xs">
+						{errors.map((error, index) => (
+							<li key={`${error.code}-${index}`}>
+								[{error.code}] {error.message}
+							</li>
+						))}
+					</ul>
+				</div>
+			)}
+		</div>
 	);
 }
