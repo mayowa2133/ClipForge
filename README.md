@@ -108,6 +108,15 @@ CLIPFORGE_WHISPER_CLI_BIN=whisper
 CLIPFORGE_WHISPER_CLI_MODEL=small
 ```
 
+Optional binary preview backend rollout flag:
+
+```bash
+ENABLE_BINARY_PREVIEW_RENDERER=true
+NEXT_PUBLIC_ENABLE_BINARY_PREVIEW_RENDERER=true
+```
+
+The editor preview keeps the same DOM interaction overlays, but frame generation moves behind the shared render backend contract when this flag is enabled. If binary preview cannot safely render a frame yet, it falls back to the legacy canvas backend.
+
 ### MVP workflow
 
 1. Go to `Assets` panel and click `Import Clips`.

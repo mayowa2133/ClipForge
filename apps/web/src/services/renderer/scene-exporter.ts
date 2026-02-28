@@ -12,9 +12,9 @@ import {
 	QUALITY_HIGH,
 	QUALITY_VERY_HIGH,
 } from "mediabunny";
-import type { RootNode } from "./nodes/root-node";
 import type { ExportFormat, ExportQuality } from "@/types/export";
-import { CanvasRenderer } from "./canvas-renderer";
+import type { RenderGraph } from "@/services/renderer/types";
+import type { RenderBackend } from "@/services/renderer/backends/types";
 
 type ExportParams = {
 	width: number;
@@ -22,6 +22,8 @@ type ExportParams = {
 	fps: number;
 	format: ExportFormat;
 	quality: ExportQuality;
+	backend: RenderBackend;
+	graph: RenderGraph;
 	shouldIncludeAudio?: boolean;
 	audioBuffer?: AudioBuffer;
 };
@@ -41,12 +43,15 @@ export type SceneExporterEvents = {
 };
 
 export class SceneExporter extends EventEmitter<SceneExporterEvents> {
-	private renderer: CanvasRenderer;
-	private format: ExportFormat;
-	private quality: ExportQuality;
-	private shouldIncludeAudio: boolean;
-	private audioBuffer?: AudioBuffer;
-
+	private readonly format: ExportFormat;
+	private readonly quality: ExportQuality;
+	private readonly shouldIncludeAudio: boolean;
+	private readonly audioBuffer?: AudioBuffer;
+	private readonly backend: RenderBackend;
+	private readonly graph: RenderGraph;
+	private readonly width: number;
+	private readonly height: number;
+	private readonly fps: number;
 	private isCancelled = false;
 
 	constructor({
@@ -55,18 +60,19 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		fps,
 		format,
 		quality,
+		backend,
+		graph,
 		shouldIncludeAudio,
 		audioBuffer,
 	}: ExportParams) {
 		super();
-		this.renderer = new CanvasRenderer({
-			width,
-			height,
-			fps,
-		});
-
+		this.width = width;
+		this.height = height;
+		this.fps = fps;
 		this.format = format;
 		this.quality = quality;
+		this.backend = backend;
+		this.graph = graph;
 		this.shouldIncludeAudio = shouldIncludeAudio ?? false;
 		this.audioBuffer = audioBuffer;
 	}
@@ -75,14 +81,8 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		this.isCancelled = true;
 	}
 
-	async export({
-		rootNode,
-	}: {
-		rootNode: RootNode;
-	}): Promise<ArrayBuffer | null> {
-		const { fps } = this.renderer;
-		const frameCount = Math.ceil(rootNode.duration * fps);
-
+	async export(): Promise<ArrayBuffer | null> {
+		const frameCount = Math.ceil(this.graph.duration * this.fps);
 		const outputFormat =
 			this.format === "webm" ? new WebMOutputFormat() : new Mp4OutputFormat();
 
@@ -91,12 +91,19 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 			target: new BufferTarget(),
 		});
 
-		const videoSource = new CanvasSource(this.renderer.canvas, {
+		const encoderCanvas = document.createElement("canvas");
+		encoderCanvas.width = this.width;
+		encoderCanvas.height = this.height;
+		const encoderCtx = encoderCanvas.getContext("2d");
+		if (!encoderCtx) {
+			throw new Error("Failed to get export canvas context");
+		}
+
+		const videoSource = new CanvasSource(encoderCanvas, {
 			codec: this.format === "webm" ? "vp9" : "avc",
 			bitrate: qualityMap[this.quality],
 		});
-
-		output.addVideoTrack(videoSource, { frameRate: fps });
+		output.addVideoTrack(videoSource, { frameRate: this.fps });
 
 		let audioSource: AudioBufferSource | null = null;
 		if (this.shouldIncludeAudio && this.audioBuffer) {
@@ -108,7 +115,6 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		}
 
 		await output.start();
-
 		if (audioSource && this.audioBuffer) {
 			await audioSource.add(this.audioBuffer);
 			audioSource.close();
@@ -121,10 +127,20 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 				return null;
 			}
 
-			const time = i / fps;
-			await this.renderer.render({ node: rootNode, time });
-			await videoSource.add(time, 1 / fps);
-
+			const time = i / this.fps;
+			const frame = await this.backend.renderFrame({
+				graph: this.graph,
+				time,
+				targetSize: { width: this.width, height: this.height },
+			});
+			encoderCtx.clearRect(0, 0, this.width, this.height);
+			if (frame.kind === "image-bitmap" && frame.bitmap) {
+				encoderCtx.drawImage(frame.bitmap, 0, 0, this.width, this.height);
+				frame.bitmap.close();
+			} else if (frame.canvas) {
+				encoderCtx.drawImage(frame.canvas, 0, 0, this.width, this.height);
+			}
+			await videoSource.add(time, 1 / this.fps);
 			this.emit("progress", i / frameCount);
 		}
 

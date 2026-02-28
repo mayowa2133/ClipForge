@@ -6,9 +6,7 @@ import { useEditor } from "@/hooks/use-editor";
 import { useRafLoop } from "@/hooks/use-raf-loop";
 import { useContainerSize } from "@/hooks/use-container-size";
 import { useFullscreen } from "@/hooks/use-fullscreen";
-import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
-import type { RootNode } from "@/services/renderer/nodes/root-node";
-import { buildScene } from "@/services/renderer/scene-builder";
+import { buildRenderGraph } from "@/services/renderer/scene-builder";
 import { getLastFrameTime } from "@/lib/time";
 import { PreviewInteractionOverlay } from "./preview-interaction-overlay";
 import { BookmarkNoteOverlay } from "./bookmark-note-overlay";
@@ -41,7 +39,7 @@ export function PreviewPanel() {
 					onToggleFullscreen={toggleFullscreen}
 					containerRef={containerRef}
 				/>
-				<RenderTreeController />
+				<RenderGraphController />
 			</div>
 			<PreviewToolbar
 				isFullscreen={isFullscreen}
@@ -51,7 +49,7 @@ export function PreviewPanel() {
 	);
 }
 
-function RenderTreeController() {
+function RenderGraphController() {
 	const editor = useEditor();
 	const tracks = editor.timeline.getTracks();
 	const mediaAssets = editor.media.getAssets();
@@ -63,7 +61,7 @@ function RenderTreeController() {
 		if (!activeProject) return;
 
 		const duration = editor.timeline.getTotalDuration();
-		const renderTree = buildScene({
+		const renderGraph = buildRenderGraph({
 			tracks,
 			mediaAssets,
 			duration,
@@ -72,7 +70,7 @@ function RenderTreeController() {
 			isPreview: true,
 		});
 
-		editor.renderer.setRenderTree({ renderTree });
+		editor.renderer.setRenderGraph({ renderGraph });
 	}, [tracks, mediaAssets, activeProject?.settings.background, width, height]);
 
 	return null;
@@ -89,21 +87,13 @@ function PreviewCanvas({
 	const outerContainerRef = useRef<HTMLDivElement>(null);
 	const canvasBoundsRef = useRef<HTMLDivElement>(null);
 	const lastFrameRef = useRef(-1);
-	const lastSceneRef = useRef<RootNode | null>(null);
+	const lastGraphIdentityRef = useRef<string | null>(null);
 	const renderingRef = useRef(false);
 	const { width: nativeWidth, height: nativeHeight } = usePreviewSize();
 	const containerSize = useContainerSize({ containerRef: outerContainerRef });
 	const editor = useEditor();
 	const activeProject = editor.project.getActive();
 	const { overlays } = usePreviewStore();
-
-	const renderer = useMemo(() => {
-		return new CanvasRenderer({
-			width: nativeWidth,
-			height: nativeHeight,
-			fps: activeProject.settings.fps,
-		});
-	}, [nativeWidth, nativeHeight, activeProject.settings.fps]);
 
 	const displaySize = useMemo(() => {
 		if (
@@ -134,37 +124,49 @@ function PreviewCanvas({
 		return { width: displayWidth, height: displayHeight };
 	}, [nativeWidth, nativeHeight, containerSize.width, containerSize.height]);
 
-	const renderTree = editor.renderer.getRenderTree();
+	const renderGraph = editor.renderer.getRenderGraph();
+	const graphIdentity = useMemo(
+		() =>
+			renderGraph
+				? `${renderGraph.duration}:${renderGraph.layers.length}:${renderGraph.canvas.width}x${renderGraph.canvas.height}`
+				: null,
+		[renderGraph],
+	);
 
 	const render = useCallback(() => {
-		if (canvasRef.current && renderTree && !renderingRef.current) {
+		if (canvasRef.current && renderGraph && !renderingRef.current) {
 			const time = editor.playback.getCurrentTime();
 			const lastFrameTime = getLastFrameTime({
-				duration: renderTree.duration,
-				fps: renderer.fps,
+				duration: renderGraph.duration,
+				fps: activeProject.settings.fps,
 			});
 			const renderTime = Math.min(time, lastFrameTime);
-			const frame = Math.floor(renderTime * renderer.fps);
+			const frame = Math.floor(renderTime * activeProject.settings.fps);
 
 			if (
 				frame !== lastFrameRef.current ||
-				renderTree !== lastSceneRef.current
+				graphIdentity !== lastGraphIdentityRef.current
 			) {
 				renderingRef.current = true;
-				lastSceneRef.current = renderTree;
+				lastGraphIdentityRef.current = graphIdentity;
 				lastFrameRef.current = frame;
-				renderer
-					.renderToCanvas({
-						node: renderTree,
+				editor.renderer
+					.renderFrameToCanvas({
 						time: renderTime,
 						targetCanvas: canvasRef.current,
 					})
-					.then(() => {
+					.finally(() => {
 						renderingRef.current = false;
 					});
 			}
 		}
-	}, [renderer, renderTree, editor.playback]);
+	}, [
+		activeProject.settings.fps,
+		editor.playback,
+		editor.renderer,
+		graphIdentity,
+		renderGraph,
+	]);
 
 	useRafLoop(render);
 

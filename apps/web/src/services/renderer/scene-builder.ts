@@ -10,6 +10,11 @@ import { BlurBackgroundNode } from "./nodes/blur-background-node";
 import type { TBackground, TCanvasSize } from "@/types/project";
 import { DEFAULT_BLUR_INTENSITY } from "@/constants/project-constants";
 import { isMainTrack } from "@/lib/timeline";
+export {
+	buildRenderGraph,
+	graphHasVideo,
+	type BuildRenderGraphParams,
+} from "./render-graph";
 
 const PREVIEW_MAX_IMAGE_SIZE = 2048;
 
