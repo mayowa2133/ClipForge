@@ -1,4 +1,4 @@
-# ClipForge Architecture (MVP)
+# ClipForge Architecture (M11)
 
 ## Goals
 
@@ -47,10 +47,20 @@ This is versioned through OpenCut's migration system.
 
 ### 4) Future Modules (Post-M1)
 
-- Ingest/indexing pipeline with pluggable transcribers
 - Auto-edit pipeline that emits timeline ops
 - Chat panel + provider abstraction that proposes ops JSON
 - Ops review/apply UI
+
+### 5) Media Indexing Pipeline
+
+- Imported `video` and `audio` assets get ClipForge metadata shells immediately.
+- Background indexing then resolves a transcriber in this order:
+  - `SRT Import` when the user explicitly imports `.srt`
+  - `Whisper CLI` via local Next API route when enabled
+  - browser-local Whisper worker fallback
+- All providers normalize into ClipForge's shared `words` + `segments` metadata shape.
+- Silence maps are computed from decoded clip audio and stored alongside transcript metadata.
+- Captions and transcript-aware chat summarization read from stored clip metadata first, then fall back to timeline transcription only when metadata is missing.
 
 ## Data Flow (Target MVP)
 

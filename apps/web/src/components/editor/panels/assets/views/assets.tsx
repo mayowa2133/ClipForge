@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PanelView } from "@/components/editor/panels/assets/views/base-view";
 import { MediaDragOverlay } from "@/components/editor/panels/assets/drag-overlay";
@@ -61,10 +61,32 @@ export function MediaView() {
 
 	const [isProcessing, setIsProcessing] = useState(false);
 	const [progress, setProgress] = useState(0);
+	const [pendingSrtMediaId, setPendingSrtMediaId] = useState<string | null>(null);
 	const [sortBy, setSortBy] = useState<"name" | "type" | "duration" | "size">(
 		"name",
 	);
 	const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+	const srtInputRef = useRef<HTMLInputElement>(null);
+
+	const runIndexing = async ({
+		mediaIds,
+	}: {
+		mediaIds?: string[];
+	}) => {
+		toast("Indexing clips for captions and smart edits...");
+		const result = await editor.clipforge.indexMediaAssets({ mediaIds });
+		if (result.failed.length > 0) {
+			toast.error(
+				`Indexed ${result.completed.length} of ${
+					result.completed.length + result.failed.length
+				} clips; some failed`,
+			);
+			return result;
+		}
+
+		toast.success(`Indexed ${result.completed.length} clips`);
+		return result;
+	};
 
 	const processFiles = async ({ files }: { files: FileList }) => {
 		if (!files || files.length === 0) return;
@@ -95,6 +117,9 @@ export function MediaView() {
 			if (importedAssets.length > 0) {
 				editor.clipforge.initializeMediaMetadata({
 					mediaAssets: importedAssets,
+				});
+				void runIndexing({
+					mediaIds: importedAssets.map((asset) => asset.id),
 				});
 			}
 		} catch (error) {
@@ -156,6 +181,45 @@ export function MediaView() {
 			placement: { mode: "auto" },
 		});
 		return true;
+	};
+
+	const handleIndexClip = async ({ mediaId }: { mediaId: string }) => {
+		const metadata = await editor.clipforge.indexMediaAsset({ mediaId });
+		if (metadata.transcriptionStatus === "ready") {
+			toast.success("Clip indexed");
+			return;
+		}
+
+		toast.error(metadata.transcriptionError ?? "Clip indexing failed");
+	};
+
+	const handleImportSrt = ({ mediaId }: { mediaId: string }) => {
+		setPendingSrtMediaId(mediaId);
+		srtInputRef.current?.click();
+	};
+
+	const handleSrtInputChange = async (
+		event: React.ChangeEvent<HTMLInputElement>,
+	) => {
+		const file = event.target.files?.[0];
+		const mediaId = pendingSrtMediaId;
+		event.currentTarget.value = "";
+		setPendingSrtMediaId(null);
+
+		if (!file || !mediaId) return;
+
+		try {
+			const srtText = await file.text();
+			await editor.clipforge.importSrtForMedia({
+				mediaId,
+				srtText,
+			});
+			toast.success("SRT imported");
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Failed to import SRT",
+			);
+		}
 	};
 
 	const filteredMediaItems = useMemo(() => {
@@ -338,6 +402,20 @@ export function MediaView() {
 				<>
 					<Button
 						variant="outline"
+						onClick={() => void runIndexing({})}
+						disabled={
+							isProcessing ||
+							!filteredMediaItems.some(
+								(item) => item.type === "video" || item.type === "audio",
+							)
+						}
+						size="sm"
+						className="items-center justify-center gap-1.5 ml-1.5"
+					>
+						Index All Clips
+					</Button>
+					<Button
+						variant="outline"
 						onClick={() => invokeAction("clipforge-auto-edit-tiktok")}
 						disabled={isProcessing || !hasVideoAssets}
 						size="sm"
@@ -362,6 +440,13 @@ export function MediaView() {
 	return (
 		<>
 			<input {...fileInputProps} />
+			<input
+				ref={srtInputRef}
+				type="file"
+				accept=".srt"
+				className="hidden"
+				onChange={handleSrtInputChange}
+			/>
 
 			<PanelView
 				title="Assets"
@@ -381,6 +466,8 @@ export function MediaView() {
 						items={filteredMediaItems}
 						renderPreview={renderPreview}
 						onRemove={handleRemove}
+						onIndexClip={handleIndexClip}
+						onImportSrt={handleImportSrt}
 						onAddToTimeline={addElementAtTime}
 						highlightedId={highlightedId}
 						registerElement={registerElement}
@@ -390,6 +477,8 @@ export function MediaView() {
 						items={filteredMediaItems}
 						renderPreview={renderCompactPreview}
 						onRemove={handleRemove}
+						onIndexClip={handleIndexClip}
+						onImportSrt={handleImportSrt}
 						onAddToTimeline={addElementAtTime}
 						highlightedId={highlightedId}
 						registerElement={registerElement}
@@ -404,16 +493,30 @@ function MediaItemWithContextMenu({
 	item,
 	children,
 	onRemove,
+	onIndexClip,
+	onImportSrt,
 }: {
 	item: MediaAsset;
 	children: React.ReactNode;
 	onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
+	onIndexClip: ({ mediaId }: { mediaId: string }) => void;
+	onImportSrt: ({ mediaId }: { mediaId: string }) => void;
 }) {
 	return (
 		<ContextMenu>
 			<ContextMenuTrigger>{children}</ContextMenuTrigger>
 			<ContextMenuContent>
 				<ContextMenuItem>Export clips</ContextMenuItem>
+				{(item.type === "video" || item.type === "audio") && (
+					<ContextMenuItem onClick={() => onIndexClip({ mediaId: item.id })}>
+						Index Clip
+					</ContextMenuItem>
+				)}
+				{(item.type === "video" || item.type === "audio") && (
+					<ContextMenuItem onClick={() => onImportSrt({ mediaId: item.id })}>
+						Import SRT...
+					</ContextMenuItem>
+				)}
 				<ContextMenuItem
 					variant="destructive"
 					onClick={(event) => onRemove({ event, id: item.id })}
@@ -429,6 +532,8 @@ function GridView({
 	items,
 	renderPreview,
 	onRemove,
+	onIndexClip,
+	onImportSrt,
 	onAddToTimeline,
 	highlightedId,
 	registerElement,
@@ -436,6 +541,8 @@ function GridView({
 	items: MediaAsset[];
 	renderPreview: (item: MediaAsset) => React.ReactNode;
 	onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
+	onIndexClip: ({ mediaId }: { mediaId: string }) => void;
+	onImportSrt: ({ mediaId }: { mediaId: string }) => void;
 	onAddToTimeline: ({
 		asset,
 		startTime,
@@ -455,7 +562,12 @@ function GridView({
 		>
 			{items.map((item) => (
 				<div key={item.id} ref={(el) => registerElement(item.id, el)}>
-					<MediaItemWithContextMenu item={item} onRemove={onRemove}>
+					<MediaItemWithContextMenu
+						item={item}
+						onRemove={onRemove}
+						onIndexClip={onIndexClip}
+						onImportSrt={onImportSrt}
+					>
 						<DraggableItem
 							name={item.name}
 							preview={renderPreview(item)}
@@ -484,6 +596,8 @@ function ListView({
 	items,
 	renderPreview,
 	onRemove,
+	onIndexClip,
+	onImportSrt,
 	onAddToTimeline,
 	highlightedId,
 	registerElement,
@@ -491,6 +605,8 @@ function ListView({
 	items: MediaAsset[];
 	renderPreview: (item: MediaAsset) => React.ReactNode;
 	onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
+	onIndexClip: ({ mediaId }: { mediaId: string }) => void;
+	onImportSrt: ({ mediaId }: { mediaId: string }) => void;
 	onAddToTimeline: ({
 		asset,
 		startTime,
@@ -505,7 +621,12 @@ function ListView({
 		<div className="space-y-1">
 			{items.map((item) => (
 				<div key={item.id} ref={(el) => registerElement(item.id, el)}>
-					<MediaItemWithContextMenu item={item} onRemove={onRemove}>
+					<MediaItemWithContextMenu
+						item={item}
+						onRemove={onRemove}
+						onIndexClip={onIndexClip}
+						onImportSrt={onImportSrt}
+					>
 						<DraggableItem
 							name={item.name}
 							preview={renderPreview(item)}

@@ -4,13 +4,14 @@
 
 1. Open the Assets panel.
 2. Click `Import Clips` and select multiple video clips.
-3. Click `Auto Edit TikTok`.
-4. ClipForge builds a draft:
+3. ClipForge indexes imported clips in the background for captions and transcript-aware edits.
+4. Click `Auto Edit TikTok`.
+5. ClipForge builds a draft:
    - clips stitched in order
    - 9:16 aspect preset applied
    - silence-removal op pass applied using available silence metadata
-5. Timeline + preview update in the same OpenCut editor surface.
-6. Use normal OpenCut undo/redo to revert or refine.
+6. Timeline + preview update in the same OpenCut editor surface.
+7. Use normal OpenCut undo/redo to revert or refine.
 
 ## Flow B: Chat-driven Edits
 

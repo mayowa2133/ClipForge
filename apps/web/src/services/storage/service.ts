@@ -20,7 +20,10 @@ import {
 	runStorageMigrations,
 } from "@/services/storage/migrations";
 import type { Bookmark, TimelineTrack, TScene } from "@/types/timeline";
-import { buildDefaultClipForgeProjectData } from "@/lib/clipforge";
+import {
+	buildDefaultClipForgeProjectData,
+	normalizeClipForgeProjectData,
+} from "@/lib/clipforge";
 
 function normalizeBookmarks({ raw }: { raw: unknown }): Bookmark[] {
 	if (!Array.isArray(raw)) return [];
@@ -521,13 +524,15 @@ function deserializeClipForgeData({
 	clipforge?: SerializedClipForgeProjectData;
 }): ClipForgeProjectData {
 	const source = clipforge ?? serializeClipForgeData({ clipforge: undefined });
-	return {
-		...source,
-		opsAudit: source.opsAudit.map((entry) => ({
-			...entry,
-			createdAt: new Date(entry.createdAt),
-		})),
-	};
+	return normalizeClipForgeProjectData({
+		clipforge: {
+			...source,
+			opsAudit: source.opsAudit.map((entry) => ({
+				...entry,
+				createdAt: new Date(entry.createdAt),
+			})),
+		},
+	});
 }
 
 export const storageService = new StorageService();

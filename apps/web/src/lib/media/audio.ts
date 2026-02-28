@@ -57,6 +57,35 @@ export async function decodeAudioToFloat32({
 	return { samples, sampleRate: audioBuffer.sampleRate };
 }
 
+export async function extractMediaAssetAudioToFloat32({
+	mediaAsset,
+}: {
+	mediaAsset: MediaAsset;
+}): Promise<DecodedAudio> {
+	if (mediaAsset.type === "audio") {
+		return decodeAudioToFloat32({ audioBlob: mediaAsset.file });
+	}
+
+	if (mediaAsset.type !== "video") {
+		throw new Error(`Media type '${mediaAsset.type}' cannot be transcribed.`);
+	}
+
+	const audioContext = createAudioContext();
+	const audioBuffer = await resolveAudioBufferForVideoElement({
+		mediaAsset,
+		audioContext,
+	});
+	if (!audioBuffer) {
+		throw new Error("No audio track found in media asset.");
+	}
+
+	const samples = mixAudioBufferToMono({ audioBuffer });
+	return {
+		samples,
+		sampleRate: audioBuffer.sampleRate,
+	};
+}
+
 export async function collectAudioElements({
 	tracks,
 	mediaAssets,
@@ -233,6 +262,26 @@ async function resolveAudioBufferForVideoElement({
 	} finally {
 		input.dispose();
 	}
+}
+
+function mixAudioBufferToMono({
+	audioBuffer,
+}: {
+	audioBuffer: AudioBuffer;
+}): Float32Array {
+	const numChannels = audioBuffer.numberOfChannels;
+	const length = audioBuffer.length;
+	const samples = new Float32Array(length);
+
+	for (let i = 0; i < length; i++) {
+		let sum = 0;
+		for (let channel = 0; channel < numChannels; channel++) {
+			sum += audioBuffer.getChannelData(channel)[i];
+		}
+		samples[i] = sum / Math.max(1, numChannels);
+	}
+
+	return samples;
 }
 
 interface AudioMixSource {

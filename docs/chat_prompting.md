@@ -32,6 +32,7 @@ The prompt includes examples for:
 ## Validation Loop
 
 1. Build project summary (`ProjectSummarizer`)
+   - transcript snippets are now sourced from indexed clip metadata when available
 2. Provider proposes ops
 3. `OpsValidator` validates structure/ids/ranges
 4. User reviews in chat panel

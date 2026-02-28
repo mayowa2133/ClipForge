@@ -18,7 +18,11 @@ import type {
 } from "@/types/transcription";
 import { transcriptionService } from "@/services/transcription/service";
 import { decodeAudioToFloat32 } from "@/lib/media/audio";
-import { generateCaptionChunks, getCaptionTemplate } from "@/lib/clipforge";
+import {
+	buildTimelineTranscriptSegments,
+	generateCaptionChunks,
+	getCaptionTemplate,
+} from "@/lib/clipforge";
 import { Spinner } from "@/components/ui/spinner";
 import { Label } from "@/components/ui/label";
 
@@ -46,26 +50,38 @@ export function Captions() {
 		try {
 			setIsProcessing(true);
 			setError(null);
-			setProcessingStep("Extracting audio...");
+			setProcessingStep("Collecting indexed transcripts...");
 
-			const audioBlob = await extractTimelineAudio({
-				tracks: editor.timeline.getTracks(),
-				mediaAssets: editor.media.getAssets(),
-				totalDuration: editor.timeline.getTotalDuration(),
-			});
+			const activeProject = editor.project.getActive();
+			let captionSegments = activeProject
+				? buildTimelineTranscriptSegments({
+					project: activeProject,
+				})
+				: [];
 
-			setProcessingStep("Preparing audio...");
-			const { samples } = await decodeAudioToFloat32({ audioBlob });
+			if (captionSegments.length === 0) {
+				setProcessingStep("Extracting audio...");
 
-			const result = await transcriptionService.transcribe({
-				audioData: samples,
-				language: selectedLanguage === "auto" ? undefined : selectedLanguage,
-				onProgress: handleProgress,
-			});
+				const audioBlob = await extractTimelineAudio({
+					tracks: editor.timeline.getTracks(),
+					mediaAssets: editor.media.getAssets(),
+					totalDuration: editor.timeline.getTotalDuration(),
+				});
+
+				setProcessingStep("Preparing audio...");
+				const { samples } = await decodeAudioToFloat32({ audioBlob });
+
+				const result = await transcriptionService.transcribe({
+					audioData: samples,
+					language: selectedLanguage === "auto" ? undefined : selectedLanguage,
+					onProgress: handleProgress,
+				});
+				captionSegments = result.segments;
+			}
 
 			setProcessingStep("Generating captions...");
 			const captionChunks = generateCaptionChunks({
-				segments: result.segments,
+				segments: captionSegments,
 				options: {
 					maxCharsPerLine: selectedTemplate === "bold-center" ? 22 : 30,
 					maxLines: 2,
@@ -74,7 +90,6 @@ export function Captions() {
 				},
 			});
 			const template = getCaptionTemplate({ styleId: selectedTemplate });
-			const activeProject = editor.project.getActive();
 			const canvasHeight = activeProject?.settings.canvasSize.height ?? 1080;
 			const positionY =
 				template.position === "bottom" ? Math.round(canvasHeight * 0.35) : 0;

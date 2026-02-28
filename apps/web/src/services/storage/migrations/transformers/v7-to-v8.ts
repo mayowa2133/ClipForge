@@ -27,7 +27,7 @@ export function transformProjectV7ToV8({
 
 function buildDefaultClipForgeRecord(): ProjectRecord {
 	return {
-		schemaVersion: 1,
+		schemaVersion: 2,
 		mediaMetadataById: {},
 		captionStylesById: {
 			"clean-bottom": {

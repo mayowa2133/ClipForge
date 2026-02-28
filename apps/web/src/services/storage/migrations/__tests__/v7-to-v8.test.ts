@@ -11,7 +11,7 @@ describe("V7 to V8 Migration", () => {
 		expect(result.project.clipforge).toBeDefined();
 
 		const clipforge = result.project.clipforge as Record<string, unknown>;
-		expect(clipforge.schemaVersion).toBe(1);
+		expect(clipforge.schemaVersion).toBe(2);
 		expect(clipforge.activeCaptionStyleId).toBe("clean-bottom");
 		expect(clipforge.opsAudit).toEqual([]);
 	});
@@ -21,7 +21,7 @@ describe("V7 to V8 Migration", () => {
 			project: {
 				...v7Project,
 				version: 8,
-				clipforge: { schemaVersion: 1 },
+				clipforge: { schemaVersion: 2 },
 			},
 		});
 

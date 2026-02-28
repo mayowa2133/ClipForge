@@ -1,12 +1,16 @@
 import type { EditorCore } from "@/core";
 import {
 	BestEffortExportIntegration,
+	buildClipIndex,
 	buildEmptyMediaMetadata,
 	detectSilenceRegions,
 	ensureClipForgeProjectData,
+	resolveClipForgeTranscriber,
 	resolveMediaAssetByName,
+	SrtImportTranscriber,
 	validateTimelineDiffOps,
 } from "@/lib/clipforge";
+import { extractMediaAssetAudioToFloat32 } from "@/lib/media/audio";
 import {
 	ApplyTimelineDiffOpsCommand,
 	AutoEditTikTokDraftCommand,
@@ -110,6 +114,153 @@ export class ClipForgeManager {
 			},
 		});
 		this.editor.save.markDirty();
+	}
+
+	getMediaMetadata({ mediaId }: { mediaId: string }): ClipMediaMetadata | null {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) return null;
+
+		const projectWithClipForge = ensureClipForgeProjectData({
+			project: activeProject,
+		});
+
+		return projectWithClipForge.clipforge.mediaMetadataById[mediaId] ?? null;
+	}
+
+	async indexMediaAsset({
+		mediaId,
+		language,
+	}: {
+		mediaId: string;
+		language?: string;
+	}): Promise<ClipMediaMetadata> {
+		const mediaAsset = this.editor.media.getAssets().find((asset) => asset.id === mediaId);
+		if (!mediaAsset) {
+			throw new Error("Media asset not found.");
+		}
+
+		const existing = this.getMediaMetadata({ mediaId }) ?? buildEmptyMediaMetadata();
+		if (mediaAsset.type !== "video" && mediaAsset.type !== "audio") {
+			return existing;
+		}
+
+		this.upsertMediaMetadata({
+			mediaId,
+			metadata: {
+				...existing,
+				transcriptionStatus: "processing",
+				transcriptionError: null,
+			},
+		});
+
+		try {
+			const transcriber = resolveClipForgeTranscriber();
+			const indexed = await buildClipIndex({
+				mediaAsset,
+				language,
+				transcriber,
+				extractAudio: extractMediaAssetAudioToFloat32,
+			});
+
+			this.upsertMediaMetadata({
+				mediaId,
+				metadata: indexed,
+			});
+			return indexed;
+		} catch (error) {
+			const failedMetadata: ClipMediaMetadata = {
+				...existing,
+				transcriptionStatus: "error",
+				transcriptionError:
+					error instanceof Error ? error.message : "Clip indexing failed.",
+			};
+			this.upsertMediaMetadata({
+				mediaId,
+				metadata: failedMetadata,
+			});
+			return failedMetadata;
+		}
+	}
+
+	async indexMediaAssets({
+		mediaIds,
+		language,
+	}: {
+		mediaIds?: string[];
+		language?: string;
+	} = {}): Promise<{ completed: string[]; failed: string[] }> {
+		const targetIds = new Set(mediaIds ?? []);
+		const selectedAssets = this.editor.media
+			.getAssets()
+			.filter((asset) => !asset.ephemeral)
+			.filter((asset) =>
+				targetIds.size === 0 ? true : targetIds.has(asset.id),
+			)
+			.filter((asset) => asset.type === "video" || asset.type === "audio");
+
+		const completed: string[] = [];
+		const failed: string[] = [];
+
+		for (const asset of selectedAssets) {
+			const existing = this.getMediaMetadata({ mediaId: asset.id });
+			if (existing?.transcriptionStatus === "ready") {
+				completed.push(asset.id);
+				continue;
+			}
+
+			const metadata = await this.indexMediaAsset({
+				mediaId: asset.id,
+				language,
+			});
+			if (metadata.transcriptionStatus === "ready") {
+				completed.push(asset.id);
+			} else {
+				failed.push(asset.id);
+			}
+		}
+
+		return { completed, failed };
+	}
+
+	async importSrtForMedia({
+		mediaId,
+		srtText,
+		language,
+	}: {
+		mediaId: string;
+		srtText: string;
+		language?: string;
+	}): Promise<ClipMediaMetadata> {
+		const mediaAsset = this.editor.media.getAssets().find((asset) => asset.id === mediaId);
+		if (!mediaAsset) {
+			throw new Error("Media asset not found.");
+		}
+
+		const existing = this.getMediaMetadata({ mediaId }) ?? buildEmptyMediaMetadata();
+		const transcriber = new SrtImportTranscriber();
+		const transcript = await transcriber.transcribe({
+			mediaAsset,
+			language,
+			srtText,
+		});
+
+		const metadata: ClipMediaMetadata = {
+			...existing,
+			words: transcript.words,
+			segments: transcript.segments,
+			transcriptionStatus: "ready",
+			transcriptionProvider: transcript.provider,
+			transcriptionLanguage: transcript.language ?? language ?? null,
+			transcriptionError: null,
+			indexedAt: new Date().toISOString(),
+		};
+
+		this.upsertMediaMetadata({
+			mediaId,
+			metadata,
+		});
+
+		return metadata;
 	}
 
 	detectAndStoreSilenceMap({

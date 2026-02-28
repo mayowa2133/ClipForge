@@ -1,10 +1,11 @@
 import type {
 	CaptionStyleTemplate,
 	ClipForgeProjectData,
+	ClipMediaMetadata,
 } from "@/types/clipforge";
 import type { TProject } from "@/types/project";
 
-export const CLIPFORGE_SCHEMA_VERSION = 1;
+export const CLIPFORGE_SCHEMA_VERSION = 2;
 
 const CLEAN_BOTTOM_STYLE: CaptionStyleTemplate = {
 	style_id: "clean-bottom",
@@ -37,13 +38,65 @@ export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 	};
 }
 
+export function normalizeClipForgeMediaMetadata({
+	metadata,
+}: {
+	metadata?: Partial<ClipMediaMetadata> | null;
+}): ClipMediaMetadata {
+	return {
+		words: metadata?.words ?? [],
+		segments: metadata?.segments ?? [],
+		silenceRegions: metadata?.silenceRegions ?? [],
+		transcriptionStatus: metadata?.transcriptionStatus ?? "idle",
+		transcriptionProvider: metadata?.transcriptionProvider ?? null,
+		transcriptionLanguage: metadata?.transcriptionLanguage ?? null,
+		transcriptionError: metadata?.transcriptionError ?? null,
+		indexedAt: metadata?.indexedAt ?? null,
+	};
+}
+
+export function normalizeClipForgeProjectData({
+	clipforge,
+}: {
+	clipforge?: ClipForgeProjectData | null;
+}): ClipForgeProjectData {
+	const defaults = buildDefaultClipForgeProjectData();
+	const source = clipforge ?? defaults;
+
+	return {
+		...defaults,
+		...source,
+		schemaVersion: CLIPFORGE_SCHEMA_VERSION,
+		mediaMetadataById: Object.fromEntries(
+			Object.entries(source.mediaMetadataById ?? {}).map(([mediaId, metadata]) => [
+				mediaId,
+				normalizeClipForgeMediaMetadata({
+					metadata: metadata ?? undefined,
+				}),
+			]),
+		),
+		captionStylesById: {
+			...defaults.captionStylesById,
+			...(source.captionStylesById ?? {}),
+		},
+		activeCaptionStyleId:
+			source.activeCaptionStyleId ?? defaults.activeCaptionStyleId,
+		opsAudit: source.opsAudit ?? [],
+	};
+}
+
 export function ensureClipForgeProjectData({
 	project,
 }: {
 	project: TProject;
 }): TProject & { clipforge: ClipForgeProjectData } {
 	if (project.clipforge) {
-		return project as TProject & { clipforge: ClipForgeProjectData };
+		return {
+			...project,
+			clipforge: normalizeClipForgeProjectData({
+				clipforge: project.clipforge,
+			}),
+		} as TProject & { clipforge: ClipForgeProjectData };
 	}
 
 	return {

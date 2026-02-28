@@ -1,4 +1,5 @@
 import { calculateTotalDuration } from "@/lib/timeline";
+import { buildTranscriptSnippetForElement } from "@/lib/clipforge/timeline-transcript";
 import type { MediaAsset } from "@/types/assets";
 import type { TProject } from "@/types/project";
 import type { ProjectSummary } from "./types";
@@ -19,6 +20,17 @@ export function buildProjectSummary({
 			let transcriptSnippet = "";
 			if (element.type === "text") {
 				transcriptSnippet = element.content.slice(0, 80);
+			} else if ("mediaId" in element && typeof element.mediaId === "string") {
+				const metadata = project.clipforge?.mediaMetadataById[element.mediaId];
+				if (
+					(element.type === "video") ||
+					(element.type === "audio" && element.sourceType === "upload")
+				) {
+					transcriptSnippet = buildTranscriptSnippetForElement({
+						element,
+						metadata,
+					});
+				}
 			}
 
 			return {

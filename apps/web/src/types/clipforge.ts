@@ -4,6 +4,15 @@ export type CaptionHighlightMode = "none" | "line" | "word";
 export type CaptionPosition = "bottom" | "center";
 export type BrollLane = "overlay-primary";
 export type BrollFitMode = "cover";
+export type ClipForgeTranscriptionStatus =
+	| "idle"
+	| "processing"
+	| "ready"
+	| "error";
+export type ClipForgeTranscriptionProvider =
+	| "srt-import"
+	| "whisper-cli"
+	| "browser-whisper";
 
 export interface TranscriptWord {
 	text: string;
@@ -26,6 +35,11 @@ export interface ClipMediaMetadata {
 	words: TranscriptWord[];
 	segments: TranscriptSegment[];
 	silenceRegions: SilenceRegion[];
+	transcriptionStatus: ClipForgeTranscriptionStatus;
+	transcriptionProvider: ClipForgeTranscriptionProvider | null;
+	transcriptionLanguage: string | null;
+	transcriptionError: string | null;
+	indexedAt: string | null;
 }
 
 export interface CaptionStyleTemplate {

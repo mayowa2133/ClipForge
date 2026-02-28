@@ -99,14 +99,25 @@ NEXT_PUBLIC_ENABLE_CLIPFORGE_AUTO_EDIT=true
 NEXT_PUBLIC_ENABLE_CLIPFORGE_CHAT=true
 ```
 
+Optional local Whisper CLI indexing:
+
+```bash
+CLIPFORGE_WHISPER_CLI_ENABLED=true
+NEXT_PUBLIC_CLIPFORGE_WHISPER_CLI_ENABLED=true
+CLIPFORGE_WHISPER_CLI_BIN=whisper
+CLIPFORGE_WHISPER_CLI_MODEL=small
+```
+
 ### MVP workflow
 
 1. Go to `Assets` panel and click `Import Clips`.
-2. Click `Auto Edit TikTok` to build a 9:16 draft timeline.
-3. Open `Captions` tab and generate captions using `Clean Bottom` or `Bold Center`.
-4. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `add b-roll using beach.mp4 from 5s to 8s`), review JSON ops, then click `Apply`.
-5. Use normal OpenCut `Undo/Redo` shortcuts.
-6. Click `Export` for best-effort export (binary export if available, otherwise preview artifact JSON).
+2. ClipForge indexes imported audio in the background for captions and smarter edits.
+3. Use `Index All Clips`, `Index Clip`, or `Import SRT...` in the Assets panel if you need to re-run or override transcript metadata.
+4. Click `Auto Edit TikTok` to build a 9:16 draft timeline.
+5. Open `Captions` tab and generate captions using `Clean Bottom` or `Bold Center`.
+6. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `add b-roll using beach.mp4 from 5s to 8s`), review JSON ops, then click `Apply`.
+7. Use normal OpenCut `Undo/Redo` shortcuts.
+8. Click `Export` for best-effort export (binary export if available, otherwise preview artifact JSON).
 
 ### Self-Hosting with Docker
 
