@@ -1,11 +1,14 @@
 import { calculateTotalDuration } from "@/lib/timeline";
+import type { MediaAsset } from "@/types/assets";
 import type { TProject } from "@/types/project";
 import type { ProjectSummary } from "./types";
 
 export function buildProjectSummary({
 	project,
+	mediaAssets = [],
 }: {
 	project: TProject;
+	mediaAssets?: MediaAsset[];
 }): ProjectSummary {
 	const activeScene =
 		project.scenes.find((scene) => scene.id === project.currentSceneId) ??
@@ -35,6 +38,17 @@ export function buildProjectSummary({
 		(sum, region) => sum + Math.max(0, region.end_ms - region.start_ms),
 		0,
 	);
+	const mediaAssetSummaries = mediaAssets
+		.filter(
+			(asset): asset is MediaAsset & { type: "video" | "image" } =>
+				(asset.type === "video" || asset.type === "image") && !asset.ephemeral,
+		)
+		.map((asset) => ({
+			asset_id: asset.id,
+			name: asset.name,
+			type: asset.type,
+		}))
+		.sort((a, b) => a.name.localeCompare(b.name));
 
 	return {
 		total_duration_s: calculateTotalDuration({ tracks }),
@@ -46,5 +60,6 @@ export function buildProjectSummary({
 		segments: segments
 			.sort((a, b) => a.start_ms - b.start_ms)
 			.slice(0, 240),
+		media_assets: mediaAssetSummaries,
 	};
 }

@@ -1,16 +1,30 @@
+import {
+	DEFAULT_BLEND_MODE,
+	DEFAULT_OPACITY,
+	DEFAULT_TRANSFORM,
+} from "@/constants/timeline-constants";
 import { calculateTotalDuration } from "@/lib/timeline";
+import { wouldElementOverlap } from "@/lib/timeline/element-utils";
+import { buildEmptyTrack } from "@/lib/timeline/track-utils";
 import type {
 	CaptionStyleTemplate,
 	ClipForgeProjectData,
+	InsertBrollOp,
 	MakeVersionOp,
 	RemoveSilenceOp,
 	TimelineDiffAuditEntry,
 	TimelineDiffOp,
 	TimelineDiffOpSource,
 } from "@/types/clipforge";
+import type { MediaAsset } from "@/types/assets";
 import type { TCanvasSize } from "@/types/project";
 import type { TProject } from "@/types/project";
-import type { TimelineElement, TimelineTrack } from "@/types/timeline";
+import type {
+	ImageElement,
+	TimelineElement,
+	TimelineTrack,
+	VideoElement,
+} from "@/types/timeline";
 import { generateUUID } from "@/utils/id";
 import {
 	buildDefaultClipForgeProjectData,
@@ -37,11 +51,13 @@ export interface TimelineDiffPatch {
 
 export function buildTimelineDiffPatch({
 	project,
+	mediaAssets = [],
 	ops,
 	source = "manual",
 	now = new Date(),
 }: {
 	project: TProject;
+	mediaAssets?: MediaAsset[];
 	ops: TimelineDiffOp[];
 	source?: TimelineDiffOpSource;
 	now?: Date;
@@ -49,6 +65,7 @@ export function buildTimelineDiffPatch({
 	const before = structuredClone(ensureClipForgeProjectData({ project }));
 	const after = applyTimelineDiffOpsToProject({
 		project: before,
+		mediaAssets,
 		ops,
 		source,
 		now,
@@ -72,11 +89,13 @@ export function buildTimelineDiffPatch({
 
 export function applyTimelineDiffOpsToProject({
 	project,
+	mediaAssets = [],
 	ops,
 	source = "manual",
 	now = new Date(),
 }: {
 	project: TProject;
+	mediaAssets?: MediaAsset[];
 	ops: TimelineDiffOp[];
 	source?: TimelineDiffOpSource;
 	now?: Date;
@@ -118,6 +137,13 @@ export function applyTimelineDiffOpsToProject({
 					tracks: activeScene.tracks,
 					segmentId: op.segment_id,
 					toMs: op.to_ms,
+				});
+				break;
+			case "INSERT_BROLL":
+				applyInsertBrollOp({
+					tracks: activeScene.tracks,
+					op,
+					mediaAssets,
 				});
 				break;
 			case "SET_ASPECT_RATIO":
@@ -360,6 +386,79 @@ function applyDuplicateSegmentOp({
 		id: generateUUID(),
 		startTime: Math.max(0, toMs),
 	});
+}
+
+function applyInsertBrollOp({
+	tracks,
+	op,
+	mediaAssets,
+}: {
+	tracks: TimelineTrack[];
+	op: InsertBrollOp;
+	mediaAssets: MediaAsset[];
+}): void {
+	const asset = mediaAssets.find((candidate) => candidate.id === op.media_id);
+	if (!asset || (asset.type !== "video" && asset.type !== "image")) {
+		return;
+	}
+
+	const startTime = Math.max(0, op.start_ms / 1000);
+	const duration = Math.max(0.001, (op.end_ms - op.start_ms) / 1000);
+	const endTime = startTime + duration;
+
+	let targetTrack = tracks.find(
+		(track) =>
+			track.type === "video" &&
+			track.isMain === false &&
+			!wouldElementOverlap({
+				elements: track.elements,
+				startTime,
+				endTime,
+			}),
+	);
+
+	if (!targetTrack) {
+		const nextTrack = buildEmptyTrack({
+			id: generateUUID(),
+			type: "video",
+			name: "B-roll",
+		});
+		const mainTrackIndex = tracks.findIndex(
+			(track) => track.type === "video" && track.isMain,
+		);
+		const insertIndex = mainTrackIndex >= 0 ? mainTrackIndex : 0;
+		tracks.splice(insertIndex, 0, nextTrack);
+		targetTrack = nextTrack;
+	}
+
+	const baseElement = {
+		id: generateUUID(),
+		name: asset.name,
+		duration,
+		startTime,
+		trimStart: 0,
+		trimEnd: 0,
+		hidden: false,
+		transform: { ...DEFAULT_TRANSFORM },
+		opacity: DEFAULT_OPACITY,
+		blendMode: DEFAULT_BLEND_MODE,
+	};
+
+	if (asset.type === "image") {
+		(targetTrack.elements as TimelineElement[]).push({
+			...baseElement,
+			type: "image",
+			mediaId: asset.id,
+		} satisfies ImageElement);
+		return;
+	}
+
+	(targetTrack.elements as TimelineElement[]).push({
+		...baseElement,
+		type: "video",
+		mediaId: asset.id,
+		muted: op.mute,
+	} satisfies VideoElement);
 }
 
 function applySetAspectRatioOp({

@@ -130,4 +130,71 @@ describe("ClipForge integration flow", () => {
 
 		expect(sanitizeProject(finalProject)).toMatchSnapshot();
 	});
+
+	test("chat can insert imported B-roll as an overlay track", async () => {
+		const project = buildProjectFixture();
+		const activeScene = project.scenes[0];
+		if (activeScene?.tracks[0]?.type === "video") {
+			activeScene.tracks[0].elements.push({
+				id: "talking-head",
+				type: "video",
+				name: "Talking head",
+				mediaId: "clip-001",
+				duration: 8,
+				startTime: 0,
+				trimStart: 0,
+				trimEnd: 0,
+				muted: false,
+				hidden: false,
+				transform: {
+					scale: 1,
+					position: { x: 0, y: 0 },
+					rotate: 0,
+				},
+				opacity: 1,
+			});
+		}
+
+		const mediaAssets = [
+			...buildMediaFixtures(),
+			{
+				id: "broll-1",
+				name: "broll",
+				type: "video" as const,
+				duration: 4,
+				file: new File(["video"], "broll.mp4", { type: "video/mp4" }),
+			},
+		];
+		const provider = new HeuristicChatOpsProvider();
+		const summary = buildProjectSummary({ project, mediaAssets });
+		const chatOps = await provider.proposeEdits({
+			userText: "add b-roll using broll from 2s to 5s",
+			projectSummary: summary,
+		});
+
+		expect(chatOps).toHaveLength(1);
+		expect(chatOps[0]?.type).toBe("INSERT_BROLL");
+
+		const finalProject = applyTimelineDiffOpsToProject({
+			project,
+			mediaAssets,
+			ops: chatOps,
+			source: "chat",
+			now: new Date("2026-02-27T11:00:00.000Z"),
+		});
+		const overlayTracks =
+			finalProject.scenes
+				.find((scene) => scene.id === finalProject.currentSceneId)
+				?.tracks.filter((track) => track.type === "video" && !track.isMain) ?? [];
+
+		expect(overlayTracks).toHaveLength(1);
+		if (overlayTracks[0]?.type === "video") {
+			expect(overlayTracks[0].elements[0]).toMatchObject({
+				type: "video",
+				mediaId: "broll-1",
+				startTime: 2,
+				duration: 3,
+			});
+		}
+	});
 });

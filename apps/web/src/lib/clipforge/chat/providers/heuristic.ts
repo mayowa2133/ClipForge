@@ -1,4 +1,5 @@
 import type { TimelineDiffOp } from "@/types/clipforge";
+import { resolveMediaAssetByName } from "@/lib/clipforge/media-resolver";
 import type { ChatOpsProvider } from "../types";
 
 export class HeuristicChatOpsProvider implements ChatOpsProvider {
@@ -80,6 +81,43 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 					type: "CUT_RANGE",
 					start_ms: Math.max(0, matchedSegment.start_ms - 180),
 					end_ms: matchedSegment.end_ms + 120,
+				});
+			}
+		}
+
+		const brollMatch =
+			text.match(
+				/(?:add|insert)\s+(?:a\s+)?b-?roll\s+using\s+(.+?)\s+from\s+(\d+(?:\.\d+)?)s?\s+to\s+(\d+(?:\.\d+)?)s?\b/,
+			) ??
+			text.match(
+				/use\s+(.+?)\s+as\s+b-?roll\s+from\s+(\d+(?:\.\d+)?)s?\s+to\s+(\d+(?:\.\d+)?)s?\b/,
+			);
+		if (brollMatch) {
+			const [, rawAssetName, rawStartSeconds, rawEndSeconds] = brollMatch;
+			const matchedAsset = resolveMediaAssetByName({
+				query: rawAssetName,
+				mediaAssets: projectSummary.media_assets.map((asset) => ({
+					id: asset.asset_id,
+					name: asset.name,
+				})),
+			});
+			const startSeconds = Number(rawStartSeconds);
+			const endSeconds = Number(rawEndSeconds);
+
+			if (
+				matchedAsset &&
+				Number.isFinite(startSeconds) &&
+				Number.isFinite(endSeconds) &&
+				endSeconds > startSeconds
+			) {
+				ops.push({
+					type: "INSERT_BROLL",
+					media_id: matchedAsset.assetId,
+					start_ms: Math.round(startSeconds * 1000),
+					end_ms: Math.round(endSeconds * 1000),
+					lane: "overlay-primary",
+					fit_mode: "cover",
+					mute: true,
 				});
 			}
 		}

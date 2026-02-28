@@ -6,6 +6,7 @@ import {
 	revertTimelineDiffPatch,
 } from "@/lib/clipforge";
 import type { TimelineDiffOp, TimelineDiffOpSource } from "@/types/clipforge";
+import type { MediaAsset } from "@/types/assets";
 
 export class ApplyTimelineDiffOpsCommand extends Command {
 	private patch: ReturnType<typeof buildTimelineDiffPatch> | null = null;
@@ -23,8 +24,10 @@ export class ApplyTimelineDiffOpsCommand extends Command {
 		if (!activeProject) return;
 
 		if (!this.patch) {
+			const mediaAssets: MediaAsset[] = editor.media.getAssets();
 			this.patch = buildTimelineDiffPatch({
 				project: activeProject,
+				mediaAssets,
 				ops: this.ops,
 				source: this.source,
 			});

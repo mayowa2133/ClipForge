@@ -27,6 +27,7 @@ The prompt includes examples for:
 - pause removal (`REMOVE_SILENCE`)
 - caption style changes (`SET_CAPTION_STYLE`)
 - targeted cuts (`CUT_RANGE`)
+- imported-asset B-roll insertion (`INSERT_BROLL`)
 
 ## Validation Loop
 
@@ -35,3 +36,15 @@ The prompt includes examples for:
 3. `OpsValidator` validates structure/ids/ranges
 4. User reviews in chat panel
 5. Apply via OpenCut command manager
+
+## B-roll Prompt Rules (MVP2)
+
+- B-roll sources must already be imported into the media bin.
+- The prompt must name the imported clip explicitly.
+- The prompt must include an explicit timing window.
+
+Examples:
+
+- `add b-roll using beach.mp4 from 5s to 8s`
+- `insert b roll using office-cutaway.mov from 12s to 15s`
+- `use city.mp4 as b-roll from 3s to 6s`

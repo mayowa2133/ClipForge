@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { validateTimelineDiffOps } from "@/lib/clipforge";
 import { buildDefaultClipForgeProjectData } from "@/lib/clipforge/project-data";
+import type { MediaAsset } from "@/types/assets";
 import type { TProject } from "@/types/project";
 
 function buildProjectFixture(): TProject {
@@ -93,6 +94,32 @@ function buildProjectFixture(): TProject {
 	};
 }
 
+function buildMediaAssets(): MediaAsset[] {
+	return [
+		{
+			id: "media-1",
+			name: "primary.mp4",
+			type: "video",
+			duration: 12,
+			file: new File(["video"], "primary.mp4", { type: "video/mp4" }),
+		},
+		{
+			id: "broll-1",
+			name: "broll.mp4",
+			type: "video",
+			duration: 8,
+			file: new File(["video"], "broll.mp4", { type: "video/mp4" }),
+		},
+		{
+			id: "audio-1",
+			name: "music.mp3",
+			type: "audio",
+			duration: 8,
+			file: new File(["audio"], "music.mp3", { type: "audio/mpeg" }),
+		},
+	];
+}
+
 describe("validateTimelineDiffOps", () => {
 	test("accepts valid operation set", () => {
 		const project = buildProjectFixture();
@@ -161,5 +188,125 @@ describe("validateTimelineDiffOps", () => {
 
 		expect(result.valid).toBe(false);
 		expect(result.errors[0]?.code).toBe("trim_exceeds_source");
+	});
+
+	test("accepts valid INSERT_BROLL for imported visual asset", () => {
+		const project = buildProjectFixture();
+		const result = validateTimelineDiffOps({
+			project,
+			mediaAssets: buildMediaAssets(),
+			ops: [
+				{
+					type: "INSERT_BROLL",
+					media_id: "broll-1",
+					start_ms: 1000,
+					end_ms: 3000,
+					lane: "overlay-primary",
+					fit_mode: "cover",
+					mute: true,
+				},
+			],
+		});
+
+		expect(result.valid).toBe(true);
+		expect(result.ops[0]?.type).toBe("INSERT_BROLL");
+	});
+
+	test("rejects INSERT_BROLL for missing asset", () => {
+		const project = buildProjectFixture();
+		const result = validateTimelineDiffOps({
+			project,
+			mediaAssets: buildMediaAssets(),
+			ops: [
+				{
+					type: "INSERT_BROLL",
+					media_id: "missing",
+					start_ms: 1000,
+					end_ms: 3000,
+					lane: "overlay-primary",
+					fit_mode: "cover",
+					mute: true,
+				},
+			],
+		});
+
+		expect(result.valid).toBe(false);
+		expect(result.errors[0]?.code).toBe("insert_broll_missing_asset");
+	});
+
+	test("rejects INSERT_BROLL for audio assets", () => {
+		const project = buildProjectFixture();
+		const result = validateTimelineDiffOps({
+			project,
+			mediaAssets: buildMediaAssets(),
+			ops: [
+				{
+					type: "INSERT_BROLL",
+					media_id: "audio-1",
+					start_ms: 1000,
+					end_ms: 3000,
+					lane: "overlay-primary",
+					fit_mode: "cover",
+					mute: true,
+				},
+			],
+		});
+
+		expect(result.valid).toBe(false);
+		expect(result.errors[0]?.code).toBe("insert_broll_asset_not_visual");
+	});
+
+	test("rejects INSERT_BROLL with invalid ranges or enums", () => {
+		const project = buildProjectFixture();
+		const mediaAssets = buildMediaAssets();
+		const invalidRange = validateTimelineDiffOps({
+			project,
+			mediaAssets,
+			ops: [
+				{
+					type: "INSERT_BROLL",
+					media_id: "broll-1",
+					start_ms: 3000,
+					end_ms: 3000,
+					lane: "overlay-primary",
+					fit_mode: "cover",
+					mute: true,
+				},
+			],
+		});
+		const invalidLane = validateTimelineDiffOps({
+			project,
+			mediaAssets,
+			ops: [
+				{
+					type: "INSERT_BROLL",
+					media_id: "broll-1",
+					start_ms: 1000,
+					end_ms: 3000,
+					lane: "overlay-secondary",
+					fit_mode: "cover",
+					mute: true,
+				},
+			],
+		});
+		const invalidFitMode = validateTimelineDiffOps({
+			project,
+			mediaAssets,
+			ops: [
+				{
+					type: "INSERT_BROLL",
+					media_id: "broll-1",
+					start_ms: 1000,
+					end_ms: 3000,
+					lane: "overlay-primary",
+					fit_mode: "contain",
+					mute: true,
+				},
+			],
+		});
+
+		expect(invalidRange.errors[0]?.code).toBe("insert_broll_invalid_range");
+		expect(invalidLane.errors[0]?.code).toBe("insert_broll_invalid_lane");
+		expect(invalidFitMode.errors[0]?.code).toBe("insert_broll_invalid_fit_mode");
 	});
 });

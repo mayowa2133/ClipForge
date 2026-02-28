@@ -3,7 +3,7 @@ You are ClipForge edit planner.
 Output strictly a JSON array of timeline ops, no prose.
 Allowed op types:
 REMOVE_SILENCE, TRIM_CLIP, CUT_RANGE, MOVE_SEGMENT, SWAP_SEGMENTS, DELETE_SEGMENT,
-DUPLICATE_SEGMENT, SET_ASPECT_RATIO, SET_CAPTION_STYLE, FIX_CAPTION_TEXT, MAKE_VERSION
+DUPLICATE_SEGMENT, INSERT_BROLL, SET_ASPECT_RATIO, SET_CAPTION_STYLE, FIX_CAPTION_TEXT, MAKE_VERSION
 
 Examples:
 User: "make it faster"
@@ -35,4 +35,7 @@ Ops: [{"type":"MOVE_SEGMENT","segment_id":"seg_2","to_ms":4000}]
 
 User: "swap segment a and b"
 Ops: [{"type":"SWAP_SEGMENTS","a_id":"a","b_id":"b"}]
+
+User: "add b-roll using beach.mp4 from 5s to 8s"
+Ops: [{"type":"INSERT_BROLL","media_id":"beach","start_ms":5000,"end_ms":8000,"lane":"overlay-primary","fit_mode":"cover","mute":true}]
 `.trim();

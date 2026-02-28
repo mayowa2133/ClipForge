@@ -1,5 +1,7 @@
+import { calculateTotalDuration } from "@/lib/timeline";
 import type {
 	FixCaptionTextOp,
+	InsertBrollOp,
 	MakeVersionOp,
 	RemoveSilenceOp,
 	SetAspectRatioOp,
@@ -12,10 +14,13 @@ import type {
 	TrimClipOp,
 	TimelineDiffOp,
 } from "@/types/clipforge";
+import type { MediaAsset } from "@/types/assets";
 import type { TProject } from "@/types/project";
 import type { TimelineElement, TimelineTrack } from "@/types/timeline";
 import {
 	ALLOWED_ASPECT_RATIO_PRESETS,
+	ALLOWED_BROLL_FIT_MODES,
+	ALLOWED_BROLL_LANES,
 	ALLOWED_CAPTION_POSITIONS,
 	ALLOWED_HIGHLIGHT_MODES,
 	isKnownTimelineOpType,
@@ -41,9 +46,11 @@ export interface TimelineOpsValidationResult {
 export function validateTimelineDiffOps({
 	project,
 	ops,
+	mediaAssets = [],
 }: {
 	project: TProject;
 	ops: unknown[];
+	mediaAssets?: MediaAsset[];
 }): TimelineOpsValidationResult {
 	const errors: TimelineOpsValidationError[] = [];
 	const validatedOps: TimelineDiffOp[] = [];
@@ -67,12 +74,16 @@ export function validateTimelineDiffOps({
 		project.scenes[0];
 	const tracks = activeScene?.tracks ?? [];
 	const segmentLookup = buildSegmentLookup({ tracks });
+	const mediaAssetLookup = new Map(mediaAssets.map((asset) => [asset.id, asset]));
+	const totalDurationMs = Math.round(calculateTotalDuration({ tracks }) * 1000);
 
 	for (const [opIndex, candidate] of ops.entries()) {
 		const parseResult = validateSingleOp({
 			opIndex,
 			candidate,
 			segmentLookup,
+			mediaAssetLookup,
+			totalDurationMs,
 		});
 		if (!parseResult.ok) {
 			errors.push(...parseResult.errors);
@@ -93,10 +104,14 @@ function validateSingleOp({
 	opIndex,
 	candidate,
 	segmentLookup,
+	mediaAssetLookup,
+	totalDurationMs,
 }: {
 	opIndex: number;
 	candidate: unknown;
 	segmentLookup: Map<string, SegmentLocation>;
+	mediaAssetLookup: Map<string, MediaAsset>;
+	totalDurationMs: number;
 }):
 	| { ok: true; op: TimelineDiffOp }
 	| { ok: false; errors: TimelineOpsValidationError[] } {
@@ -141,6 +156,13 @@ function validateSingleOp({
 			return validateDeleteSegmentOp({ opIndex, candidate, segmentLookup });
 		case "DUPLICATE_SEGMENT":
 			return validateDuplicateSegmentOp({ opIndex, candidate, segmentLookup });
+		case "INSERT_BROLL":
+			return validateInsertBrollOp({
+				opIndex,
+				candidate,
+				mediaAssetLookup,
+				totalDurationMs,
+			});
 		case "SET_ASPECT_RATIO":
 			return validateSetAspectRatioOp({ opIndex, candidate });
 		case "SET_CAPTION_STYLE":
@@ -482,6 +504,135 @@ function validateDuplicateSegmentOp({
 		type: "DUPLICATE_SEGMENT",
 		segment_id: candidate.segment_id,
 		to_ms: candidate.to_ms,
+	};
+	return { ok: true, op };
+}
+
+function validateInsertBrollOp({
+	opIndex,
+	candidate,
+	mediaAssetLookup,
+	totalDurationMs,
+}: {
+	opIndex: number;
+	candidate: Record<string, unknown>;
+	mediaAssetLookup: Map<string, MediaAsset>;
+	totalDurationMs: number;
+}): { ok: true; op: TimelineDiffOp } | { ok: false; errors: TimelineOpsValidationError[] } {
+	if (
+		typeof candidate.media_id !== "string" ||
+		!isFiniteNumber(candidate.start_ms) ||
+		!isFiniteNumber(candidate.end_ms) ||
+		candidate.start_ms < 0 ||
+		candidate.end_ms <= candidate.start_ms
+	) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "insert_broll_invalid_range",
+					message:
+						"INSERT_BROLL requires media_id, start_ms>=0, and end_ms>start_ms.",
+				},
+			],
+		};
+	}
+
+	if (totalDurationMs > 0 && candidate.end_ms > totalDurationMs) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "insert_broll_invalid_range",
+					message:
+						"INSERT_BROLL must stay within the active timeline duration.",
+				},
+			],
+		};
+	}
+
+	const mediaAsset = mediaAssetLookup.get(candidate.media_id);
+	if (!mediaAsset) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "insert_broll_missing_asset",
+					message: `INSERT_BROLL media_id not found: ${candidate.media_id}`,
+				},
+			],
+		};
+	}
+
+	if (mediaAsset.type !== "video" && mediaAsset.type !== "image") {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "insert_broll_asset_not_visual",
+					message: "INSERT_BROLL requires an imported video or image asset.",
+				},
+			],
+		};
+	}
+
+	if (
+		typeof candidate.lane !== "string" ||
+		!ALLOWED_BROLL_LANES.has(candidate.lane)
+	) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "insert_broll_invalid_lane",
+					message: "INSERT_BROLL lane must be overlay-primary.",
+				},
+			],
+		};
+	}
+
+	if (
+		typeof candidate.fit_mode !== "string" ||
+		!ALLOWED_BROLL_FIT_MODES.has(candidate.fit_mode)
+	) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "insert_broll_invalid_fit_mode",
+					message: "INSERT_BROLL fit_mode must be cover.",
+				},
+			],
+		};
+	}
+
+	if (typeof candidate.mute !== "boolean") {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "insert_broll_invalid_mute",
+					message: "INSERT_BROLL mute must be a boolean.",
+				},
+			],
+		};
+	}
+
+	const op: InsertBrollOp = {
+		type: "INSERT_BROLL",
+		media_id: candidate.media_id,
+		start_ms: candidate.start_ms,
+		end_ms: candidate.end_ms,
+		lane: "overlay-primary",
+		fit_mode: "cover",
+		mute: candidate.mute,
 	};
 	return { ok: true, op };
 }

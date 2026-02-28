@@ -8,6 +8,12 @@ export interface ProjectSegmentSummary {
 	transcript_snippet: string;
 }
 
+export interface ProjectMediaAssetSummary {
+	asset_id: string;
+	name: string;
+	type: "video" | "image";
+}
+
 export interface ProjectSummary {
 	total_duration_s: number;
 	caption_style_id: string | null;
@@ -16,6 +22,7 @@ export interface ProjectSummary {
 		total_pause_ms: number;
 	};
 	segments: ProjectSegmentSummary[];
+	media_assets: ProjectMediaAssetSummary[];
 }
 
 export interface ChatOpsProvider {

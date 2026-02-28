@@ -35,6 +35,7 @@ export function ChatContent() {
 		try {
 			const projectSummary = buildProjectSummary({
 				project: activeProject,
+				mediaAssets: editor.media.getAssets(),
 			});
 			const ops = await providerRef.current.proposeEdits({
 				userText: prompt,

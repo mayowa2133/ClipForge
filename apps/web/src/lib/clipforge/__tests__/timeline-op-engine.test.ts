@@ -5,6 +5,7 @@ import {
 	buildTimelineDiffPatch,
 	revertTimelineDiffPatch,
 } from "@/lib/clipforge";
+import type { MediaAsset } from "@/types/assets";
 import type { TimelineDiffOp } from "@/types/clipforge";
 import type { TProject } from "@/types/project";
 
@@ -114,6 +115,32 @@ function buildProjectFixture(): TProject {
 	};
 }
 
+function buildMediaAssets(): MediaAsset[] {
+	return [
+		{
+			id: "media-a",
+			name: "A.mp4",
+			type: "video",
+			duration: 8,
+			file: new File(["video"], "A.mp4", { type: "video/mp4" }),
+		},
+		{
+			id: "media-b",
+			name: "B.mp4",
+			type: "video",
+			duration: 7,
+			file: new File(["video"], "B.mp4", { type: "video/mp4" }),
+		},
+		{
+			id: "broll-1",
+			name: "broll.mp4",
+			type: "video",
+			duration: 5,
+			file: new File(["video"], "broll.mp4", { type: "video/mp4" }),
+		},
+	];
+}
+
 describe("timeline op engine", () => {
 	test("builds deterministic patch and supports apply/revert", () => {
 		const project = buildProjectFixture();
@@ -173,5 +200,108 @@ describe("timeline op engine", () => {
 
 		const applied = applyTimelineDiffPatch({ patch });
 		expect(applied.metadata.duration).toBeLessThanOrEqual(8000);
+	});
+
+	test("INSERT_BROLL creates or reuses an overlay video track", () => {
+		const project = buildProjectFixture();
+		const mediaAssets = buildMediaAssets();
+		const patch = buildTimelineDiffPatch({
+			project,
+			mediaAssets,
+			ops: [
+				{
+					type: "INSERT_BROLL",
+					media_id: "broll-1",
+					start_ms: 2000,
+					end_ms: 5000,
+					lane: "overlay-primary",
+					fit_mode: "cover",
+					mute: true,
+				},
+			],
+			now: new Date("2026-02-01T02:00:00.000Z"),
+		});
+
+		const applied = applyTimelineDiffPatch({ patch });
+		const activeScene =
+			applied.scenes.find((scene) => scene.id === applied.currentSceneId) ??
+			applied.scenes[0];
+		const overlayTrack = activeScene.tracks.find(
+			(track) => track.type === "video" && track.isMain === false,
+		);
+
+		expect(overlayTrack?.type).toBe("video");
+		if (overlayTrack?.type === "video") {
+			expect(overlayTrack.elements).toHaveLength(1);
+			expect(overlayTrack.elements[0]).toMatchObject({
+				type: "video",
+				mediaId: "broll-1",
+				startTime: 2,
+				duration: 3,
+				muted: true,
+			});
+		}
+
+		expect(revertTimelineDiffPatch({ patch })).toEqual(patch.before);
+	});
+
+	test("INSERT_BROLL reuses an existing overlay track when windows do not overlap", () => {
+		const project = buildProjectFixture();
+		project.scenes[0].tracks.unshift({
+			id: "overlay-track",
+			type: "video",
+			name: "Overlay",
+			isMain: false,
+			muted: false,
+			hidden: false,
+			elements: [
+				{
+					id: "overlay-segment",
+					type: "video",
+					name: "Overlay Seed",
+					mediaId: "broll-1",
+					duration: 2,
+					startTime: 6,
+					trimStart: 0,
+					trimEnd: 0,
+					muted: true,
+					hidden: false,
+					transform: {
+						scale: 1,
+						position: { x: 0, y: 0 },
+						rotate: 0,
+					},
+					opacity: 1,
+				},
+			],
+		});
+
+		const patch = buildTimelineDiffPatch({
+			project,
+			mediaAssets: buildMediaAssets(),
+			ops: [
+				{
+					type: "INSERT_BROLL",
+					media_id: "broll-1",
+					start_ms: 2000,
+					end_ms: 4000,
+					lane: "overlay-primary",
+					fit_mode: "cover",
+					mute: true,
+				},
+			],
+		});
+		const applied = applyTimelineDiffPatch({ patch });
+		const activeScene =
+			applied.scenes.find((scene) => scene.id === applied.currentSceneId) ??
+			applied.scenes[0];
+		const overlayTracks = activeScene.tracks.filter(
+			(track) => track.type === "video" && track.isMain === false,
+		);
+
+		expect(overlayTracks).toHaveLength(1);
+		if (overlayTracks[0]?.type === "video") {
+			expect(overlayTracks[0].elements).toHaveLength(2);
+		}
 	});
 });

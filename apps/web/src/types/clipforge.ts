@@ -2,6 +2,8 @@ export type ClipForgeAspectRatioPreset = "9:16" | "1:1" | "16:9";
 
 export type CaptionHighlightMode = "none" | "line" | "word";
 export type CaptionPosition = "bottom" | "center";
+export type BrollLane = "overlay-primary";
+export type BrollFitMode = "cover";
 
 export interface TranscriptWord {
 	text: string;
@@ -44,6 +46,7 @@ export interface TimelineDiffBaseOp {
 		| "SWAP_SEGMENTS"
 		| "DELETE_SEGMENT"
 		| "DUPLICATE_SEGMENT"
+		| "INSERT_BROLL"
 		| "SET_ASPECT_RATIO"
 		| "SET_CAPTION_STYLE"
 		| "FIX_CAPTION_TEXT"
@@ -93,6 +96,16 @@ export interface DuplicateSegmentOp extends TimelineDiffBaseOp {
 	to_ms: number;
 }
 
+export interface InsertBrollOp extends TimelineDiffBaseOp {
+	type: "INSERT_BROLL";
+	media_id: string;
+	start_ms: number;
+	end_ms: number;
+	lane: BrollLane;
+	fit_mode: BrollFitMode;
+	mute: boolean;
+}
+
 export interface SetAspectRatioOp extends TimelineDiffBaseOp {
 	type: "SET_ASPECT_RATIO";
 	preset: ClipForgeAspectRatioPreset;
@@ -129,6 +142,7 @@ export type TimelineDiffOp =
 	| SwapSegmentsOp
 	| DeleteSegmentOp
 	| DuplicateSegmentOp
+	| InsertBrollOp
 	| SetAspectRatioOp
 	| SetCaptionStyleOp
 	| FixCaptionTextOp

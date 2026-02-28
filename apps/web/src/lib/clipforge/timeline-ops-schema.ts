@@ -8,6 +8,7 @@ export const ALLOWED_TIMELINE_OP_TYPES = new Set<TimelineDiffOp["type"]>([
 	"SWAP_SEGMENTS",
 	"DELETE_SEGMENT",
 	"DUPLICATE_SEGMENT",
+	"INSERT_BROLL",
 	"SET_ASPECT_RATIO",
 	"SET_CAPTION_STYLE",
 	"FIX_CAPTION_TEXT",
@@ -17,6 +18,8 @@ export const ALLOWED_TIMELINE_OP_TYPES = new Set<TimelineDiffOp["type"]>([
 export const ALLOWED_ASPECT_RATIO_PRESETS = new Set(["9:16", "1:1", "16:9"]);
 export const ALLOWED_CAPTION_POSITIONS = new Set(["bottom", "center"]);
 export const ALLOWED_HIGHLIGHT_MODES = new Set(["none", "line", "word"]);
+export const ALLOWED_BROLL_LANES = new Set(["overlay-primary"]);
+export const ALLOWED_BROLL_FIT_MODES = new Set(["cover"]);
 
 export function isKnownTimelineOpType(type: unknown): type is TimelineDiffOp["type"] {
 	return (

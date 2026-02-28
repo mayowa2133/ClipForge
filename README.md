@@ -104,7 +104,7 @@ NEXT_PUBLIC_ENABLE_CLIPFORGE_CHAT=true
 1. Go to `Assets` panel and click `Import Clips`.
 2. Click `Auto Edit TikTok` to build a 9:16 draft timeline.
 3. Open `Captions` tab and generate captions using `Clean Bottom` or `Bold Center`.
-4. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English, review JSON ops, then click `Apply`.
+4. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `add b-roll using beach.mp4 from 5s to 8s`), review JSON ops, then click `Apply`.
 5. Use normal OpenCut `Undo/Redo` shortcuts.
 6. Click `Export` for best-effort export (binary export if available, otherwise preview artifact JSON).
 

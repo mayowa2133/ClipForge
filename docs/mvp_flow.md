@@ -21,6 +21,10 @@
 5. Click `Apply` to validate + apply ops through OpenCut command stack.
 6. Use undo/redo normally and continue iterating.
 
+Example B-roll prompt:
+
+- `add b-roll using beach.mp4 from 5s to 8s`
+
 ## Flow C: Best-effort Export
 
 1. Click `Export` in the Assets panel.

@@ -4,6 +4,7 @@ import {
 	buildEmptyMediaMetadata,
 	detectSilenceRegions,
 	ensureClipForgeProjectData,
+	resolveMediaAssetByName,
 	validateTimelineDiffOps,
 } from "@/lib/clipforge";
 import {
@@ -164,7 +165,11 @@ export class ClipForgeManager {
 			};
 		}
 
-		return validateTimelineDiffOps({ project: activeProject, ops });
+		return validateTimelineDiffOps({
+			project: activeProject,
+			ops,
+			mediaAssets: this.editor.media.getAssets(),
+		});
 	}
 
 	applyOps({
@@ -207,6 +212,15 @@ export class ClipForgeManager {
 	}> {
 		return this.exportIntegration.exportBestEffort({
 			editor: this.editor,
+		});
+	}
+
+	resolveMediaAssetByName(
+		query: string,
+	): { assetId: string; matchedName: string } | null {
+		return resolveMediaAssetByName({
+			query,
+			mediaAssets: this.editor.media.getAssets(),
 		});
 	}
 

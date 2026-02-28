@@ -69,7 +69,13 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 			generated_at: new Date().toISOString(),
 			project_id: activeProject.metadata.id,
 			project_name: activeProject.metadata.name,
-			project_summary: buildProjectSummary({ project: activeProject }),
+			project_summary: buildProjectSummary({
+				project: activeProject,
+				mediaAssets:
+					typeof (editor as Partial<EditorCore>).media?.getAssets === "function"
+						? editor.media.getAssets()
+						: [],
+			}),
 			ops_audit_count: activeProject.clipforge?.opsAudit.length ?? 0,
 		};
 		const fileName = `clipforge_preview_artifact_${Date.now()}.json`;
