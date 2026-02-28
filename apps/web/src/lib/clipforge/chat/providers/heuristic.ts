@@ -12,6 +12,13 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 	}): Promise<TimelineDiffOp[]> {
 		const text = userText.toLowerCase();
 		const ops: TimelineDiffOp[] = [];
+		const brollMatch =
+			text.match(
+				/(?:add|insert)\s+(?:a\s+)?b-?roll\s+using\s+(.+?)\s+from\s+(\d+(?:\.\d+)?)s?\s+to\s+(\d+(?:\.\d+)?)s?\b/,
+			) ??
+			text.match(
+				/use\s+(.+?)\s+as\s+b-?roll\s+from\s+(\d+(?:\.\d+)?)s?\s+to\s+(\d+(?:\.\d+)?)s?\b/,
+			);
 
 		if (text.includes("remove more pause") || text.includes("remove pauses")) {
 			ops.push({
@@ -22,7 +29,10 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 			});
 		}
 
-		const durationMatch = text.match(/(\d+)\s?s(?:ec|econd)?s?\b/);
+		const durationMatch = brollMatch
+			? null
+			: text.match(/\b(\d+)\s?s(?:ec|econd)?s?\s+version\b/) ??
+				text.match(/\bmake\s+(?:it\s+)?(\d+)\s?s(?:ec|econd)?s?\b/);
 		if (durationMatch) {
 			const targetDuration = Number(durationMatch[1]);
 			if (targetDuration > 0) {
@@ -85,13 +95,6 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 			}
 		}
 
-		const brollMatch =
-			text.match(
-				/(?:add|insert)\s+(?:a\s+)?b-?roll\s+using\s+(.+?)\s+from\s+(\d+(?:\.\d+)?)s?\s+to\s+(\d+(?:\.\d+)?)s?\b/,
-			) ??
-			text.match(
-				/use\s+(.+?)\s+as\s+b-?roll\s+from\s+(\d+(?:\.\d+)?)s?\s+to\s+(\d+(?:\.\d+)?)s?\b/,
-			);
 		if (brollMatch) {
 			const [, rawAssetName, rawStartSeconds, rawEndSeconds] = brollMatch;
 			const matchedAsset = resolveMediaAssetByName({
