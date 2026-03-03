@@ -423,15 +423,6 @@ export function MediaView() {
 					>
 						Auto Edit TikTok
 					</Button>
-					<Button
-						variant="outline"
-						onClick={() => invokeAction("clipforge-export-best-effort")}
-						disabled={isProcessing}
-						size="sm"
-						className="items-center justify-center gap-1.5 ml-1.5"
-					>
-						Export
-					</Button>
 				</>
 			)}
 		</div>
