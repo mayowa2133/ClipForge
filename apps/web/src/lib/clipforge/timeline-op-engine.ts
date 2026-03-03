@@ -5,8 +5,10 @@ import {
 } from "@/constants/timeline-constants";
 import { calculateTotalDuration } from "@/lib/timeline";
 import { wouldElementOverlap } from "@/lib/timeline/element-utils";
-import { buildEmptyTrack } from "@/lib/timeline/track-utils";
+import { buildTextElement } from "@/lib/timeline/element-utils";
+import { buildEmptyTrack, getDefaultInsertIndexForTrack } from "@/lib/timeline/track-utils";
 import type {
+	AddTextOverlayOp,
 	CaptionStyleTemplate,
 	ClipForgeProjectData,
 	InsertBrollOp,
@@ -21,6 +23,7 @@ import type { TCanvasSize } from "@/types/project";
 import type { TProject } from "@/types/project";
 import type {
 	ImageElement,
+	TextElement,
 	TimelineElement,
 	TimelineTrack,
 	VideoElement,
@@ -118,6 +121,13 @@ export function applyTimelineDiffOpsToProject({
 				break;
 			case "CUT_RANGE":
 				applyCutRangeOp({ tracks: activeScene.tracks, startMs: op.start_ms, endMs: op.end_ms });
+				break;
+			case "ADD_TEXT_OVERLAY":
+				applyAddTextOverlayOp({
+					project: nextProject,
+					tracks: activeScene.tracks,
+					op,
+				});
 				break;
 			case "MOVE_SEGMENT":
 				applyMoveSegmentOp({
@@ -308,8 +318,94 @@ function applyCutRangeOp({
 			}
 		}
 
-			track.elements = nextElements as typeof track.elements;
+		track.elements = nextElements as typeof track.elements;
 	}
+}
+
+function applyAddTextOverlayOp({
+	project,
+	tracks,
+	op,
+}: {
+	project: TProject & { clipforge: ClipForgeProjectData };
+	tracks: TimelineTrack[];
+	op: AddTextOverlayOp;
+}): void {
+	let targetTrack = tracks.find(
+		(track): track is Extract<TimelineTrack, { type: "text" }> =>
+			track.type === "text" && track.hidden === false,
+	);
+
+	if (!targetTrack) {
+		const nextTrack = buildEmptyTrack({
+			id: generateUUID(),
+			type: "text",
+			name: "Text",
+		});
+		if (nextTrack.type !== "text") {
+			return;
+		}
+		const insertIndex = getDefaultInsertIndexForTrack({
+			tracks,
+			trackType: "text",
+		});
+		tracks.splice(insertIndex, 0, nextTrack);
+		targetTrack = nextTrack;
+	}
+
+	const verticalOffset =
+		op.position === "top"
+			? -project.settings.canvasSize.height * 0.32
+			: op.position === "bottom"
+				? project.settings.canvasSize.height * 0.32
+				: 0;
+	const backgroundColor =
+		op.outline || op.background ? "#000000cc" : "transparent";
+
+	const textElement = buildTextElement({
+		startTime: Math.max(0, op.start_ms / 1000),
+		raw: {
+			name: "Chat overlay",
+			content: op.text,
+			duration: Math.max(0.1, (op.end_ms - op.start_ms) / 1000),
+			fontSize: op.size,
+			fontFamily: op.font,
+			color: op.color,
+			background: {
+				color: backgroundColor,
+				cornerRadius: op.outline || op.background ? 16 : 0,
+				paddingX: op.outline || op.background ? 30 : 0,
+				paddingY: op.outline || op.background ? 18 : 0,
+				offsetX: 0,
+				offsetY: 0,
+			},
+			textAlign: "center",
+			fontWeight:
+				op.style_id === "bold-center" || op.position === "center"
+					? "bold"
+					: "normal",
+			fontStyle: "normal",
+			textDecoration: "none",
+			transform: {
+				...DEFAULT_TRANSFORM,
+				position: {
+					x: 0,
+					y: verticalOffset,
+				},
+			},
+			opacity: DEFAULT_OPACITY,
+			blendMode: DEFAULT_BLEND_MODE,
+		},
+	});
+	if (textElement.type !== "text") {
+		return;
+	}
+
+	targetTrack.elements.push({
+		...textElement,
+		id: generateUUID(),
+		hidden: false,
+	});
 }
 
 function applyMoveSegmentOp({

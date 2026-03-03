@@ -1,3 +1,4 @@
+import type { TimelineTranscriptWord } from "@/lib/clipforge/timeline-transcript";
 import type { TimelineDiffOp } from "@/types/clipforge";
 
 export interface ProjectSegmentSummary {
@@ -23,6 +24,7 @@ export interface ProjectSummary {
 	};
 	segments: ProjectSegmentSummary[];
 	media_assets: ProjectMediaAssetSummary[];
+	timeline_words: TimelineTranscriptWord[];
 }
 
 export interface ChatOpsProvider {

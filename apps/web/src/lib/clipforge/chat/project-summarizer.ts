@@ -1,5 +1,8 @@
 import { calculateTotalDuration } from "@/lib/timeline";
-import { buildTranscriptSnippetForElement } from "@/lib/clipforge/timeline-transcript";
+import {
+	buildTimelineTranscriptWords,
+	buildTranscriptSnippetForElement,
+} from "@/lib/clipforge/timeline-transcript";
 import type { MediaAsset } from "@/types/assets";
 import type { TProject } from "@/types/project";
 import type { ProjectSummary } from "./types";
@@ -73,5 +76,6 @@ export function buildProjectSummary({
 			.sort((a, b) => a.start_ms - b.start_ms)
 			.slice(0, 240),
 		media_assets: mediaAssetSummaries,
+		timeline_words: buildTimelineTranscriptWords({ project }).slice(0, 1500),
 	};
 }

@@ -212,6 +212,56 @@ describe("validateTimelineDiffOps", () => {
 		expect(result.ops[0]?.type).toBe("INSERT_BROLL");
 	});
 
+	test("accepts valid ADD_TEXT_OVERLAY", () => {
+		const project = buildProjectFixture();
+		const result = validateTimelineDiffOps({
+			project,
+			ops: [
+				{
+					type: "ADD_TEXT_OVERLAY",
+					text: "this",
+					start_ms: 1000,
+					end_ms: 3500,
+					position: "top",
+					style_id: "overlay-top",
+					font: "Arial",
+					size: 64,
+					color: "#FFFFFF",
+					outline: true,
+					background: false,
+				},
+			],
+		});
+
+		expect(result.valid).toBe(true);
+		expect(result.ops[0]?.type).toBe("ADD_TEXT_OVERLAY");
+	});
+
+	test("rejects invalid ADD_TEXT_OVERLAY fields", () => {
+		const project = buildProjectFixture();
+		const result = validateTimelineDiffOps({
+			project,
+			ops: [
+				{
+					type: "ADD_TEXT_OVERLAY",
+					text: "",
+					start_ms: 2000,
+					end_ms: 1000,
+					position: "left",
+					style_id: "unknown",
+					font: "",
+					size: 8,
+					color: "white",
+					outline: "yes",
+					background: false,
+				},
+			],
+		});
+
+		expect(result.valid).toBe(false);
+		expect(result.errors[0]?.code).toBe("invalid_add_text_overlay");
+	});
+
 	test("rejects INSERT_BROLL for missing asset", () => {
 		const project = buildProjectFixture();
 		const result = validateTimelineDiffOps({

@@ -7,6 +7,7 @@ ClipForge uses a deterministic `TimelineDiffOp[]` payload to represent edit inte
 - `REMOVE_SILENCE { threshold_ms, pad_ms, min_keep_ms }`
 - `TRIM_CLIP { clip_id, in_ms, out_ms }`
 - `CUT_RANGE { start_ms, end_ms }`
+- `ADD_TEXT_OVERLAY { text, start_ms, end_ms, position, style_id, font, size, color, outline, background }`
 - `MOVE_SEGMENT { segment_id, to_ms }`
 - `SWAP_SEGMENTS { a_id, b_id }`
 - `DELETE_SEGMENT { segment_id }`
@@ -21,6 +22,7 @@ ClipForge uses a deterministic `TimelineDiffOp[]` payload to represent edit inte
 
 - Any op type outside this allow-list is rejected.
 - Segment/clip ids must exist in active scene tracks.
+- `ADD_TEXT_OVERLAY` text, range, position, style id, and color are validated.
 - `INSERT_BROLL.media_id` must reference an imported visual asset (`video` or `image`).
 - Numeric ranges are validated (`start < end`, non-negative, etc.).
 - Caption and aspect-ratio enums are restricted.

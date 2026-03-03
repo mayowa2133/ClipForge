@@ -2,8 +2,14 @@ export type ClipForgeAspectRatioPreset = "9:16" | "1:1" | "16:9";
 
 export type CaptionHighlightMode = "none" | "line" | "word";
 export type CaptionPosition = "bottom" | "center";
+export type OverlayTextPosition = "top" | "center" | "bottom";
 export type BrollLane = "overlay-primary";
 export type BrollFitMode = "cover";
+export type TextOverlayStyleId =
+	| "clean-bottom"
+	| "bold-center"
+	| "overlay-top"
+	| "overlay-center";
 export type ClipForgeTranscriptionStatus =
 	| "idle"
 	| "processing"
@@ -56,6 +62,7 @@ export interface TimelineDiffBaseOp {
 		| "REMOVE_SILENCE"
 		| "TRIM_CLIP"
 		| "CUT_RANGE"
+		| "ADD_TEXT_OVERLAY"
 		| "MOVE_SEGMENT"
 		| "SWAP_SEGMENTS"
 		| "DELETE_SEGMENT"
@@ -85,6 +92,20 @@ export interface CutRangeOp extends TimelineDiffBaseOp {
 	type: "CUT_RANGE";
 	start_ms: number;
 	end_ms: number;
+}
+
+export interface AddTextOverlayOp extends TimelineDiffBaseOp {
+	type: "ADD_TEXT_OVERLAY";
+	text: string;
+	start_ms: number;
+	end_ms: number;
+	position: OverlayTextPosition;
+	style_id: TextOverlayStyleId;
+	font: string;
+	size: number;
+	color: string;
+	outline: boolean;
+	background: boolean;
 }
 
 export interface MoveSegmentOp extends TimelineDiffBaseOp {
@@ -152,6 +173,7 @@ export type TimelineDiffOp =
 	| RemoveSilenceOp
 	| TrimClipOp
 	| CutRangeOp
+	| AddTextOverlayOp
 	| MoveSegmentOp
 	| SwapSegmentsOp
 	| DeleteSegmentOp

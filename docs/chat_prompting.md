@@ -25,8 +25,9 @@ The prompt includes examples for:
 
 - pacing changes (`MAKE_VERSION`)
 - pause removal (`REMOVE_SILENCE`)
+- text overlays (`ADD_TEXT_OVERLAY`)
 - caption style changes (`SET_CAPTION_STYLE`)
-- targeted cuts (`CUT_RANGE`)
+- transcript-precise targeted cuts (`CUT_RANGE`)
 - imported-asset B-roll insertion (`INSERT_BROLL`)
 
 ## Validation Loop
@@ -34,6 +35,7 @@ The prompt includes examples for:
 1. Build project summary (`ProjectSummarizer`)
    - transcript snippets are now sourced from indexed clip metadata when available
 2. Provider proposes ops
+   - phrase-based cuts and B-roll now resolve against indexed timeline word timestamps
 3. `OpsValidator` validates structure/ids/ranges
 4. User reviews in chat panel
 5. Apply via OpenCut command manager
@@ -49,3 +51,31 @@ Examples:
 - `add b-roll using beach.mp4 from 5s to 8s`
 - `insert b roll using office-cutaway.mov from 12s to 15s`
 - `use city.mp4 as b-roll from 3s to 6s`
+
+Phrase-anchored B-roll is also supported:
+
+- `add b-roll using beach.mp4 when i say "summer" for 3s`
+
+## Text Overlay Prompt Rules (M14)
+
+- Text overlays must include quoted text content.
+- Position defaults to `top` when omitted.
+- Start time defaults to the beginning of the timeline when omitted.
+
+Examples:
+
+- `add text at the top that says "this"`
+- `put "watch this" at the top`
+- `add text "subscribe" at the bottom for 3s`
+
+## Phrase Cut Rules (M14)
+
+- Phrase cuts require an exact quoted phrase.
+- Matching is token-exact and uses indexed transcript words.
+- If the phrase appears multiple times, the first occurrence is used unless the prompt specifies `first time`, `second time`, or `third time`.
+
+Examples:
+
+- `cut where i say "bro"`
+- `remove the part where i say "bro"`
+- `cut where i say "bro" the second time`

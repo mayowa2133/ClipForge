@@ -10,6 +10,14 @@ import type {
 	VideoElement,
 } from "@/types/timeline";
 
+export interface TimelineTranscriptWord {
+	text: string;
+	start_ms: number;
+	end_ms: number;
+	segment_id: string;
+	media_id?: string;
+}
+
 export function buildTimelineTranscriptSegments({
 	project,
 }: {
@@ -100,6 +108,56 @@ export function buildTranscriptSnippetForElement({
 	});
 
 	return text.slice(0, maxChars);
+}
+
+export function buildTimelineTranscriptWords({
+	project,
+}: {
+	project: TProject;
+}): TimelineTranscriptWord[] {
+	const activeScene =
+		project.scenes.find((scene) => scene.id === project.currentSceneId) ??
+		project.scenes[0];
+	if (!activeScene) return [];
+
+	const words: TimelineTranscriptWord[] = [];
+
+	for (const track of activeScene.tracks) {
+		for (const element of track.elements) {
+			if (!isTranscriptBackedElement(element)) continue;
+			const metadata = project.clipforge?.mediaMetadataById[element.mediaId];
+			if (!metadata || metadata.words.length === 0) continue;
+
+			const visibleRange = getElementVisibleRangeMs({ element });
+			const overlappingWords = selectWordsForRange({
+				words: metadata.words,
+				start_ms: visibleRange.start_ms,
+				end_ms: visibleRange.end_ms,
+			});
+
+			for (const word of overlappingWords) {
+				const overlapStart = Math.max(word.start_ms, visibleRange.start_ms);
+				const overlapEnd = Math.min(word.end_ms, visibleRange.end_ms);
+				if (overlapEnd <= overlapStart) continue;
+
+				words.push({
+					text: word.text,
+					start_ms:
+						Math.round(element.startTime * 1000) +
+						(overlapStart - visibleRange.start_ms),
+					end_ms:
+						Math.round(element.startTime * 1000) +
+						(overlapEnd - visibleRange.start_ms),
+					segment_id: element.id,
+					media_id: element.mediaId,
+				});
+			}
+		}
+	}
+
+	return words
+		.filter((word) => word.end_ms > word.start_ms && word.text.trim().length > 0)
+		.sort((a, b) => a.start_ms - b.start_ms);
 }
 
 function selectTranscriptTextForRange({

@@ -87,5 +87,21 @@ describe("buildProjectSummary", () => {
 		const summary = buildProjectSummary({ project });
 
 		expect(summary.segments[0]?.transcript_snippet).toBe("hello world");
+		expect(summary.timeline_words).toEqual([
+			{
+				text: "hello",
+				start_ms: 0,
+				end_ms: 500,
+				segment_id: "clip-1",
+				media_id: "media-1",
+			},
+			{
+				text: "world",
+				start_ms: 500,
+				end_ms: 1000,
+				segment_id: "clip-1",
+				media_id: "media-1",
+			},
+		]);
 	});
 });

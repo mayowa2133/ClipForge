@@ -1,5 +1,6 @@
 import { calculateTotalDuration } from "@/lib/timeline";
 import type {
+	AddTextOverlayOp,
 	FixCaptionTextOp,
 	InsertBrollOp,
 	MakeVersionOp,
@@ -23,6 +24,8 @@ import {
 	ALLOWED_BROLL_LANES,
 	ALLOWED_CAPTION_POSITIONS,
 	ALLOWED_HIGHLIGHT_MODES,
+	ALLOWED_OVERLAY_TEXT_POSITIONS,
+	ALLOWED_TEXT_OVERLAY_STYLE_IDS,
 	isKnownTimelineOpType,
 } from "./timeline-ops-schema";
 
@@ -148,6 +151,12 @@ function validateSingleOp({
 			return validateTrimClipOp({ opIndex, candidate, segmentLookup });
 		case "CUT_RANGE":
 			return validateCutRangeOp({ opIndex, candidate });
+		case "ADD_TEXT_OVERLAY":
+			return validateAddTextOverlayOp({
+				opIndex,
+				candidate,
+				totalDurationMs,
+			});
 		case "MOVE_SEGMENT":
 			return validateMoveSegmentOp({ opIndex, candidate, segmentLookup });
 		case "SWAP_SEGMENTS":
@@ -305,6 +314,120 @@ function validateCutRangeOp({
 		type: "CUT_RANGE",
 		start_ms: candidate.start_ms,
 		end_ms: candidate.end_ms,
+	};
+	return { ok: true, op };
+}
+
+function validateAddTextOverlayOp({
+	opIndex,
+	candidate,
+	totalDurationMs,
+}: {
+	opIndex: number;
+	candidate: Record<string, unknown>;
+	totalDurationMs: number;
+}): { ok: true; op: TimelineDiffOp } | { ok: false; errors: TimelineOpsValidationError[] } {
+	if (
+		typeof candidate.text !== "string" ||
+		candidate.text.trim().length === 0 ||
+		candidate.text.trim().length > 140 ||
+		!isFiniteNumber(candidate.start_ms) ||
+		!isFiniteNumber(candidate.end_ms) ||
+		candidate.start_ms < 0 ||
+		candidate.end_ms <= candidate.start_ms ||
+		typeof candidate.position !== "string" ||
+		typeof candidate.style_id !== "string" ||
+		typeof candidate.font !== "string" ||
+		candidate.font.trim().length === 0 ||
+		!isFiniteNumber(candidate.size) ||
+		candidate.size < 24 ||
+		candidate.size > 160 ||
+		typeof candidate.color !== "string" ||
+		typeof candidate.outline !== "boolean" ||
+		typeof candidate.background !== "boolean"
+	) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_add_text_overlay",
+					message:
+						"ADD_TEXT_OVERLAY requires text, a valid range, position, style, font, size, color, outline, and background.",
+				},
+			],
+		};
+	}
+
+	if (
+		totalDurationMs > 0 &&
+		candidate.end_ms > totalDurationMs + 1000
+	) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "add_text_overlay_invalid_range",
+					message:
+						"ADD_TEXT_OVERLAY must stay within the timeline duration (plus a 1s tail allowance).",
+				},
+			],
+		};
+	}
+
+	if (!ALLOWED_OVERLAY_TEXT_POSITIONS.has(candidate.position)) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "add_text_overlay_invalid_style",
+					message: "ADD_TEXT_OVERLAY position must be top, center, or bottom.",
+				},
+			],
+		};
+	}
+
+	if (!ALLOWED_TEXT_OVERLAY_STYLE_IDS.has(candidate.style_id)) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "add_text_overlay_invalid_style",
+					message:
+						"ADD_TEXT_OVERLAY style_id must be one of clean-bottom, bold-center, overlay-top, or overlay-center.",
+				},
+			],
+		};
+	}
+
+	if (!isHexColor(candidate.color)) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "add_text_overlay_invalid_color",
+					message: "ADD_TEXT_OVERLAY color must be a #RRGGBB hex value.",
+				},
+			],
+		};
+	}
+
+	const op: AddTextOverlayOp = {
+		type: "ADD_TEXT_OVERLAY",
+		text: candidate.text.trim(),
+		start_ms: candidate.start_ms,
+		end_ms: candidate.end_ms,
+		position: candidate.position as AddTextOverlayOp["position"],
+		style_id: candidate.style_id as AddTextOverlayOp["style_id"],
+		font: candidate.font.trim(),
+		size: candidate.size,
+		color: candidate.color,
+		outline: candidate.outline,
+		background: candidate.background,
 	};
 	return { ok: true, op };
 }
@@ -852,4 +975,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isFiniteNumber(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value);
+}
+
+function isHexColor(value: string): boolean {
+	return /^#[0-9a-fA-F]{6}$/.test(value);
 }

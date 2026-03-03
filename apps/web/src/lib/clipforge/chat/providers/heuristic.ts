@@ -1,5 +1,12 @@
 import type { TimelineDiffOp } from "@/types/clipforge";
 import { resolveMediaAssetByName } from "@/lib/clipforge/media-resolver";
+import { resolvePhraseWindow, findPhraseOccurrences } from "@/lib/clipforge/phrase-resolution";
+import { getTextOverlayPresetForPosition } from "@/lib/clipforge/text-overlay-presets";
+import {
+	parsePhraseBrollRequest,
+	parsePhraseCutRequest,
+	parseTextOverlayRequest,
+} from "../prompt-parsers";
 import type { ChatOpsProvider } from "../types";
 
 export class HeuristicChatOpsProvider implements ChatOpsProvider {
@@ -12,13 +19,16 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 	}): Promise<TimelineDiffOp[]> {
 		const text = userText.toLowerCase();
 		const ops: TimelineDiffOp[] = [];
-		const brollMatch =
+		const timedBrollMatch =
 			text.match(
 				/(?:add|insert)\s+(?:a\s+)?b-?roll\s+using\s+(.+?)\s+from\s+(\d+(?:\.\d+)?)s?\s+to\s+(\d+(?:\.\d+)?)s?\b/,
 			) ??
 			text.match(
 				/use\s+(.+?)\s+as\s+b-?roll\s+from\s+(\d+(?:\.\d+)?)s?\s+to\s+(\d+(?:\.\d+)?)s?\b/,
 			);
+		const phraseBrollRequest = parsePhraseBrollRequest({ text: userText });
+		const textOverlayRequest = parseTextOverlayRequest({ text: userText });
+		const phraseCutRequest = parsePhraseCutRequest({ text: userText });
 
 		if (text.includes("remove more pause") || text.includes("remove pauses")) {
 			ops.push({
@@ -29,10 +39,11 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 			});
 		}
 
-		const durationMatch = brollMatch
-			? null
-			: text.match(/\b(\d+)\s?s(?:ec|econd)?s?\s+version\b/) ??
-				text.match(/\bmake\s+(?:it\s+)?(\d+)\s?s(?:ec|econd)?s?\b/);
+		const durationMatch =
+			timedBrollMatch || phraseBrollRequest
+				? null
+				: text.match(/\b(\d+)\s?s(?:ec|econd)?s?\s+version\b/) ??
+					text.match(/\bmake\s+(?:it\s+)?(\d+)\s?s(?:ec|econd)?s?\b/);
 		if (durationMatch) {
 			const targetDuration = Number(durationMatch[1]);
 			if (targetDuration > 0) {
@@ -45,7 +56,10 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 		} else if (text.includes("faster")) {
 			ops.push({
 				type: "MAKE_VERSION",
-				duration_target_s: Math.max(5, Math.round(projectSummary.total_duration_s * 0.82)),
+				duration_target_s: Math.max(
+					5,
+					Math.round(projectSummary.total_duration_s * 0.82),
+				),
 				aggressiveness: 0.65,
 			});
 		}
@@ -78,25 +92,42 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 			});
 		}
 
-		const cutWordMatch =
-			text.match(/cut where i say ['"]([^'"]+)['"]/) ??
-			text.match(/cut when i say ['"]([^'"]+)['"]/);
-		if (cutWordMatch) {
-			const term = cutWordMatch[1].trim().toLowerCase();
-			const matchedSegment = projectSummary.segments.find((segment) =>
-				segment.transcript_snippet.toLowerCase().includes(term),
-			);
-			if (matchedSegment) {
+		if (textOverlayRequest) {
+			const preset = getTextOverlayPresetForPosition({
+				position: textOverlayRequest.position,
+			});
+			ops.push({
+				type: "ADD_TEXT_OVERLAY",
+				text: textOverlayRequest.text,
+				start_ms: textOverlayRequest.start_ms,
+				end_ms: textOverlayRequest.end_ms,
+				position: textOverlayRequest.position,
+				style_id: preset.style_id,
+				font: preset.font,
+				size: preset.size,
+				color: preset.color,
+				outline: preset.outline,
+				background: preset.background,
+			});
+		}
+
+		if (phraseCutRequest) {
+			const window = resolvePhraseWindow({
+				projectSummary,
+				phrase: phraseCutRequest.phrase,
+				occurrence: phraseCutRequest.occurrence,
+			});
+			if (window) {
 				ops.push({
 					type: "CUT_RANGE",
-					start_ms: Math.max(0, matchedSegment.start_ms - 180),
-					end_ms: matchedSegment.end_ms + 120,
+					start_ms: window.start_ms,
+					end_ms: window.end_ms,
 				});
 			}
 		}
 
-		if (brollMatch) {
-			const [, rawAssetName, rawStartSeconds, rawEndSeconds] = brollMatch;
+		if (timedBrollMatch) {
+			const [, rawAssetName, rawStartSeconds, rawEndSeconds] = timedBrollMatch;
 			const matchedAsset = resolveMediaAssetByName({
 				query: rawAssetName,
 				mediaAssets: projectSummary.media_assets.map((asset) => ({
@@ -122,6 +153,52 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 					fit_mode: "cover",
 					mute: true,
 				});
+			}
+		}
+
+		if (phraseBrollRequest) {
+			const matchedAsset = resolveMediaAssetByName({
+				query: phraseBrollRequest.assetName,
+				mediaAssets: projectSummary.media_assets.map((asset) => ({
+					id: asset.asset_id,
+					name: asset.name,
+				})),
+			});
+			const matches = findPhraseOccurrences({
+				projectSummary,
+				phrase: phraseBrollRequest.phrase,
+			});
+			const phraseMatch = matches.find(
+				(match) => match.occurrence === phraseBrollRequest.occurrence,
+			);
+			const totalDurationMs = Math.round(projectSummary.total_duration_s * 1000);
+
+			if (matchedAsset && phraseMatch) {
+				const derivedDurationMs = Math.min(
+					4000,
+					Math.max(
+						2000,
+						phraseMatch.end_ms - phraseMatch.start_ms,
+					),
+				);
+				const durationMs =
+					phraseBrollRequest.duration_ms ?? derivedDurationMs;
+				const startMs = phraseMatch.start_ms;
+				const endMs =
+					totalDurationMs > 0
+						? Math.min(totalDurationMs, startMs + durationMs)
+						: startMs + durationMs;
+				if (endMs > startMs) {
+					ops.push({
+						type: "INSERT_BROLL",
+						media_id: matchedAsset.assetId,
+						start_ms: startMs,
+						end_ms: endMs,
+						lane: "overlay-primary",
+						fit_mode: "cover",
+						mute: true,
+					});
+				}
 			}
 		}
 

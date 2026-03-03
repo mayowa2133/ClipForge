@@ -12,4 +12,6 @@ export * from "./chat";
 export * from "./export-integration";
 export * from "./transcriber-registry";
 export * from "./timeline-transcript";
+export * from "./phrase-resolution";
+export * from "./text-overlay-presets";
 export * from "./transcribers/whisper-cli";

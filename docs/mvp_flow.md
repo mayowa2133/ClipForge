@@ -22,9 +22,12 @@
 5. Click `Apply` to validate + apply ops through OpenCut command stack.
 6. Use undo/redo normally and continue iterating.
 
-Example B-roll prompt:
+Example chat prompts:
 
 - `add b-roll using beach.mp4 from 5s to 8s`
+- `add b-roll using beach.mp4 when i say "summer" for 3s`
+- `add text at the top that says "this"`
+- `cut where i say "bro"`
 
 ## Flow C: Best-effort Export
 

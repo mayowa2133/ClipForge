@@ -124,7 +124,7 @@ The editor preview keeps the same DOM interaction overlays, but frame generation
 3. Use `Index All Clips`, `Index Clip`, or `Import SRT...` in the Assets panel if you need to re-run or override transcript metadata.
 4. Click `Auto Edit TikTok` to build a 9:16 draft timeline.
 5. Open `Captions` tab and generate captions using `Clean Bottom` or `Bold Center`.
-6. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `add b-roll using beach.mp4 from 5s to 8s`), review JSON ops, then click `Apply`.
+6. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `add text at the top that says "this"`, `cut where I say "bro"`, or `add b-roll using beach.mp4 when I say "summer" for 3s`), review JSON ops, then click `Apply`.
 7. Use normal OpenCut `Undo/Redo` shortcuts.
 8. Click `Export` for best-effort export (binary export if available, otherwise preview artifact JSON).
 

@@ -304,4 +304,49 @@ describe("timeline op engine", () => {
 			expect(overlayTracks[0].elements).toHaveLength(2);
 		}
 	});
+
+	test("ADD_TEXT_OVERLAY reuses an existing text track and remains undoable", () => {
+		const project = buildProjectFixture();
+		const patch = buildTimelineDiffPatch({
+			project,
+			ops: [
+				{
+					type: "ADD_TEXT_OVERLAY",
+					text: "this",
+					start_ms: 2000,
+					end_ms: 5000,
+					position: "top",
+					style_id: "overlay-top",
+					font: "Arial",
+					size: 64,
+					color: "#FFFFFF",
+					outline: true,
+					background: false,
+				},
+			],
+		});
+		const applied = applyTimelineDiffPatch({ patch });
+		const activeScene =
+			applied.scenes.find((scene) => scene.id === applied.currentSceneId) ??
+			applied.scenes[0];
+		const textTrack = activeScene.tracks.find((track) => track.type === "text");
+
+		expect(textTrack?.type).toBe("text");
+		if (textTrack?.type === "text") {
+			expect(textTrack.elements).toHaveLength(2);
+			expect(textTrack.elements[1]).toMatchObject({
+				content: "this",
+				startTime: 2,
+				duration: 3,
+				transform: {
+					position: {
+						x: 0,
+						y: -345.6,
+					},
+				},
+			});
+		}
+
+		expect(revertTimelineDiffPatch({ patch })).toEqual(patch.before);
+	});
 });

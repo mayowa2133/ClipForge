@@ -96,7 +96,7 @@ export function ChatContent() {
 					className="min-h-24 rounded-md border p-2 text-sm"
 					value={prompt}
 					onChange={(event) => setPrompt(event.target.value)}
-					placeholder='Try: "make it faster", "remove more pauses", "bold center captions"'
+					placeholder='Try: "add text at the top that says \"this\"", "cut where I say \"bro\"", "add b-roll using beach.mp4 when I say \"summer\" for 3s"'
 				/>
 				<Button onClick={handlePropose} disabled={isLoading}>
 					{isLoading ? "Proposing..." : "Propose Ops"}
