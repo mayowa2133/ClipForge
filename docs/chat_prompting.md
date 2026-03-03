@@ -6,14 +6,21 @@ Convert plain-English edit requests into deterministic `TimelineDiffOp[]` JSON.
 
 ## Provider Contract
 
-- Interface: `proposeEdits(userText, projectSummary) -> ops[]`
-- Output: JSON ops only (no prose)
+- Interface: `proposeEdits(userText, projectSummary) -> { ops, provider, fallbackUsed, warnings, rawText? }`
+- Output: JSON ops only (no prose) at the model layer, wrapped in planner metadata for the UI
 - Allowed ops are restricted to the ClipForge schema.
 
 ## Current Providers
 
-1. `HeuristicChatOpsProvider` (default local provider)
-2. `OpenAIChatOpsProvider` (optional; requires API key)
+1. `HeuristicChatOpsProvider`
+2. `OpenAIChatOpsProvider` (browser client for the internal `/api/clipforge/chat/plan` route)
+3. `FallbackChatOpsProvider` (`auto` mode: OpenAI first, heuristic fallback)
+
+Planner modes:
+
+- `auto` (default): prefers the server-backed model planner and falls back to heuristic planning if the model request fails or returns no usable ops
+- `heuristic`: uses deterministic local parsing only
+- `openai`: forces the server-backed model planner and fails closed
 
 ## Few-shot Prompt
 
@@ -35,10 +42,13 @@ The prompt includes examples for:
 1. Build project summary (`ProjectSummarizer`)
    - transcript snippets are now sourced from indexed clip metadata when available
 2. Provider proposes ops
+   - server-backed model output is parsed and structurally guarded before it reaches the UI
    - phrase-based cuts and B-roll now resolve against indexed timeline word timestamps
 3. `OpsValidator` validates structure/ids/ranges
 4. User reviews in chat panel
 5. Apply via OpenCut command manager
+
+The model layer never bypasses `OpsValidator`. Invalid model output is rejected before the normal validation pass, and `auto` mode falls back to the heuristic planner.
 
 ## B-roll Prompt Rules (MVP2)
 

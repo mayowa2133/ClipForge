@@ -1,13 +1,16 @@
 import type { TimelineDiffOp } from "@/types/clipforge";
 import { resolveMediaAssetByName } from "@/lib/clipforge/media-resolver";
-import { resolvePhraseWindow, findPhraseOccurrences } from "@/lib/clipforge/phrase-resolution";
+import {
+	resolvePhraseWindow,
+	findPhraseOccurrences,
+} from "@/lib/clipforge/phrase-resolution";
 import { getTextOverlayPresetForPosition } from "@/lib/clipforge/text-overlay-presets";
 import {
 	parsePhraseBrollRequest,
 	parsePhraseCutRequest,
 	parseTextOverlayRequest,
 } from "../prompt-parsers";
-import type { ChatOpsProvider } from "../types";
+import type { ChatOpsProvider, ChatProposalResult } from "../types";
 
 export class HeuristicChatOpsProvider implements ChatOpsProvider {
 	async proposeEdits({
@@ -16,7 +19,7 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 	}: {
 		userText: string;
 		projectSummary: Parameters<ChatOpsProvider["proposeEdits"]>[0]["projectSummary"];
-	}): Promise<TimelineDiffOp[]> {
+	}): Promise<ChatProposalResult> {
 		const text = userText.toLowerCase();
 		const ops: TimelineDiffOp[] = [];
 		const timedBrollMatch =
@@ -202,6 +205,12 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 			}
 		}
 
-		return ops;
+		return {
+			ops,
+			provider: "heuristic",
+			fallbackUsed: false,
+			warnings: [],
+			rawText: null,
+		};
 	}
 }

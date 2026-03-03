@@ -17,8 +17,10 @@
 
 1. Open the right-side `Chat` panel from the editor header toggle (or `Ctrl/Cmd + /`).
 2. Enter a plain-English request (for example: `make it faster`).
-3. Chat provider proposes deterministic JSON timeline ops.
+3. Chat planner proposes deterministic JSON timeline ops.
+   - In `auto` mode, ClipForge prefers the server-backed model planner and falls back to the heuristic planner if needed.
 4. Proposed ops are shown in review UI.
+   - The review UI shows which planner produced the result and any fallback warnings.
 5. Click `Apply` to validate + apply ops through OpenCut command stack.
 6. Use undo/redo normally and continue iterating.
 

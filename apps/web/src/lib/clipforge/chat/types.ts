@@ -27,6 +27,17 @@ export interface ProjectSummary {
 	timeline_words: TimelineTranscriptWord[];
 }
 
+export type ChatPlannerKind = "heuristic" | "openai";
+export type ChatPlannerMode = "auto" | "heuristic" | "openai";
+
+export interface ChatProposalResult {
+	ops: TimelineDiffOp[];
+	provider: ChatPlannerKind;
+	fallbackUsed: boolean;
+	warnings: string[];
+	rawText?: string | null;
+}
+
 export interface ChatOpsProvider {
 	proposeEdits({
 		userText,
@@ -34,5 +45,5 @@ export interface ChatOpsProvider {
 	}: {
 		userText: string;
 		projectSummary: ProjectSummary;
-	}): Promise<TimelineDiffOp[]>;
+	}): Promise<ChatProposalResult>;
 }

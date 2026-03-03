@@ -97,7 +97,22 @@ Set the following in `apps/web/.env.local`:
 ```bash
 NEXT_PUBLIC_ENABLE_CLIPFORGE_AUTO_EDIT=true
 NEXT_PUBLIC_ENABLE_CLIPFORGE_CHAT=true
+NEXT_PUBLIC_CLIPFORGE_CHAT_PLANNER_MODE=auto
 ```
+
+Optional server-backed model planner:
+
+```bash
+OPENAI_API_KEY=your_openai_api_key
+CLIPFORGE_OPENAI_MODEL=gpt-4.1-mini
+CLIPFORGE_OPENAI_ENDPOINT=https://api.openai.com/v1/responses
+```
+
+Planner modes:
+
+- `auto` (default): prefer the model planner, fall back to heuristic planning if the model is unavailable or returns invalid ops
+- `heuristic`: force deterministic local parsing only
+- `openai`: force the model planner and fail closed if it is unavailable
 
 Optional local Whisper CLI indexing:
 
@@ -124,7 +139,7 @@ The editor preview keeps the same DOM interaction overlays, but frame generation
 3. Use `Index All Clips`, `Index Clip`, or `Import SRT...` in the Assets panel if you need to re-run or override transcript metadata.
 4. Click `Auto Edit TikTok` to build a 9:16 draft timeline.
 5. Open `Captions` tab and generate captions using `Clean Bottom` or `Bold Center`.
-6. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `add text at the top that says "this"`, `cut where I say "bro"`, or `add b-roll using beach.mp4 when I say "summer" for 3s`), review JSON ops, then click `Apply`.
+6. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `add text at the top that says "this"`, `cut where I say "bro"`, or `add b-roll using beach.mp4 when I say "summer" for 3s`), review JSON ops, confirm which planner was used, then click `Apply`.
 7. Use normal OpenCut `Undo/Redo` shortcuts.
 8. Click `Export` for best-effort export (binary export if available, otherwise preview artifact JSON).
 

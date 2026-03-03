@@ -1,25 +1,42 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { ENABLE_CLIPFORGE_CHAT } from "@/constants/feature-flags";
+import {
+	CLIPFORGE_CHAT_PLANNER_MODE,
+	ENABLE_CLIPFORGE_CHAT,
+} from "@/constants/feature-flags";
 import { useEditor } from "@/hooks/use-editor";
 import {
 	buildProjectSummary,
-	HeuristicChatOpsProvider,
+	createChatOpsProvider,
 	type TimelineOpsValidationError,
 } from "@/lib/clipforge";
 import type { TimelineDiffOp } from "@/types/clipforge";
+import type { ChatProposalResult } from "@/lib/clipforge/chat";
+
+interface ProposalMeta {
+	provider: ChatProposalResult["provider"];
+	fallbackUsed: boolean;
+	warnings: string[];
+}
 
 export function ChatContent() {
 	const editor = useEditor();
-	const providerRef = useRef(new HeuristicChatOpsProvider());
+	const provider = useMemo(
+		() => createChatOpsProvider({ mode: CLIPFORGE_CHAT_PLANNER_MODE }),
+		[],
+	);
+	const activeRequestIdRef = useRef(0);
 	const [prompt, setPrompt] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
 	const [proposedOps, setProposedOps] = useState<TimelineDiffOp[]>([]);
 	const [errors, setErrors] = useState<TimelineOpsValidationError[]>([]);
+	const [proposalMeta, setProposalMeta] = useState<ProposalMeta | null>(null);
 
 	const handlePropose = async () => {
+		if (isLoading) return;
+
 		const activeProject = editor.project.getActive();
 		if (!activeProject) {
 			toast.error("No active project.");
@@ -30,34 +47,53 @@ export function ChatContent() {
 			return;
 		}
 
+		const requestId = activeRequestIdRef.current + 1;
+		activeRequestIdRef.current = requestId;
 		setIsLoading(true);
 		setErrors([]);
+		setProposalMeta(null);
 		try {
 			const projectSummary = buildProjectSummary({
 				project: activeProject,
 				mediaAssets: editor.media.getAssets(),
 			});
-			const ops = await providerRef.current.proposeEdits({
+			const result = await provider.proposeEdits({
 				userText: prompt,
 				projectSummary,
 			});
+			if (activeRequestIdRef.current !== requestId) {
+				return;
+			}
 
-			if (ops.length === 0) {
+			setProposalMeta({
+				provider: result.provider,
+				fallbackUsed: result.fallbackUsed,
+				warnings: result.warnings,
+			});
+
+			if (result.ops.length === 0) {
 				setProposedOps([]);
+				setErrors([]);
 				toast.error("No deterministic ops could be generated.");
 				return;
 			}
 
-			const validation = editor.clipforge.validateOps({ ops });
+			const validation = editor.clipforge.validateOps({ ops: result.ops });
 			setProposedOps(validation.ops);
 			setErrors(validation.errors);
 		} catch (error) {
+			if (activeRequestIdRef.current !== requestId) {
+				return;
+			}
+			setProposalMeta(null);
 			toast.error("Failed to propose edits.", {
 				description:
 					error instanceof Error ? error.message : "Please try again.",
 			});
 		} finally {
-			setIsLoading(false);
+			if (activeRequestIdRef.current === requestId) {
+				setIsLoading(false);
+			}
 		}
 	};
 
@@ -78,6 +114,7 @@ export function ChatContent() {
 		setPrompt("");
 		setProposedOps([]);
 		setErrors([]);
+		setProposalMeta(null);
 	};
 
 	if (!ENABLE_CLIPFORGE_CHAT) {
@@ -103,8 +140,25 @@ export function ChatContent() {
 				</Button>
 			</div>
 
+			{proposalMeta && proposalMeta.warnings.length > 0 && (
+				<div className="rounded-md border border-amber-300 bg-amber-50 p-3">
+					<p className="mb-1 text-sm font-medium">Planner warnings</p>
+					<ul className="list-disc space-y-1 pl-4 text-xs">
+						{proposalMeta.warnings.map((warning, index) => (
+							<li key={`${warning}-${index}`}>{warning}</li>
+						))}
+					</ul>
+				</div>
+			)}
+
 			{proposedOps.length > 0 && (
 				<div className="flex flex-1 flex-col gap-2">
+					{proposalMeta && (
+						<p className="text-muted-foreground text-xs">
+							Planned by: {proposalMeta.provider === "openai" ? "OpenAI" : "Heuristic"}
+							{proposalMeta.fallbackUsed ? " (fallback)" : ""}
+						</p>
+					)}
 					<Label>Proposed JSON Ops</Label>
 					<pre className="bg-muted max-h-64 overflow-auto rounded-md border p-3 text-xs">
 						{JSON.stringify(proposedOps, null, 2)}
@@ -118,6 +172,7 @@ export function ChatContent() {
 							onClick={() => {
 								setProposedOps([]);
 								setErrors([]);
+								setProposalMeta(null);
 							}}
 						>
 							Cancel

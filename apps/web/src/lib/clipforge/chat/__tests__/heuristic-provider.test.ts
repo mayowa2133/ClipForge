@@ -36,24 +36,28 @@ function buildSummary() {
 describe("HeuristicChatOpsProvider", () => {
 	test("returns deterministic ops for common edit intents", async () => {
 		const provider = new HeuristicChatOpsProvider();
-		const ops = await provider.proposeEdits({
+		const result = await provider.proposeEdits({
 			userText: "make it faster and remove more pauses and use bold center captions",
 			projectSummary: buildSummary(),
 		});
+		const ops = result.ops;
 
 		expect(ops.map((op) => op.type)).toEqual([
 			"REMOVE_SILENCE",
 			"MAKE_VERSION",
 			"SET_CAPTION_STYLE",
 		]);
+		expect(result.provider).toBe("heuristic");
+		expect(result.fallbackUsed).toBe(false);
 	});
 
 	test("creates ADD_TEXT_OVERLAY for overlay prompts", async () => {
 		const provider = new HeuristicChatOpsProvider();
-		const ops = await provider.proposeEdits({
+		const result = await provider.proposeEdits({
 			userText: 'add text at the top that says "this"',
 			projectSummary: buildSummary(),
 		});
+		const ops = result.ops;
 
 		expect(ops).toEqual([
 			{
@@ -74,10 +78,11 @@ describe("HeuristicChatOpsProvider", () => {
 
 	test("creates precise CUT_RANGE from phrase matches", async () => {
 		const provider = new HeuristicChatOpsProvider();
-		const ops = await provider.proposeEdits({
+		const result = await provider.proposeEdits({
 			userText: "cut where i say 'bro'",
 			projectSummary: buildSummary(),
 		});
+		const ops = result.ops;
 
 		expect(ops).toEqual([
 			{
@@ -90,10 +95,11 @@ describe("HeuristicChatOpsProvider", () => {
 
 	test("creates INSERT_BROLL when a named asset and timing are provided", async () => {
 		const provider = new HeuristicChatOpsProvider();
-		const ops = await provider.proposeEdits({
+		const result = await provider.proposeEdits({
 			userText: "add b-roll using beach.mp4 from 5s to 8s",
 			projectSummary: buildSummary(),
 		});
+		const ops = result.ops;
 
 		expect(ops).toEqual([
 			{
@@ -110,10 +116,11 @@ describe("HeuristicChatOpsProvider", () => {
 
 	test("creates phrase-anchored INSERT_BROLL from transcript timing", async () => {
 		const provider = new HeuristicChatOpsProvider();
-		const ops = await provider.proposeEdits({
+		const result = await provider.proposeEdits({
 			userText: 'add b-roll using beach.mp4 when i say "summer" for 3s',
 			projectSummary: buildSummary(),
 		});
+		const ops = result.ops;
 
 		expect(ops).toEqual([
 			{
@@ -143,8 +150,8 @@ describe("HeuristicChatOpsProvider", () => {
 			projectSummary: buildSummary(),
 		});
 
-		expect(missingTiming).toEqual([]);
-		expect(missingAsset).toEqual([]);
-		expect(missingQuote).toEqual([]);
+		expect(missingTiming.ops).toEqual([]);
+		expect(missingAsset.ops).toEqual([]);
+		expect(missingQuote.ops).toEqual([]);
 	});
 });

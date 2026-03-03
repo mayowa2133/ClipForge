@@ -1,6 +1,10 @@
 export const CHAT_OPS_FEW_SHOT_PROMPT = `
 You are ClipForge edit planner.
-Output strictly a JSON array of timeline ops, no prose.
+Output only a JSON array of timeline ops.
+Do not include Markdown.
+Do not include prose or explanations.
+Use only the allowed op types listed below.
+If the request is unsupported or uncertain, output [].
 Allowed op types:
 REMOVE_SILENCE, TRIM_CLIP, CUT_RANGE, ADD_TEXT_OVERLAY, MOVE_SEGMENT, SWAP_SEGMENTS, DELETE_SEGMENT,
 DUPLICATE_SEGMENT, INSERT_BROLL, SET_ASPECT_RATIO, SET_CAPTION_STYLE, FIX_CAPTION_TEXT, MAKE_VERSION
@@ -44,4 +48,16 @@ Ops: [{"type":"INSERT_BROLL","media_id":"beach","start_ms":5000,"end_ms":8000,"l
 
 User: "add b-roll using beach.mp4 when I say \"summer\" for 3s"
 Ops: [{"type":"INSERT_BROLL","media_id":"beach","start_ms":2200,"end_ms":5200,"lane":"overlay-primary","fit_mode":"cover","mute":true}]
+
+User: "remove the part where I say \"bro\""
+Ops: [{"type":"CUT_RANGE","start_ms":1080,"end_ms":1570}]
+
+User: "put \"watch this\" at the top"
+Ops: [{"type":"ADD_TEXT_OVERLAY","text":"watch this","start_ms":0,"end_ms":2500,"position":"top","style_id":"overlay-top","font":"Arial","size":64,"color":"#FFFFFF","outline":true,"background":false}]
+
+User: "use beach.mp4 as b-roll when I say \"summer\""
+Ops: [{"type":"INSERT_BROLL","media_id":"beach","start_ms":2200,"end_ms":4600,"lane":"overlay-primary","fit_mode":"cover","mute":true}]
+
+User: "add a cinematic zoom effect"
+Ops: []
 `.trim();

@@ -116,10 +116,11 @@ describe("ClipForge integration flow", () => {
 
 		const provider = new HeuristicChatOpsProvider();
 		const summary = buildProjectSummary({ project: autoDraft });
-		const chatOps = await provider.proposeEdits({
+		const result = await provider.proposeEdits({
 			userText: "make it faster and use clean bottom subtitles",
 			projectSummary: summary,
 		});
+		const chatOps = result.ops;
 
 		const finalProject = applyTimelineDiffOpsToProject({
 			project: autoDraft,
@@ -167,10 +168,11 @@ describe("ClipForge integration flow", () => {
 		];
 		const provider = new HeuristicChatOpsProvider();
 		const summary = buildProjectSummary({ project, mediaAssets });
-		const chatOps = await provider.proposeEdits({
+		const result = await provider.proposeEdits({
 			userText: "add b-roll using broll from 2s to 5s",
 			projectSummary: summary,
 		});
+		const chatOps = result.ops;
 
 		expect(chatOps).toHaveLength(1);
 		expect(chatOps[0]?.type).toBe("INSERT_BROLL");
