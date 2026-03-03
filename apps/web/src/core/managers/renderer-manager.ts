@@ -4,6 +4,7 @@ import { buildRenderGraph } from "@/services/renderer/scene-builder";
 import { SceneExporter } from "@/services/renderer/scene-exporter";
 import { RenderAssetRegistry } from "@/services/renderer/render-asset-registry";
 import type { RenderGraph } from "@/services/renderer/types";
+import { BinaryCanvasBackend } from "@/services/renderer/backends/binary-canvas-backend";
 import { BinaryPreviewBackend } from "@/services/renderer/backends/binary-preview-backend";
 import { LegacyCanvasBackend } from "@/services/renderer/backends/legacy-canvas-backend";
 import type { RenderBackend } from "@/services/renderer/backends/types";
@@ -158,7 +159,7 @@ export class RendererManager {
 			});
 			this.assetRegistry.setAssets(mediaAssets);
 
-			const backend = this.createBackend();
+			const backend = this.createExportBackend();
 			const exporter = new SceneExporter({
 				width: canvasSize.width,
 				height: canvasSize.height,
@@ -219,6 +220,31 @@ export class RendererManager {
 			return new BinaryPreviewBackend(this.assetRegistry);
 		}
 		return new LegacyCanvasBackend(this.assetRegistry);
+	}
+
+	private createExportBackend(): RenderBackend {
+		const binaryBackend = new BinaryCanvasBackend(this.assetRegistry);
+		const legacyBackend = new LegacyCanvasBackend(this.assetRegistry);
+		return {
+			renderFrame: async (request) => {
+				try {
+					return await binaryBackend.renderFrame(request);
+				} catch (error) {
+					if (process.env.NODE_ENV !== "production") {
+						console.warn(
+							`[RendererManager] Falling back to legacy export backend: ${
+								error instanceof Error ? error.message : "unknown error"
+							}`,
+						);
+					}
+					return legacyBackend.renderFrame(request);
+				}
+			},
+			dispose: () => {
+				binaryBackend.dispose();
+				legacyBackend.dispose();
+			},
+		};
 	}
 
 	private notify(): void {

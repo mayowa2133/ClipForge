@@ -37,6 +37,10 @@ export class RenderAssetRegistry {
 		return this.assets.get(mediaId) ?? null;
 	}
 
+	getAssets(): RenderAssetDescriptor[] {
+		return Array.from(this.assets.values());
+	}
+
 	getVersion(): number {
 		return this.version;
 	}

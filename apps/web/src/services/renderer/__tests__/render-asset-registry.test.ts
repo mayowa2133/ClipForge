@@ -17,8 +17,6 @@ function buildMediaAsset({
 		id,
 		name,
 		type,
-		size: 1,
-		lastModified: 0,
 		file: new File(["x"], name, { type: "application/octet-stream" }),
 		url,
 		width: 1920,
@@ -53,6 +51,7 @@ describe("RenderAssetRegistry", () => {
 			duration: 5,
 			thumbnailUrl: "blob:clip.thumb",
 		});
+		expect(registry.getAssets()).toHaveLength(1);
 
 		registry.setAssets([
 			buildMediaAsset({
@@ -66,5 +65,6 @@ describe("RenderAssetRegistry", () => {
 		expect(registry.getVersion()).toBe(2);
 		expect(registry.getAsset("media-1")).toBeNull();
 		expect(registry.getAsset("media-2")?.type).toBe("image");
+		expect(registry.getAssets().map((asset) => asset.id)).toEqual(["media-2"]);
 	});
 });

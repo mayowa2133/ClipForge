@@ -1,9 +1,13 @@
 /// <reference lib="webworker" />
 
-import { clearRenderSurface, drawBlurBackground } from "./helpers/render-background";
-import { renderTextLayer } from "./helpers/render-text-layer";
-import { drawVisualToContext } from "./helpers/render-visual";
+import type { RenderAssetDescriptor } from "@/services/renderer/render-asset-registry";
 import type { RenderGraph } from "@/services/renderer/types";
+import { WorkerVideoFrameProvider } from "@/services/renderer/worker-video-frame-provider";
+import {
+	clearResolvedSourceCache,
+	renderGraphToContext,
+	type ResolvedRenderGraph,
+} from "./helpers/render-graph-to-context";
 
 type WorkerImageLayer = {
 	id: string;
@@ -25,26 +29,33 @@ type WorkerImageLayer = {
 
 type WorkerTextLayer = Extract<RenderGraph["layers"][number], { kind: "text" }>;
 
-type WorkerRenderGraph = Omit<RenderGraph, "layers"> & {
-	layers: Array<WorkerImageLayer | WorkerTextLayer>;
+type WorkerVideoLayer = Extract<RenderGraph["layers"][number], { kind: "video" }>;
+
+export type WorkerRenderGraph = Omit<ResolvedRenderGraph, "layers"> & {
+	layers: Array<WorkerVideoLayer | WorkerImageLayer | WorkerTextLayer>;
 };
+
+export type WorkerRenderAssetDescriptor = RenderAssetDescriptor;
 
 export type RendererWorkerRequest =
 	| { type: "init"; width: number; height: number }
+	| { type: "set-assets"; assets: WorkerRenderAssetDescriptor[]; version: number }
 	| { type: "render"; frame: number; time: number; graph: WorkerRenderGraph }
 	| { type: "dispose" };
 
 export type RendererWorkerResponse =
 	| { type: "init-complete" }
+	| { type: "assets-ready"; version: number }
 	| { type: "render-complete"; frame: number; time: number; bitmap: ImageBitmap }
 	| { type: "render-error"; frame: number; time: number; error: string };
 
-const imageCache = new Map<string, Promise<{ source: CanvasImageSource; width: number; height: number }>>();
 let canvas: OffscreenCanvas | null = null;
 let ctx: OffscreenCanvasRenderingContext2D | null = null;
+const videoFrameProvider = new WorkerVideoFrameProvider();
 
 self.onmessage = async (event: MessageEvent<RendererWorkerRequest>) => {
 	const message = event.data;
+
 	if (message.type === "init") {
 		canvas = new OffscreenCanvas(message.width, message.height);
 		ctx = canvas.getContext("2d");
@@ -52,8 +63,19 @@ self.onmessage = async (event: MessageEvent<RendererWorkerRequest>) => {
 		return;
 	}
 
+	if (message.type === "set-assets") {
+		videoFrameProvider.setAssets(message.assets);
+		clearResolvedSourceCache();
+		self.postMessage({
+			type: "assets-ready",
+			version: message.version,
+		} satisfies RendererWorkerResponse);
+		return;
+	}
+
 	if (message.type === "dispose") {
-		imageCache.clear();
+		videoFrameProvider.dispose();
+		clearResolvedSourceCache();
 		canvas = null;
 		ctx = null;
 		return;
@@ -79,14 +101,16 @@ self.onmessage = async (event: MessageEvent<RendererWorkerRequest>) => {
 				message.graph.canvas.height,
 			);
 			ctx = canvas.getContext("2d");
-			if (!ctx) throw new Error("Failed to get worker render context");
+			if (!ctx) {
+				throw new Error("Failed to get worker render context");
+			}
 		}
 
-		await renderGraphToCanvas({
+		await renderGraphToContext({
 			graph: message.graph,
 			time: message.time,
-			canvas,
 			ctx,
+			videoFrameProvider,
 		});
 		const bitmap = canvas.transferToImageBitmap();
 		self.postMessage(
@@ -107,123 +131,3 @@ self.onmessage = async (event: MessageEvent<RendererWorkerRequest>) => {
 		} satisfies RendererWorkerResponse);
 	}
 };
-
-async function renderGraphToCanvas({
-	graph,
-	time,
-	canvas,
-	ctx,
-}: {
-	graph: WorkerRenderGraph;
-	time: number;
-	canvas: OffscreenCanvas;
-	ctx: OffscreenCanvasRenderingContext2D;
-}) {
-	clearRenderSurface({ ctx, graph });
-	const visibleLayers = graph.layers
-		.filter((layer) => !layer.hidden)
-		.sort((a, b) => a.zIndex - b.zIndex);
-
-	if (graph.background.type === "blur") {
-		const contentCanvas = new OffscreenCanvas(graph.canvas.width, graph.canvas.height);
-		const contentCtx = contentCanvas.getContext("2d");
-		if (!contentCtx) throw new Error("Failed to get offscreen content context");
-		await renderLayers({ ctx: contentCtx, layers: visibleLayers, time, width: graph.canvas.width, height: graph.canvas.height });
-		drawBlurBackground({
-			targetCtx: ctx,
-			source: contentCanvas,
-			blurIntensity: graph.background.blurIntensity,
-			width: graph.canvas.width,
-			height: graph.canvas.height,
-		});
-		ctx.drawImage(contentCanvas, 0, 0);
-		return;
-	}
-
-	await renderLayers({ ctx, layers: visibleLayers, time, width: graph.canvas.width, height: graph.canvas.height });
-}
-
-async function renderLayers({
-	ctx,
-	layers,
-	time,
-	width,
-	height,
-}: {
-	ctx: OffscreenCanvasRenderingContext2D;
-	layers: Array<WorkerImageLayer | WorkerTextLayer>;
-	time: number;
-	width: number;
-	height: number;
-}) {
-	for (const layer of layers) {
-		if (time < layer.startTime || time >= layer.startTime + layer.duration) {
-			continue;
-		}
-
-		if (layer.kind === "text") {
-			renderTextLayer({ ctx, payload: layer.payload, time });
-			continue;
-		}
-
-		const source = await loadSource({
-			url: layer.payload.sourceUrl,
-			maxSourceSize: layer.payload.maxSourceSize,
-		});
-		drawVisualToContext({
-			ctx,
-			canvasWidth: width,
-			canvasHeight: height,
-			source: source.source,
-			sourceWidth: source.width,
-			sourceHeight: source.height,
-			transform: layer.payload.transform,
-			opacity: layer.payload.opacity,
-			blendMode: (layer.payload.blendMode as never) ?? undefined,
-		});
-	}
-}
-
-function loadSource({
-	url,
-	maxSourceSize,
-}: {
-	url: string;
-	maxSourceSize?: number;
-}) {
-	const key = `${url}::${maxSourceSize ?? "full"}`;
-	const cached = imageCache.get(key);
-	if (cached) return cached;
-
-	const promise = (async () => {
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(`Failed to load source: ${response.status}`);
-		}
-		const blob = await response.blob();
-		const bitmap = await createImageBitmap(blob);
-
-		if (
-			maxSourceSize &&
-			(bitmap.width > maxSourceSize || bitmap.height > maxSourceSize)
-		) {
-			const scale = Math.min(
-				maxSourceSize / bitmap.width,
-				maxSourceSize / bitmap.height,
-			);
-			const scaledWidth = Math.max(1, Math.round(bitmap.width * scale));
-			const scaledHeight = Math.max(1, Math.round(bitmap.height * scale));
-			const offscreen = new OffscreenCanvas(scaledWidth, scaledHeight);
-			const offscreenCtx = offscreen.getContext("2d");
-			if (offscreenCtx) {
-				offscreenCtx.drawImage(bitmap, 0, 0, scaledWidth, scaledHeight);
-				return { source: offscreen, width: scaledWidth, height: scaledHeight };
-			}
-		}
-
-		return { source: bitmap, width: bitmap.width, height: bitmap.height };
-	})();
-
-	imageCache.set(key, promise);
-	return promise;
-}

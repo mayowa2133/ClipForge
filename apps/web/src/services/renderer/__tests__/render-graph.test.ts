@@ -22,8 +22,6 @@ function buildMediaAsset({
 		id,
 		name,
 		type,
-		size: 1,
-		lastModified: 0,
 		file: new File(["x"], name, { type: "application/octet-stream" }),
 		url: `blob:${id}`,
 	};
