@@ -6,9 +6,22 @@ Convert plain-English edit requests into deterministic `TimelineDiffOp[]` JSON.
 
 ## Provider Contract
 
-- Interface: `proposeEdits(userText, projectSummary) -> { ops, provider, fallbackUsed, warnings, rawText? }`
+- Interface: `proposeEdits(userText, projectSummary, context) -> { ops, provider, fallbackUsed, warnings, rawText? }`
 - Output: JSON ops only (no prose) at the model layer, wrapped in planner metadata for the UI
 - Allowed ops are restricted to the ClipForge schema.
+
+Planner context is explicit and request-scoped:
+
+- `playhead_ms`
+- `selected_segment_ids`
+- `active_scene_id`
+
+ClipForge now resolves implicit references with this precedence:
+
+1. explicit reference in the prompt
+2. current selection
+3. same-request carry-over (`it`, `that one`)
+4. playhead fallback
 
 ## Current Providers
 
@@ -47,6 +60,8 @@ The prompt includes examples for:
 - caption style changes (`SET_CAPTION_STYLE`)
 - transcript-precise targeted cuts (`CUT_RANGE`)
 - imported-asset B-roll insertion (`INSERT_BROLL`)
+- context-aware segment ops (`TRIM_CLIP`, `MOVE_SEGMENT`, `DELETE_SEGMENT`, `DUPLICATE_SEGMENT`)
+- context-aware caption fixes (`FIX_CAPTION_TEXT`)
 
 ## Validation Loop
 
@@ -88,6 +103,24 @@ Examples:
 - `add text at the top that says "this"`
 - `put "watch this" at the top`
 - `add text "subscribe" at the bottom for 3s`
+- `add text here that says "watch this"`
+
+## Context-Aware References (M20)
+
+- Selection-first:
+  - `this`
+  - `that`
+  - `this clip`
+  - `this caption`
+- Playhead-anchored:
+  - `here`
+  - `at the playhead`
+  - `at this point`
+- Same-request carry-over only:
+  - `it`
+  - `that one`
+
+Carry-over never persists across separate chat submissions.
 
 ## Phrase Cut Rules (M14)
 

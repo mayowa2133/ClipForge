@@ -6,6 +6,7 @@ export interface ParsedTextOverlayRequest {
 	position: OverlayTextPosition;
 	start_ms: number;
 	end_ms: number;
+	anchor_mode: "default" | "explicit" | "playhead";
 }
 
 export interface ParsedPhraseCutRequest {
@@ -85,6 +86,7 @@ export function parseTextOverlayRequest({
 				: "top";
 
 	const anchorMatch = text.match(/\b(?:at|from)\s+(\d+(?:\.\d+)?)s?\b/i);
+	const hasPlayheadAnchor = /\bhere\b|\bat the playhead\b|\bat this point\b/i.test(text);
 	const durationMatch = text.match(/\bfor\s+(\d+(?:\.\d+)?)s?\b/i);
 	const startMs = anchorMatch ? Math.round(Number(anchorMatch[1]) * 1000) : 0;
 	const durationMs = durationMatch
@@ -96,6 +98,7 @@ export function parseTextOverlayRequest({
 		position,
 		start_ms: startMs,
 		end_ms: startMs + Math.max(250, durationMs),
+		anchor_mode: anchorMatch ? "explicit" : hasPlayheadAnchor ? "playhead" : "default",
 	};
 }
 
@@ -289,21 +292,37 @@ export function parseFixCaptionTextRequest({
 }: {
 	text: string;
 }): ParsedFixCaptionTextRequest | null {
-	const replaceMatch = text.match(/^replace\s+["']([^"']+)["']\s+with\s+["']([^"']+)["']\s+in\s+captions$/i);
+	const replaceMatch = text.match(
+		/^replace\s+["']([^"']+)["']\s+with\s+["']([^"']+)["']\s+in\s+(captions|this caption|that caption)$/i,
+	);
 	if (replaceMatch) {
 		return {
-			reference: { target: "caption" },
+			reference:
+				replaceMatch[3].toLowerCase() === "captions"
+					? { target: "caption", mode: "explicit" }
+					: parseSegmentReferenceText({ text: replaceMatch[3] }) ?? {
+							target: "caption",
+							mode: "selection",
+						},
 			from: replaceMatch[1],
 			to: replaceMatch[2],
 		};
 	}
 
-	const changeMatch = text.match(/^change\s+caption\s+["']([^"']+)["']\s+to\s+["']([^"']+)["']$/i);
+	const changeMatch = text.match(
+		/^change\s+(caption|this caption|that caption)\s+["']([^"']+)["']\s+to\s+["']([^"']+)["']$/i,
+	);
 	if (changeMatch) {
 		return {
-			reference: { target: "caption", content: changeMatch[1] },
-			from: changeMatch[1],
-			to: changeMatch[2],
+			reference:
+				changeMatch[1].toLowerCase() === "caption"
+					? { target: "caption", mode: "explicit", content: changeMatch[2] }
+					: (parseSegmentReferenceText({ text: changeMatch[1] }) ?? {
+							target: "caption",
+							mode: "selection",
+						}),
+			from: changeMatch[2],
+			to: changeMatch[3],
 		};
 	}
 
@@ -311,11 +330,10 @@ export function parseFixCaptionTextRequest({
 	if (!fixMatch) return null;
 	const reference = parseSegmentReferenceText({ text: fixMatch[1] });
 	if (!reference || reference.target !== "caption") return null;
-	if (!reference.content) return null;
 
 	return {
 		reference,
-		from: reference.content,
+		from: reference.content ?? "",
 		to: fixMatch[2],
 	};
 }
@@ -329,8 +347,35 @@ export function parseSegmentReferenceText({
 	if (trimmed.length === 0) return null;
 	const normalized = trimmed.toLowerCase();
 
-	if (/\bit\b|\bthat one\b|\bthis clip\b/.test(normalized)) {
-		return null;
+	if (/^(?:this|that|this clip|that clip|this segment|that segment|the selected clip)$/i.test(trimmed)) {
+		return {
+			target:
+				/\bclip\b/.test(normalized) || /\bselected clip\b/.test(normalized)
+					? "clip"
+					: "segment",
+			mode: "selection",
+		};
+	}
+
+	if (/^(?:this caption|that caption)$/i.test(trimmed)) {
+		return {
+			target: "caption",
+			mode: "selection",
+		};
+	}
+
+	if (/^(?:it|that one)$/i.test(trimmed)) {
+		return {
+			target: "segment",
+			mode: "carry-over",
+		};
+	}
+
+	if (/^(?:here|at the playhead|at this point)$/i.test(trimmed)) {
+		return {
+			target: "segment",
+			mode: "playhead",
+		};
 	}
 
 	const phraseMatch = normalized.match(
@@ -339,6 +384,7 @@ export function parseSegmentReferenceText({
 	if (phraseMatch) {
 		return {
 			target: phraseMatch[1].toLowerCase() === "clip" ? "clip" : "segment",
+			mode: "explicit",
 			phrase: phraseMatch[2].trim(),
 			occurrence: parseOrdinalOccurrence({ text: normalized }),
 			useLast: /\blast\b/.test(normalized),
@@ -351,6 +397,7 @@ export function parseSegmentReferenceText({
 	if (captionContentMatch) {
 		return {
 			target: "caption",
+			mode: "explicit",
 			occurrence: captionContentMatch[1]
 				? parseOrdinalOccurrence({ text: captionContentMatch[1] })
 				: 1,
@@ -375,6 +422,7 @@ export function parseSegmentReferenceText({
 
 		return {
 			target,
+			mode: "explicit",
 			occurrence:
 				ordinalToken && ordinalToken !== "last"
 					? parseOrdinalOccurrence({ text: ordinalToken })

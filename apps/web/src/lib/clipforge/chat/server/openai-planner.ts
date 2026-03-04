@@ -3,11 +3,12 @@ import {
 	parseModelOpsPayload,
 	structurallyGuardOps,
 } from "@/lib/clipforge/chat/json-ops-parser";
-import type { ProjectSummary } from "@/lib/clipforge/chat/types";
+import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat/types";
 
 export interface ModelPlanRequest {
 	userText: string;
 	projectSummary: ProjectSummary;
+	context: ChatPlannerContext;
 }
 
 export interface ModelPlanSuccess {
@@ -98,6 +99,7 @@ function extractOutputText(payload: unknown): string {
 export async function requestOpenAIChatPlan({
 	userText,
 	projectSummary,
+	context,
 }: ModelPlanRequest): Promise<ModelPlanSuccess> {
 	if (typeof userText !== "string" || userText.trim().length === 0) {
 		throw createPlanError({
@@ -146,6 +148,7 @@ export async function requestOpenAIChatPlan({
 					content: JSON.stringify({
 						userText: requestUserText,
 						projectSummary: truncated.projectSummary,
+						context,
 					}),
 				},
 			],

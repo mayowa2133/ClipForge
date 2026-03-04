@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { OpenAIChatOpsProvider } from "@/lib/clipforge/chat";
-import type { ProjectSummary } from "@/lib/clipforge/chat";
+import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat";
 
 const summary: ProjectSummary = {
 	total_duration_s: 10,
@@ -12,6 +12,12 @@ const summary: ProjectSummary = {
 	segments: [],
 	media_assets: [],
 	timeline_words: [],
+};
+
+const context: ChatPlannerContext = {
+	playhead_ms: 3000,
+	selected_segment_ids: ["seg-1"],
+	active_scene_id: "scene-main",
 };
 
 const originalFetch = globalThis.fetch;
@@ -30,8 +36,10 @@ describe("OpenAIChatOpsProvider", () => {
 	});
 
 	test("maps a successful route response into a structured proposal", async () => {
-		setFetchMock(mock(async () =>
-			new Response(
+		let requestBody = "";
+		setFetchMock(mock(async (_input: RequestInfo | URL, init?: RequestInit) => {
+			requestBody = typeof init?.body === "string" ? init.body : "";
+			return new Response(
 				JSON.stringify({
 					ops: [
 						{
@@ -45,18 +53,21 @@ describe("OpenAIChatOpsProvider", () => {
 					rawText: "[...]",
 				}),
 				{ status: 200 },
-			),
-		));
+			);
+		}));
 
 		const provider = new OpenAIChatOpsProvider();
 		const result = await provider.proposeEdits({
 			userText: "make it shorter",
 			projectSummary: summary,
+			context,
 		});
 
 		expect(result.provider).toBe("openai");
 		expect(result.ops).toHaveLength(1);
 		expect(result.warnings).toEqual(["Truncated timeline words."]);
+		expect(requestBody).toContain('"playhead_ms":3000');
+		expect(requestBody).toContain('"selected_segment_ids":["seg-1"]');
 	});
 
 	test("throws on route failures", async () => {
@@ -71,6 +82,7 @@ describe("OpenAIChatOpsProvider", () => {
 			provider.proposeEdits({
 				userText: "anything",
 				projectSummary: summary,
+				context,
 			}),
 		).rejects.toThrow("Planner unavailable");
 	});
@@ -85,6 +97,7 @@ describe("OpenAIChatOpsProvider", () => {
 			provider.proposeEdits({
 				userText: "anything",
 				projectSummary: summary,
+				context,
 			}),
 		).rejects.toThrow("OpenAI planner returned an invalid payload.");
 	});

@@ -39,6 +39,12 @@ export interface ProjectSummary {
 	timeline_words: TimelineTranscriptWord[];
 }
 
+export interface ChatPlannerContext {
+	playhead_ms: number;
+	selected_segment_ids: string[];
+	active_scene_id: string | null;
+}
+
 export type ChatPlannerKind = "heuristic" | "openai";
 export type ChatPlannerMode = "auto" | "heuristic" | "openai";
 export type ChatPlannerHealthStatus = "ready" | "degraded" | "unavailable";
@@ -65,8 +71,10 @@ export interface ChatOpsProvider {
 	proposeEdits({
 		userText,
 		projectSummary,
+		context,
 	}: {
 		userText: string;
 		projectSummary: ProjectSummary;
+		context: ChatPlannerContext;
 	}): Promise<ChatProposalResult>;
 }

@@ -4,8 +4,16 @@ import {
 } from "@/lib/clipforge/phrase-resolution";
 import { resolveMediaAssetByName } from "@/lib/clipforge/media-resolver";
 import {
+	createEmptyResolutionState,
+	resolveImplicitReference,
+	updateResolutionStateFromSegment,
+	type ChatResolutionState,
+} from "@/lib/clipforge/chat/context-resolution";
+import {
 	resolveCaptionReference,
 	resolveSegmentReference,
+	type SegmentReference,
+	type SegmentReferenceTarget,
 } from "@/lib/clipforge/segment-resolution";
 import { getTextOverlayPresetForPosition } from "@/lib/clipforge/text-overlay-presets";
 import type { TimelineDiffOp } from "@/types/clipforge";
@@ -21,7 +29,14 @@ import {
 	parseTextOverlayRequest,
 	parseTrimClipRequest,
 } from "../prompt-parsers";
-import type { ChatOpsProvider, ChatProposalResult, ProjectSummary } from "../types";
+import type {
+	ChatOpsProvider,
+	ChatPlannerContext,
+	ChatProposalResult,
+	ChatSegmentKind,
+	ProjectSegmentSummary,
+	ProjectSummary,
+} from "../types";
 
 const MAX_HEURISTIC_OPS = 5;
 
@@ -29,22 +44,30 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 	async proposeEdits({
 		userText,
 		projectSummary,
+		context,
 	}: {
 		userText: string;
 		projectSummary: Parameters<ChatOpsProvider["proposeEdits"]>[0]["projectSummary"];
+		context: Parameters<ChatOpsProvider["proposeEdits"]>[0]["context"];
 	}): Promise<ChatProposalResult> {
 		const clauses = splitCompoundRequest(userText);
 		const resolvedClauses = clauses.length > 0 ? clauses : [userText.trim()];
 		const ops: TimelineDiffOp[] = [];
 		const warnings: string[] = [];
+		let resolutionState = createEmptyResolutionState();
+		const deletedSegmentIds = new Set<string>();
 
 		for (const clause of resolvedClauses) {
-			const clauseOps = planClause({
+			const clausePlan = planClause({
 				clause,
 				projectSummary,
+				context,
 				warnings,
+				state: resolutionState,
+				deletedSegmentIds,
 			});
-			for (const op of clauseOps) {
+			resolutionState = clausePlan.state;
+			for (const op of clausePlan.ops) {
 				if (ops.length >= MAX_HEURISTIC_OPS) {
 					warnings.push("Only the first 5 deterministic ops were kept.");
 					break;
@@ -69,59 +92,91 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 function planClause({
 	clause,
 	projectSummary,
+	context,
 	warnings,
+	state,
+	deletedSegmentIds,
 }: {
 	clause: string;
 	projectSummary: ProjectSummary;
+	context: ChatPlannerContext;
 	warnings: string[];
-}): TimelineDiffOp[] {
+	state: ChatResolutionState;
+	deletedSegmentIds: Set<string>;
+}): { ops: TimelineDiffOp[]; state: ChatResolutionState } {
 	const fixCaptionRequest = parseFixCaptionTextRequest({ text: clause });
 	if (fixCaptionRequest) {
-		const target = resolveCaptionReference({
+		const target = resolveReference({
 			projectSummary,
+			context,
+			state,
 			reference: fixCaptionRequest.reference,
-			fromText: fixCaptionRequest.from,
+			allowedKinds: ["caption"],
+			deletedSegmentIds,
+			fromText:
+				fixCaptionRequest.from.trim().length > 0 ? fixCaptionRequest.from : undefined,
 		});
 		if (target) {
-			return [
-				{
-					type: "FIX_CAPTION_TEXT",
-					segment_id: target.segment_id,
-					from: fixCaptionRequest.from,
-					to: fixCaptionRequest.to,
-				},
-			];
+			return {
+				ops: [
+					{
+						type: "FIX_CAPTION_TEXT",
+						segment_id: target.segment_id,
+						from:
+							fixCaptionRequest.from.trim().length > 0
+								? fixCaptionRequest.from
+								: target.text_content,
+						to: fixCaptionRequest.to,
+					},
+				],
+				state: updateResolutionStateFromSegment(state, target),
+			};
 		}
-		return warnUnsupportedClause({ clause, warnings });
+		return warnUnsupportedClause({ clause, warnings, state });
 	}
 
 	const swapRequest = parseSwapSegmentsRequest({ text: clause });
 	if (swapRequest) {
-		const left = resolveSegmentReference({
+		const left = resolveReference({
 			projectSummary,
+			context,
+			state,
 			reference: swapRequest.aReference,
+			allowedKinds: ["video"],
+			deletedSegmentIds,
 		});
-		const right = resolveSegmentReference({
+		const right = resolveReference({
 			projectSummary,
+			context,
+			state: left ? updateResolutionStateFromSegment(state, left) : state,
 			reference: swapRequest.bReference,
+			allowedKinds: ["video"],
+			deletedSegmentIds,
 		});
 		if (left && right && left.segment_id !== right.segment_id) {
-			return [
-				{
-					type: "SWAP_SEGMENTS",
-					a_id: left.segment_id,
-					b_id: right.segment_id,
-				},
-			];
+			return {
+				ops: [
+					{
+						type: "SWAP_SEGMENTS",
+						a_id: left.segment_id,
+						b_id: right.segment_id,
+					},
+				],
+				state: updateResolutionStateFromSegment(state, right),
+			};
 		}
-		return warnUnsupportedClause({ clause, warnings });
+		return warnUnsupportedClause({ clause, warnings, state });
 	}
 
 	const moveRequest = parseMoveSegmentRequest({ text: clause });
 	if (moveRequest) {
-		const target = resolveSegmentReference({
+		const target = resolveReference({
 			projectSummary,
+			context,
+			state,
 			reference: moveRequest.reference,
+			allowedKinds: ["video"],
+			deletedSegmentIds,
 		});
 		if (target) {
 			const toMs =
@@ -133,89 +188,122 @@ function planClause({
 							? -(moveRequest.relative_delta_ms ?? 0)
 							: moveRequest.relative_delta_ms ?? 0),
 				);
-			return [
-				{
-					type: "MOVE_SEGMENT",
-					segment_id: target.segment_id,
-					to_ms: toMs,
-				},
-			];
+			return {
+				ops: [
+					{
+						type: "MOVE_SEGMENT",
+						segment_id: target.segment_id,
+						to_ms: toMs,
+					},
+				],
+				state: updateResolutionStateFromSegment(state, target),
+			};
 		}
-		return warnUnsupportedClause({ clause, warnings });
+		return warnUnsupportedClause({ clause, warnings, state });
 	}
 
 	const trimRequest = parseTrimClipRequest({ text: clause });
 	if (trimRequest) {
-		const target = resolveSegmentReference({
+		const target = resolveReference({
 			projectSummary,
+			context,
+			state,
 			reference: trimRequest.reference,
+			allowedKinds: ["video"],
+			deletedSegmentIds,
 		});
 		if (target) {
-			return [
-				{
-					type: "TRIM_CLIP",
-					clip_id: target.segment_id,
-					in_ms: trimRequest.edge === "start" ? trimRequest.amount_ms : 0,
-					out_ms: trimRequest.edge === "end" ? trimRequest.amount_ms : 0,
-				},
-			];
+			return {
+				ops: [
+					{
+						type: "TRIM_CLIP",
+						clip_id: target.segment_id,
+						in_ms: trimRequest.edge === "start" ? trimRequest.amount_ms : 0,
+						out_ms: trimRequest.edge === "end" ? trimRequest.amount_ms : 0,
+					},
+				],
+				state: updateResolutionStateFromSegment(state, target),
+			};
 		}
-		return warnUnsupportedClause({ clause, warnings });
+		return warnUnsupportedClause({ clause, warnings, state });
 	}
 
 	const deleteRequest = parseDeleteSegmentRequest({ text: clause });
 	if (deleteRequest) {
-		const target = resolveSegmentReference({
+		const target = resolveReference({
 			projectSummary,
+			context,
+			state,
 			reference: deleteRequest.reference,
+			allowedKinds: ["video"],
+			deletedSegmentIds,
 		});
 		if (target) {
-			return [
-				{
-					type: "DELETE_SEGMENT",
-					segment_id: target.segment_id,
-				},
-			];
+			deletedSegmentIds.add(target.segment_id);
+			return {
+				ops: [
+					{
+						type: "DELETE_SEGMENT",
+						segment_id: target.segment_id,
+					},
+				],
+				state: updateResolutionStateFromSegment(state, target),
+			};
 		}
-		return warnUnsupportedClause({ clause, warnings });
+		return warnUnsupportedClause({ clause, warnings, state });
 	}
 
 	const duplicateRequest = parseDuplicateSegmentRequest({ text: clause });
 	if (duplicateRequest) {
-		const target = resolveSegmentReference({
+		const target = resolveReference({
 			projectSummary,
+			context,
+			state,
 			reference: duplicateRequest.reference,
+			allowedKinds: ["video"],
+			deletedSegmentIds,
 		});
 		if (target) {
-			return [
-				{
-					type: "DUPLICATE_SEGMENT",
-					segment_id: target.segment_id,
-					to_ms: duplicateRequest.after_itself
-						? target.end_ms
-						: duplicateRequest.to_ms ?? target.end_ms,
-				},
-			];
+			return {
+				ops: [
+					{
+						type: "DUPLICATE_SEGMENT",
+						segment_id: target.segment_id,
+						to_ms: duplicateRequest.after_itself
+							? target.end_ms
+							: duplicateRequest.to_ms ?? target.end_ms,
+					},
+				],
+				state: updateResolutionStateFromSegment(state, target),
+			};
 		}
-		return warnUnsupportedClause({ clause, warnings });
+		return warnUnsupportedClause({ clause, warnings, state });
 	}
 
-	const legacyOps = planLegacyClause({ clause, projectSummary });
-	if (legacyOps.length > 0) {
-		return legacyOps;
+	const legacyPlan = planLegacyClause({
+		clause,
+		projectSummary,
+		context,
+		state,
+	});
+	if (legacyPlan.ops.length > 0) {
+		return legacyPlan;
 	}
 
-	warnings.push(`Skipped unsupported clause: "${clause}"`);
-	return [];
+	return warnUnsupportedClause({ clause, warnings, state });
 }
 
 function planLegacyClause({
 	clause,
 	projectSummary,
+	context,
+	state,
 }: {
 	clause: string;
 	projectSummary: ProjectSummary;
-}): TimelineDiffOp[] {
+	context: ChatPlannerContext;
+	state: ChatResolutionState;
+}): { ops: TimelineDiffOp[]; state: ChatResolutionState } {
 	const text = clause.toLowerCase();
 	const ops: TimelineDiffOp[] = [];
 	const timedBrollMatch =
@@ -295,11 +383,15 @@ function planLegacyClause({
 		const preset = getTextOverlayPresetForPosition({
 			position: textOverlayRequest.position,
 		});
+		const startMs =
+			textOverlayRequest.anchor_mode === "playhead"
+				? context.playhead_ms
+				: textOverlayRequest.start_ms;
 		ops.push({
 			type: "ADD_TEXT_OVERLAY",
 			text: textOverlayRequest.text,
-			start_ms: textOverlayRequest.start_ms,
-			end_ms: textOverlayRequest.end_ms,
+			start_ms: startMs,
+			end_ms: startMs + Math.max(250, textOverlayRequest.end_ms - textOverlayRequest.start_ms),
 			position: textOverlayRequest.position,
 			style_id: preset.style_id,
 			font: preset.font,
@@ -397,16 +489,94 @@ function planLegacyClause({
 		}
 	}
 
-	return ops;
+	return { ops, state };
+}
+
+function resolveReference({
+	projectSummary,
+	context,
+	state,
+	reference,
+	allowedKinds,
+	deletedSegmentIds,
+	fromText,
+}: {
+	projectSummary: ProjectSummary;
+	context: ChatPlannerContext;
+	state: ChatResolutionState;
+	reference: SegmentReference;
+	allowedKinds: ChatSegmentKind[];
+	deletedSegmentIds: Set<string>;
+	fromText?: string;
+}): ProjectSegmentSummary | null {
+	if (!isReferenceCompatibleWithKinds(reference.target, allowedKinds)) {
+		return null;
+	}
+
+	let target: ProjectSegmentSummary | null = null;
+
+	if (!reference.mode || reference.mode === "explicit") {
+		target =
+			allowedKinds.includes("caption") && reference.target === "caption"
+				? resolveCaptionReference({
+						projectSummary,
+						reference,
+						fromText,
+					})
+				: resolveSegmentReference({
+						projectSummary,
+						reference,
+					});
+	} else {
+		target = resolveImplicitReference({
+			projectSummary,
+			context,
+			state,
+			allowedKinds,
+			token: reference.mode,
+		});
+	}
+
+	if (!target) {
+		return null;
+	}
+	if (!allowedKinds.includes(target.segment_kind)) {
+		return null;
+	}
+	if (deletedSegmentIds.has(target.segment_id)) {
+		return null;
+	}
+	return target;
+}
+
+function isReferenceCompatibleWithKinds(
+	target: SegmentReferenceTarget,
+	allowedKinds: ChatSegmentKind[],
+): boolean {
+	if (target === "clip" || target === "segment") {
+		return allowedKinds.includes("video");
+	}
+	if (target === "caption") {
+		return allowedKinds.includes("caption");
+	}
+	if (target === "text" || target === "overlay") {
+		return allowedKinds.includes("text-overlay");
+	}
+	return false;
 }
 
 function warnUnsupportedClause({
 	clause,
 	warnings,
+	state,
 }: {
 	clause: string;
 	warnings: string[];
-}): TimelineDiffOp[] {
+	state: ChatResolutionState;
+}): { ops: TimelineDiffOp[]; state: ChatResolutionState } {
 	warnings.push(`Skipped unsupported clause: "${clause}"`);
-	return [];
+	return {
+		ops: [],
+		state,
+	};
 }

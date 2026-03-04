@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { requestOpenAIChatPlan } from "@/lib/clipforge/chat/server/openai-planner";
-import type { ProjectSummary } from "@/lib/clipforge/chat";
+import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat";
 
 const summary: ProjectSummary = {
 	total_duration_s: 12,
@@ -12,6 +12,12 @@ const summary: ProjectSummary = {
 	segments: [],
 	media_assets: [],
 	timeline_words: [],
+};
+
+const context: ChatPlannerContext = {
+	playhead_ms: 2000,
+	selected_segment_ids: ["seg-1"],
+	active_scene_id: "scene-main",
 };
 
 const originalFetch = globalThis.fetch;
@@ -60,6 +66,7 @@ describe("requestOpenAIChatPlan", () => {
 		const result = await requestOpenAIChatPlan({
 			userText: "make it shorter",
 			projectSummary: summary,
+			context,
 		});
 
 		expect(result.provider).toBe("openai");
@@ -79,6 +86,7 @@ describe("requestOpenAIChatPlan", () => {
 			requestOpenAIChatPlan({
 				userText: "make it shorter",
 				projectSummary: summary,
+				context,
 			}),
 		).rejects.toMatchObject({
 			status: 503,
@@ -94,6 +102,7 @@ describe("requestOpenAIChatPlan", () => {
 			requestOpenAIChatPlan({
 				userText: "make it shorter",
 				projectSummary: summary,
+				context,
 			}),
 		).rejects.toMatchObject({
 			status: 502,
@@ -109,6 +118,7 @@ describe("requestOpenAIChatPlan", () => {
 			requestOpenAIChatPlan({
 				userText: "make it shorter",
 				projectSummary: summary,
+				context,
 			}),
 		).rejects.toMatchObject({
 			status: 422,
@@ -142,6 +152,7 @@ describe("requestOpenAIChatPlan", () => {
 					segment_id: "seg-0",
 				})),
 			},
+			context,
 		});
 
 		expect(result.warnings.length).toBeGreaterThanOrEqual(3);

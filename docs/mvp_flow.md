@@ -34,12 +34,13 @@
 4. The chat panel shows planner status before you submit:
    - `Heuristic mode active`
    - or OpenAI health (`ready`, `degraded`, `unavailable`)
-4. Chat planner proposes deterministic JSON timeline ops.
+   - plus current context (`selected` count and playhead time)
+5. Chat planner proposes deterministic JSON timeline ops.
    - In `auto` mode, ClipForge prefers the server-backed model planner and falls back to the heuristic planner if needed.
-5. Proposed ops are shown in review UI.
+6. Proposed ops are shown in review UI.
    - The review UI shows which planner produced the result and any fallback warnings.
-6. Click `Apply` to validate + apply ops through OpenCut command stack.
-7. Use undo/redo normally and continue iterating.
+7. Click `Apply` to validate + apply ops through OpenCut command stack.
+8. Use undo/redo normally and continue iterating.
 
 Example chat prompts:
 
@@ -47,6 +48,9 @@ Example chat prompts:
 - `add b-roll using beach.mp4 when i say "summer" for 3s`
 - `add text at the top that says "this"`
 - `cut where i say "bro"`
+- `trim this clip by 0.5s at the start`
+- `move this earlier by 1s`
+- `replace "teh" with "the" in this caption`
 
 ## Flow C: Best-effort Export
 

@@ -23,7 +23,9 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M15: Production-ready model-backed chat planner with deterministic guardrails.
 - [x] M16: Hardened export pipeline with diagnostics and parity checks.
 - [x] M17: Demo project onboarding and guided first-run experience.
-- [ ] M18: In-app AI settings, planner health, and chat diagnostics.
+- [x] M18: In-app AI settings, planner health, and chat diagnostics.
+- [x] M19: Expand chat planner to full deterministic segment ops.
+- [ ] M20: Context-aware chat planning with playhead, selection, and same-request carry-over.
 
 ## Working Rules
 

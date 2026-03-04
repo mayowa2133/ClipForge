@@ -142,7 +142,7 @@ The editor preview keeps the same DOM interaction overlays, but frame generation
 4. Use `Index All Clips`, `Index Clip`, or `Import SRT...` in the Assets panel if you need to re-run or override transcript metadata.
 5. Click `Auto Edit TikTok` to build a 9:16 draft timeline.
 6. Open `Captions` tab and generate captions using `Clean Bottom` or `Bold Center`.
-7. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `add text at the top that says "this"`, `cut where I say "bro"`, or `add b-roll using beach.mp4 when I say "summer" for 3s`), review JSON ops, confirm which planner was used, then click `Apply`.
+7. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `trim this clip by 0.5s at the start`, `add text here that says "watch this"`, `replace "teh" with "the" in this caption`, or `trim the first clip by 0.5s and move it to 5s`), review JSON ops, confirm which planner was used, then click `Apply`.
 8. Use normal OpenCut `Undo/Redo` shortcuts.
 9. Click the top-right `Export` button for best-effort export (real video for supported timelines; preview artifact JSON only as a last-resort fallback).
 
@@ -157,6 +157,10 @@ The editor preview keeps the same DOM interaction overlays, but frame generation
   - `Degraded`: route is available but the OpenAI server config is incomplete
   - `Unavailable`: the health route could not complete
 - Planner health is configuration-based only in this milestone. It does not probe live upstream OpenAI reachability.
+- Implicit references are now context-aware:
+  - selection is used first for `this` / `that`
+  - playhead is used as fallback
+  - `it` carries over only within the current prompt
 
 ### Built-in demo project
 

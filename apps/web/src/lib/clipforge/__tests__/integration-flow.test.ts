@@ -119,6 +119,11 @@ describe("ClipForge integration flow", () => {
 		const result = await provider.proposeEdits({
 			userText: "make it faster and use clean bottom subtitles",
 			projectSummary: summary,
+			context: {
+				playhead_ms: 0,
+				selected_segment_ids: [],
+				active_scene_id: autoDraft.currentSceneId,
+			},
 		});
 		const chatOps = result.ops;
 
@@ -171,6 +176,11 @@ describe("ClipForge integration flow", () => {
 		const result = await provider.proposeEdits({
 			userText: "add b-roll using broll from 2s to 5s",
 			projectSummary: summary,
+			context: {
+				playhead_ms: 0,
+				selected_segment_ids: [],
+				active_scene_id: project.currentSceneId,
+			},
 		});
 		const chatOps = result.ops;
 
@@ -211,6 +221,11 @@ describe("ClipForge integration flow", () => {
 		const result = await provider.proposeEdits({
 			userText: "swap the first and second clips",
 			projectSummary: summary,
+			context: {
+				playhead_ms: 0,
+				selected_segment_ids: [],
+				active_scene_id: autoDraft.currentSceneId,
+			},
 		});
 
 		expect(result.ops).toEqual([

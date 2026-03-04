@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requestOpenAIChatPlan } from "@/lib/clipforge/chat/server/openai-planner";
-import type { ProjectSummary } from "@/lib/clipforge/chat/types";
+import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat/types";
 
 export const runtime = "nodejs";
 
@@ -20,9 +20,14 @@ export async function POST(request: Request) {
 
 		const userText = body.userText;
 		const projectSummary = body.projectSummary;
-		if (typeof userText !== "string" || !isRecord(projectSummary)) {
+		const context = body.context;
+		if (
+			typeof userText !== "string" ||
+			!isRecord(projectSummary) ||
+			!isPlannerContext(context)
+		) {
 			return NextResponse.json(
-				{ error: "Chat plan payload must include userText and projectSummary." },
+				{ error: "Chat plan payload must include userText, projectSummary, and context." },
 				{ status: 400 },
 			);
 		}
@@ -30,6 +35,7 @@ export async function POST(request: Request) {
 		const result = await requestOpenAIChatPlan({
 			userText,
 			projectSummary: projectSummary as unknown as ProjectSummary,
+			context,
 		});
 
 		return NextResponse.json(result);
@@ -63,4 +69,18 @@ export async function POST(request: Request) {
 			{ status },
 		);
 	}
+}
+
+function isPlannerContext(value: unknown): value is ChatPlannerContext {
+	if (!isRecord(value)) {
+		return false;
+	}
+	return (
+		typeof value.playhead_ms === "number" &&
+		Number.isFinite(value.playhead_ms) &&
+		value.playhead_ms >= 0 &&
+		Array.isArray(value.selected_segment_ids) &&
+		value.selected_segment_ids.every((segmentId) => typeof segmentId === "string") &&
+		(typeof value.active_scene_id === "string" || value.active_scene_id === null)
+	);
 }

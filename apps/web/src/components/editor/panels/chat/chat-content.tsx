@@ -117,9 +117,18 @@ export function ChatContent() {
 				project: activeProject,
 				mediaAssets: editor.media.getAssets(),
 			});
+			const playheadMs = Math.round(editor.playback.getCurrentTime() * 1000);
+			const selectedSegmentIds = editor.selection
+				.getSelectedElements()
+				.map((element) => element.elementId);
 			const result = await provider.proposeEdits({
 				userText: prompt,
 				projectSummary,
+				context: {
+					playhead_ms: playheadMs,
+					selected_segment_ids: selectedSegmentIds,
+					active_scene_id: activeProject.currentSceneId ?? null,
+				},
 			});
 			if (activeRequestIdRef.current !== requestId) {
 				return;
@@ -221,6 +230,11 @@ export function ChatContent() {
 			: plannerMode === "openai"
 				? plannerHealth?.message ?? "OpenAI mode fails closed."
 				: "The deterministic local planner is active.";
+	const playheadMs = Math.round(editor.playback.getCurrentTime() * 1000);
+	const selectedCount = editor.selection.getSelectedElements().length;
+	const contextSummary = `Context: ${
+		selectedCount > 0 ? `${selectedCount} selected` : "no selection"
+	}, playhead ${formatPlannerTime(playheadMs)}`;
 
 	return (
 		<div className="flex h-full flex-col gap-3">
@@ -239,6 +253,7 @@ export function ChatContent() {
 					</div>
 					<p className="mt-2 text-sm">{healthSummary}</p>
 					<p className="text-muted-foreground mt-1 text-xs">{healthDetail}</p>
+					<p className="text-muted-foreground mt-1 text-xs">{contextSummary}</p>
 				</div>
 				{lastPlanError && (
 					<div className="rounded-md border border-red-300 bg-red-50 p-3">
@@ -250,7 +265,7 @@ export function ChatContent() {
 					className="min-h-24 rounded-md border p-2 text-sm"
 					value={prompt}
 					onChange={(event) => setPrompt(event.target.value)}
-					placeholder='Try: "trim the first clip by 0.5s at the start", "swap the first and second clips", "replace \"teh\" with \"the\" in captions"'
+					placeholder='Try: "trim this clip by 0.5s at the start", "add text here that says \"watch this\"", "replace \"teh\" with \"the\" in this caption"'
 				/>
 				<Button onClick={handlePropose} disabled={isLoading}>
 					{isLoading ? "Proposing..." : "Propose Ops"}
@@ -313,4 +328,11 @@ export function ChatContent() {
 			)}
 		</div>
 	);
+}
+
+function formatPlannerTime(playheadMs: number): string {
+	const totalSeconds = Math.max(0, Math.floor(playheadMs / 1000));
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }

@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { FallbackChatOpsProvider } from "@/lib/clipforge/chat";
-import type { ChatOpsProvider, ChatProposalResult, ProjectSummary } from "@/lib/clipforge/chat";
+import type {
+	ChatOpsProvider,
+	ChatPlannerContext,
+	ChatProposalResult,
+	ProjectSummary,
+} from "@/lib/clipforge/chat";
 
 const summary: ProjectSummary = {
 	total_duration_s: 10,
@@ -12,6 +17,12 @@ const summary: ProjectSummary = {
 	segments: [],
 	media_assets: [],
 	timeline_words: [],
+};
+
+const context: ChatPlannerContext = {
+	playhead_ms: 0,
+	selected_segment_ids: [],
+	active_scene_id: "scene-main",
 };
 
 function buildProvider(result: ChatProposalResult): ChatOpsProvider {
@@ -42,6 +53,7 @@ describe("FallbackChatOpsProvider", () => {
 		const result = await provider.proposeEdits({
 			userText: "make it faster",
 			projectSummary: summary,
+			context,
 		});
 
 		expect(result.provider).toBe("openai");
@@ -69,6 +81,7 @@ describe("FallbackChatOpsProvider", () => {
 		const result = await provider.proposeEdits({
 			userText: "remove more pauses",
 			projectSummary: summary,
+			context,
 		});
 
 		expect(result.provider).toBe("heuristic");
@@ -95,6 +108,7 @@ describe("FallbackChatOpsProvider", () => {
 		const result = await provider.proposeEdits({
 			userText: "anything",
 			projectSummary: summary,
+			context,
 		});
 
 		expect(result.provider).toBe("heuristic");

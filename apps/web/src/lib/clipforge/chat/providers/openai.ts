@@ -1,5 +1,10 @@
 import type { TimelineDiffOp } from "@/types/clipforge";
-import type { ChatOpsProvider, ChatProposalResult, ProjectSummary } from "../types";
+import type {
+	ChatOpsProvider,
+	ChatPlannerContext,
+	ChatProposalResult,
+	ProjectSummary,
+} from "../types";
 
 interface OpenAIProviderConfig {
 	routePath?: string;
@@ -31,9 +36,11 @@ export class OpenAIChatOpsProvider implements ChatOpsProvider {
 	async proposeEdits({
 		userText,
 		projectSummary,
+		context,
 	}: {
 		userText: string;
 		projectSummary: ProjectSummary;
+		context: ChatPlannerContext;
 	}): Promise<ChatProposalResult> {
 		const response = await fetch(this.routePath, {
 			method: "POST",
@@ -43,6 +50,7 @@ export class OpenAIChatOpsProvider implements ChatOpsProvider {
 			body: JSON.stringify({
 				userText,
 				projectSummary,
+				context,
 			}),
 		});
 

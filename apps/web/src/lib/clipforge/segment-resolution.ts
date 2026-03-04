@@ -12,8 +12,15 @@ export type SegmentReferenceTarget =
 	| "text"
 	| "overlay";
 
+export type SegmentReferenceMode =
+	| "explicit"
+	| "selection"
+	| "playhead"
+	| "carry-over";
+
 export interface SegmentReference {
 	target: SegmentReferenceTarget;
+	mode?: SegmentReferenceMode;
 	occurrence?: number;
 	useLast?: boolean;
 	phrase?: string;
@@ -42,6 +49,9 @@ export function resolveSegmentReference({
 	projectSummary: Pick<ProjectSummary, "segments" | "timeline_words">;
 	reference: SegmentReference;
 }): ProjectSegmentSummary | null {
+	if (reference.mode && reference.mode !== "explicit") {
+		return null;
+	}
 	if (reference.phrase) {
 		const matches = findPhraseOccurrences({
 			projectSummary,
@@ -92,6 +102,9 @@ export function resolveCaptionReference({
 	reference: SegmentReference;
 	fromText?: string;
 }): ProjectSegmentSummary | null {
+	if (reference.mode && reference.mode !== "explicit") {
+		return null;
+	}
 	let candidates = findAddressableSegments({
 		projectSummary,
 		target: "caption",
