@@ -19,6 +19,7 @@ import { buildClarificationRequest } from "@/lib/clipforge/chat/chat-clarificati
 import { getTextOverlayPresetForPosition } from "@/lib/clipforge/text-overlay-presets";
 import type { TimelineDiffOp } from "@/types/clipforge";
 import { splitCompoundRequest } from "../compound-request";
+import { buildReferenceLabel } from "../reference-label";
 import {
 	parseDeleteSegmentRequest,
 	parseDuplicateSegmentRequest,
@@ -682,34 +683,4 @@ function warnUnsupportedClause({
 		state,
 		clarification: null,
 	};
-}
-
-function buildReferenceLabel({
-	reference,
-	fromText,
-}: {
-	reference: SegmentReference;
-	fromText?: string;
-}): string {
-	if (reference.mode === "selection") {
-		return `selection:${reference.target}`;
-	}
-	if (reference.mode === "playhead") {
-		return `playhead:${reference.target}`;
-	}
-	if (reference.mode === "carry-over") {
-		return `carry-over:${reference.target}`;
-	}
-	if (reference.phrase) {
-		return `phrase:${reference.target}:${reference.phrase.toLowerCase()}`;
-	}
-	if (reference.content) {
-		return `content:${reference.target}:${reference.content.toLowerCase()}`;
-	}
-	if (fromText && reference.target === "caption") {
-		return `caption-match:${fromText.toLowerCase()}`;
-	}
-	return `explicit:${reference.target}:${reference.occurrence ?? "any"}:${
-		reference.useLast ? "last" : "no-last"
-	}`;
 }

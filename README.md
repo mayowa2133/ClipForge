@@ -161,7 +161,7 @@ The editor preview keeps the same DOM interaction overlays, but frame generation
   - selection is used first for `this` / `that`
   - playhead is used as fallback
   - `it` carries over only within the current prompt
-- If more than one clip or caption matches a single-target request, the chat panel now asks for clarification before it proposes JSON ops.
+- If more than one clip or caption matches a single-target request, the chat panel asks for clarification before proposing JSON ops in all planner modes (`auto`, `openai`, `heuristic`).
 
 ### Built-in demo project
 

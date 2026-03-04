@@ -1,27 +1,25 @@
 import { describe, expect, test } from "bun:test";
 import {
+	AmbiguitySafeChatOpsProvider,
 	createChatOpsProvider,
-	FallbackChatOpsProvider,
-	HeuristicChatOpsProvider,
-	OpenAIChatOpsProvider,
 } from "@/lib/clipforge/chat";
 
 describe("createChatOpsProvider", () => {
-	test("returns heuristic provider in heuristic mode", () => {
+	test("wraps heuristic mode with ambiguity safety", () => {
 		expect(createChatOpsProvider({ mode: "heuristic" })).toBeInstanceOf(
-			HeuristicChatOpsProvider,
+			AmbiguitySafeChatOpsProvider,
 		);
 	});
 
-	test("returns route-backed provider in openai mode", () => {
+	test("wraps openai mode with ambiguity safety", () => {
 		expect(createChatOpsProvider({ mode: "openai" })).toBeInstanceOf(
-			OpenAIChatOpsProvider,
+			AmbiguitySafeChatOpsProvider,
 		);
 	});
 
-	test("returns fallback provider in auto mode", () => {
+	test("wraps auto mode with ambiguity safety", () => {
 		expect(createChatOpsProvider({ mode: "auto" })).toBeInstanceOf(
-			FallbackChatOpsProvider,
+			AmbiguitySafeChatOpsProvider,
 		);
 	});
 });

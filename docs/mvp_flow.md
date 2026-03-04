@@ -37,7 +37,7 @@
    - plus current context (`selected` count and playhead time)
 5. Chat planner proposes deterministic JSON timeline ops.
    - In `auto` mode, ClipForge prefers the server-backed model planner and falls back to the heuristic planner if needed.
-6. If the target is ambiguous, the chat panel shows a clarification step first.
+6. If the target is ambiguous, the chat panel shows a clarification step first in all planner modes.
    - Choose the intended clip or caption, then ClipForge re-runs the plan.
 7. Proposed ops are shown in review UI.
    - The review UI shows which planner produced the result and any fallback warnings.

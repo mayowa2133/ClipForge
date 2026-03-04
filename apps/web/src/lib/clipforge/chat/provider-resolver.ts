@@ -1,3 +1,4 @@
+import { AmbiguitySafeChatOpsProvider } from "./providers/ambiguity-safe";
 import { FallbackChatOpsProvider } from "./providers/fallback";
 import { HeuristicChatOpsProvider } from "./providers/heuristic";
 import { OpenAIChatOpsProvider } from "./providers/openai";
@@ -8,16 +9,22 @@ export function createChatOpsProvider({
 }: {
 	mode: ChatPlannerMode;
 }): ChatOpsProvider {
+	let baseProvider: ChatOpsProvider;
 	switch (mode) {
 		case "heuristic":
-			return new HeuristicChatOpsProvider();
+			baseProvider = new HeuristicChatOpsProvider();
+			break;
 		case "openai":
-			return new OpenAIChatOpsProvider();
+			baseProvider = new OpenAIChatOpsProvider();
+			break;
 		case "auto":
 		default:
-			return new FallbackChatOpsProvider(
+			baseProvider = new FallbackChatOpsProvider(
 				new OpenAIChatOpsProvider(),
 				new HeuristicChatOpsProvider(),
 			);
+			break;
 	}
+
+	return new AmbiguitySafeChatOpsProvider(baseProvider);
 }

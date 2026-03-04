@@ -128,7 +128,8 @@ Carry-over never persists across separate chat submissions.
 - The chat panel now shows a local clarification step first.
 - After you choose one option, the planner re-runs and then shows the normal JSON ops review.
 - Ordinal references (`first`, `second`, `last`) remain the preferred way to avoid clarification when multiple targets exist.
-- In `auto` mode, the heuristic planner can provide a deterministic clarification when the model planner is non-definitive.
+- Ambiguity safety now runs after planning in all modes (`auto`, `openai`, `heuristic`), so model output is also blocked when deterministic ambiguity remains.
+- In `auto` mode, heuristic fallback still provides deterministic clarification when the model planner is non-definitive.
 
 ## Phrase Cut Rules (M14)
 

@@ -26,7 +26,8 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M18: In-app AI settings, planner health, and chat diagnostics.
 - [x] M19: Expand chat planner to full deterministic segment ops.
 - [x] M20: Context-aware chat planning with playhead, selection, and same-request carry-over.
-- [ ] M21: Ambiguity detection, clarification UI, and safe target resolution for chat.
+- [x] M21: Ambiguity detection, clarification UI, and safe target resolution for chat.
+- [ ] M22: Provider-agnostic ambiguity safety layer across all planner modes.
 
 ## Working Rules
 
