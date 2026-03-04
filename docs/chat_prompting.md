@@ -22,6 +22,17 @@ Planner modes:
 - `heuristic`: uses deterministic local parsing only
 - `openai`: forces the server-backed model planner and fails closed
 
+Users can now change planner mode in-app from the left `Settings` tab. The env value still defines the initial default for a fresh browser state.
+
+## In-app Health
+
+- `AI Planner` settings also show planner health.
+- Health is configuration-based only in M18:
+  - `ready`: route is available and OpenAI server config is complete
+  - `degraded`: route is available but the OpenAI server config is incomplete
+  - `unavailable`: the health route itself could not complete
+- The health check does not perform a live outbound request to OpenAI.
+
 ## Few-shot Prompt
 
 Few-shot examples are stored in:

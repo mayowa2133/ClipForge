@@ -13,6 +13,17 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M6: Chat panel + provider abstraction + ops review/apply flow.
 - [x] M7: Preview stability and export integration hook.
 - [x] M8: Tests, docs completion, and sample project.
+- [x] M9: Right-docked Chat panel with persisted split and shortcut.
+- [x] M10: Chat-driven B-roll insertion from imported assets.
+- [x] M10.1: Heuristic parser fix for B-roll prompts.
+- [x] M11: Local Whisper indexing and transcript metadata pipeline.
+- [x] M12: Shared binary preview backend contract.
+- [x] M13: Video decode and compositing in the shared binary backend.
+- [x] M14: Expanded chat ops for text overlays and phrase-aware edits.
+- [x] M15: Production-ready model-backed chat planner with deterministic guardrails.
+- [x] M16: Hardened export pipeline with diagnostics and parity checks.
+- [x] M17: Demo project onboarding and guided first-run experience.
+- [ ] M18: In-app AI settings, planner health, and chat diagnostics.
 
 ## Working Rules
 

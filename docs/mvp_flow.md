@@ -29,13 +29,17 @@
 ## Flow B: Chat-driven Edits
 
 1. Open the right-side `Chat` panel from the editor header toggle (or `Ctrl/Cmd + /`).
-2. Enter a plain-English request (for example: `make it faster`).
-3. Chat planner proposes deterministic JSON timeline ops.
+2. Optionally open the left `Settings` tab and choose the `AI Planner` mode (`Auto`, `OpenAI`, or `Heuristic`).
+3. Enter a plain-English request (for example: `make it faster`).
+4. The chat panel shows planner status before you submit:
+   - `Heuristic mode active`
+   - or OpenAI health (`ready`, `degraded`, `unavailable`)
+4. Chat planner proposes deterministic JSON timeline ops.
    - In `auto` mode, ClipForge prefers the server-backed model planner and falls back to the heuristic planner if needed.
-4. Proposed ops are shown in review UI.
+5. Proposed ops are shown in review UI.
    - The review UI shows which planner produced the result and any fallback warnings.
-5. Click `Apply` to validate + apply ops through OpenCut command stack.
-6. Use undo/redo normally and continue iterating.
+6. Click `Apply` to validate + apply ops through OpenCut command stack.
+7. Use undo/redo normally and continue iterating.
 
 Example chat prompts:
 

@@ -2,19 +2,21 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-	CLIPFORGE_CHAT_PLANNER_MODE,
-	ENABLE_CLIPFORGE_CHAT,
-} from "@/constants/feature-flags";
+import { ENABLE_CLIPFORGE_CHAT } from "@/constants/feature-flags";
 import { useEditor } from "@/hooks/use-editor";
 import {
 	buildProjectSummary,
 	createChatOpsProvider,
+	fetchChatPlannerHealth,
 	type TimelineOpsValidationError,
 } from "@/lib/clipforge";
 import { useClipForgeChatDraftStore } from "@/stores/clipforge-chat-draft-store";
+import { useClipForgeChatSettingsStore } from "@/stores/clipforge-chat-settings-store";
 import type { TimelineDiffOp } from "@/types/clipforge";
-import type { ChatProposalResult } from "@/lib/clipforge/chat";
+import type {
+	ChatPlannerHealth,
+	ChatProposalResult,
+} from "@/lib/clipforge/chat";
 
 interface ProposalMeta {
 	provider: ChatProposalResult["provider"];
@@ -24,9 +26,10 @@ interface ProposalMeta {
 
 export function ChatContent() {
 	const editor = useEditor();
+	const plannerMode = useClipForgeChatSettingsStore((state) => state.plannerMode);
 	const provider = useMemo(
-		() => createChatOpsProvider({ mode: CLIPFORGE_CHAT_PLANNER_MODE }),
-		[],
+		() => createChatOpsProvider({ mode: plannerMode }),
+		[plannerMode],
 	);
 	const draft = useClipForgeChatDraftStore((state) => state.draft);
 	const clearDraft = useClipForgeChatDraftStore((state) => state.clearDraft);
@@ -36,6 +39,10 @@ export function ChatContent() {
 	const [proposedOps, setProposedOps] = useState<TimelineDiffOp[]>([]);
 	const [errors, setErrors] = useState<TimelineOpsValidationError[]>([]);
 	const [proposalMeta, setProposalMeta] = useState<ProposalMeta | null>(null);
+	const [plannerHealth, setPlannerHealth] = useState<ChatPlannerHealth | null>(null);
+	const [plannerHealthError, setPlannerHealthError] = useState<string | null>(null);
+	const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+	const [lastPlanError, setLastPlanError] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (draft.length === 0) return;
@@ -45,6 +52,45 @@ export function ChatContent() {
 		}
 		clearDraft();
 	}, [draft, prompt, clearDraft]);
+
+	useEffect(() => {
+		if (!ENABLE_CLIPFORGE_CHAT) return;
+		if (plannerMode === "heuristic") {
+			setPlannerHealthError(null);
+			setIsCheckingHealth(false);
+			return;
+		}
+
+		let cancelled = false;
+		const loadPlannerHealth = async () => {
+			setIsCheckingHealth(true);
+			setPlannerHealthError(null);
+			try {
+				const health = await fetchChatPlannerHealth();
+				if (!cancelled) {
+					setPlannerHealth(health);
+				}
+			} catch (error) {
+				if (!cancelled) {
+					setPlannerHealthError(
+						error instanceof Error
+							? error.message
+							: "Unable to check planner health.",
+					);
+				}
+			} finally {
+				if (!cancelled) {
+					setIsCheckingHealth(false);
+				}
+			}
+		};
+
+		void loadPlannerHealth();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [plannerMode]);
 
 	const handlePropose = async () => {
 		if (isLoading) return;
@@ -63,6 +109,7 @@ export function ChatContent() {
 		activeRequestIdRef.current = requestId;
 		clearDraft();
 		setIsLoading(true);
+		setLastPlanError(null);
 		setErrors([]);
 		setProposalMeta(null);
 		try {
@@ -94,14 +141,17 @@ export function ChatContent() {
 			const validation = editor.clipforge.validateOps({ ops: result.ops });
 			setProposedOps(validation.ops);
 			setErrors(validation.errors);
+			setLastPlanError(null);
 		} catch (error) {
 			if (activeRequestIdRef.current !== requestId) {
 				return;
 			}
 			setProposalMeta(null);
+			const message =
+				error instanceof Error ? error.message : "Please try again.";
+			setLastPlanError(message);
 			toast.error("Failed to propose edits.", {
-				description:
-					error instanceof Error ? error.message : "Please try again.",
+				description: message,
 			});
 		} finally {
 			if (activeRequestIdRef.current === requestId) {
@@ -128,6 +178,7 @@ export function ChatContent() {
 		setProposedOps([]);
 		setErrors([]);
 		setProposalMeta(null);
+		setLastPlanError(null);
 	};
 
 	if (!ENABLE_CLIPFORGE_CHAT) {
@@ -138,10 +189,63 @@ export function ChatContent() {
 		);
 	}
 
+	const plannerLabel =
+		plannerMode === "openai"
+			? "OpenAI"
+			: plannerMode === "heuristic"
+				? "Heuristic"
+				: "Auto";
+	const healthToneClassName =
+		plannerMode === "heuristic"
+			? "border-slate-400/40 bg-slate-500/10 text-slate-600"
+			: plannerHealth?.status === "ready"
+				? "border-emerald-400/40 bg-emerald-500/10 text-emerald-600"
+				: plannerHealth?.status === "degraded"
+					? "border-amber-400/40 bg-amber-500/10 text-amber-600"
+					: "border-red-400/40 bg-red-500/10 text-red-600";
+	const healthSummary =
+		plannerMode === "heuristic"
+			? "Heuristic mode active"
+			: isCheckingHealth
+				? "Checking planner health..."
+				: plannerHealthError
+					? plannerHealthError
+					: plannerHealth?.status === "ready"
+						? "OpenAI ready"
+						: plannerHealth?.status === "degraded"
+							? "OpenAI degraded"
+							: "OpenAI unavailable";
+	const healthDetail =
+		plannerMode === "auto"
+			? "Auto mode will fall back to heuristic if needed."
+			: plannerMode === "openai"
+				? plannerHealth?.message ?? "OpenAI mode fails closed."
+				: "The deterministic local planner is active.";
+
 	return (
 		<div className="flex h-full flex-col gap-3">
 			<div className="flex flex-col gap-2">
 				<Label>Ask ClipForge to edit this timeline</Label>
+				<div className="rounded-md border p-3">
+					<div className="flex items-center justify-between gap-3">
+						<p className="text-sm font-medium">Planner: {plannerLabel}</p>
+						<span
+							className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${healthToneClassName}`}
+						>
+							{plannerMode === "heuristic"
+								? "active"
+								: plannerHealth?.status ?? "unknown"}
+						</span>
+					</div>
+					<p className="mt-2 text-sm">{healthSummary}</p>
+					<p className="text-muted-foreground mt-1 text-xs">{healthDetail}</p>
+				</div>
+				{lastPlanError && (
+					<div className="rounded-md border border-red-300 bg-red-50 p-3">
+						<p className="mb-1 text-sm font-medium">Planner error</p>
+						<p className="text-xs">{lastPlanError}</p>
+					</div>
+				)}
 				<textarea
 					className="min-h-24 rounded-md border p-2 text-sm"
 					value={prompt}
@@ -152,6 +256,13 @@ export function ChatContent() {
 					{isLoading ? "Proposing..." : "Propose Ops"}
 				</Button>
 			</div>
+
+			{proposalMeta && (
+				<p className="text-muted-foreground text-xs">
+					Planned by: {proposalMeta.provider === "openai" ? "OpenAI" : "Heuristic"}
+					{proposalMeta.fallbackUsed ? " (fallback)" : ""}
+				</p>
+			)}
 
 			{proposalMeta && proposalMeta.warnings.length > 0 && (
 				<div className="rounded-md border border-amber-300 bg-amber-50 p-3">
@@ -166,12 +277,6 @@ export function ChatContent() {
 
 			{proposedOps.length > 0 && (
 				<div className="flex flex-1 flex-col gap-2">
-					{proposalMeta && (
-						<p className="text-muted-foreground text-xs">
-							Planned by: {proposalMeta.provider === "openai" ? "OpenAI" : "Heuristic"}
-							{proposalMeta.fallbackUsed ? " (fallback)" : ""}
-						</p>
-					)}
 					<Label>Proposed JSON Ops</Label>
 					<pre className="bg-muted max-h-64 overflow-auto rounded-md border p-3 text-xs">
 						{JSON.stringify(proposedOps, null, 2)}

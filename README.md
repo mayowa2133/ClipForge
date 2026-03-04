@@ -114,6 +114,8 @@ Planner modes:
 - `heuristic`: force deterministic local parsing only
 - `openai`: force the model planner and fail closed if it is unavailable
 
+The env value sets the initial default only. After launch, users can change planner mode in the left `Settings` tab under `AI Planner`, and the selection is persisted in the browser.
+
 Optional local Whisper CLI indexing:
 
 ```bash
@@ -143,6 +145,18 @@ The editor preview keeps the same DOM interaction overlays, but frame generation
 7. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `add text at the top that says "this"`, `cut where I say "bro"`, or `add b-roll using beach.mp4 when I say "summer" for 3s`), review JSON ops, confirm which planner was used, then click `Apply`.
 8. Use normal OpenCut `Undo/Redo` shortcuts.
 9. Click the top-right `Export` button for best-effort export (real video for supported timelines; preview artifact JSON only as a last-resort fallback).
+
+### In-app AI planner controls
+
+- Open the left `Settings` tab to configure `AI Planner` mode in-app:
+  - `Auto (Recommended)`
+  - `OpenAI`
+  - `Heuristic`
+- The same section shows planner health:
+  - `Ready`: route is available and server config is complete
+  - `Degraded`: route is available but the OpenAI server config is incomplete
+  - `Unavailable`: the health route could not complete
+- Planner health is configuration-based only in this milestone. It does not probe live upstream OpenAI reachability.
 
 ### Built-in demo project
 

@@ -29,6 +29,17 @@ export interface ProjectSummary {
 
 export type ChatPlannerKind = "heuristic" | "openai";
 export type ChatPlannerMode = "auto" | "heuristic" | "openai";
+export type ChatPlannerHealthStatus = "ready" | "degraded" | "unavailable";
+
+export interface ChatPlannerHealth {
+	modelRouteAvailable: boolean;
+	openaiConfigured: boolean;
+	endpointConfigured: boolean;
+	defaultModel: string | null;
+	status: ChatPlannerHealthStatus;
+	message: string;
+	checkedAt: string;
+}
 
 export interface ChatProposalResult {
 	ops: TimelineDiffOp[];

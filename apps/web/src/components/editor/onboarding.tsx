@@ -8,7 +8,13 @@ import { useEditor } from "@/hooks/use-editor";
 import { SOCIAL_LINKS } from "@/constants/site-constants";
 import { useLocalStorage } from "@/hooks/storage/use-local-storage";
 import { Button } from "../ui/button";
-import { Dialog, DialogBody, DialogContent, DialogTitle } from "../ui/dialog";
+import {
+	Dialog,
+	DialogBody,
+	DialogContent,
+	DialogDescription,
+	DialogTitle,
+} from "../ui/dialog";
 import { ENABLE_CLIPFORGE_EXPERIENCE } from "@/constants/feature-flags";
 import {
 	CLIPFORGE_DEMO_MANIFEST,
@@ -132,6 +138,9 @@ function ClipForgeOnboarding() {
 				<DialogTitle>
 					<span className="sr-only">ClipForge onboarding</span>
 				</DialogTitle>
+				<DialogDescription className="sr-only">
+					ClipForge onboarding and guided demo setup.
+				</DialogDescription>
 				<DialogBody>
 					{isLoadingDemo ? (
 						<div className="space-y-5">
@@ -295,6 +304,9 @@ function LegacyOnboarding() {
 				<DialogTitle>
 					<span className="sr-only">{getStepTitle()}</span>
 				</DialogTitle>
+				<DialogDescription className="sr-only">
+					OpenCut onboarding dialog.
+				</DialogDescription>
 				<DialogBody>{renderStepContent()}</DialogBody>
 			</DialogContent>
 		</Dialog>
