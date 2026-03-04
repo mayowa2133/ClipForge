@@ -263,6 +263,108 @@ describe("V1 to V2 Migration", () => {
 			const scenes = result.project.scenes as Array<Record<string, unknown>>;
 			expect(scenes.length).toBe(1);
 		});
+
+		test("transforms legacy text element backgroundColor into background.color", async () => {
+			const originalIndexedDb = globalThis.indexedDB;
+			const legacyTextTrack = {
+				id: "track-text-1",
+				type: "text",
+				name: "Captions",
+				elements: [
+					{
+						id: "text-1",
+						name: "Caption",
+						type: "text",
+						content: "Hello world",
+						fontSize: 28,
+						fontFamily: "Arial",
+						color: "#ff0000",
+						backgroundColor: "#123456",
+						textAlign: "center",
+						fontWeight: "bold",
+						fontStyle: "italic",
+						textDecoration: "underline",
+						x: 42,
+						y: -18,
+						rotation: 12,
+						opacity: 0.75,
+						duration: 2.5,
+						startTime: 1.25,
+						trimStart: 0,
+						trimEnd: 0,
+					},
+				],
+			};
+
+			Object.defineProperty(globalThis, "indexedDB", {
+				configurable: true,
+				value: {
+					open: () => {
+						const request: Record<string, unknown> = {};
+						queueMicrotask(() => {
+							request.result = {
+								transaction: () => ({
+									objectStore: () => ({
+										get: () => {
+											const getRequest: Record<string, unknown> = {};
+											queueMicrotask(() => {
+												getRequest.result = {
+													id: "timeline",
+													tracks: [legacyTextTrack],
+													lastModified: new Date().toISOString(),
+												};
+												const onSuccess = getRequest.onsuccess;
+												if (typeof onSuccess === "function") {
+													onSuccess.call(getRequest);
+												}
+											});
+											return getRequest;
+										},
+									}),
+								}),
+							};
+							const onSuccess = request.onsuccess;
+							if (typeof onSuccess === "function") {
+								onSuccess.call(request);
+							}
+						});
+						return request as unknown as IDBOpenDBRequest;
+					},
+				} as unknown as IDBFactory,
+			});
+
+			try {
+				const result = await transformProjectV1ToV2({ project: v1Project });
+				const scenes = result.project.scenes as Array<Record<string, unknown>>;
+				const tracks = scenes[0]?.tracks as Array<Record<string, unknown>>;
+				const textTrack = tracks[0];
+				const elements = textTrack.elements as Array<Record<string, unknown>>;
+				const textElement = elements[0];
+
+				expect(textTrack.type).toBe("text");
+				expect(textElement.content).toBe("Hello world");
+				expect(textElement.fontSize).toBe(28);
+				expect(textElement.fontFamily).toBe("Arial");
+				expect(textElement.color).toBe("#ff0000");
+				expect(textElement.background).toEqual({ color: "#123456" });
+				expect("backgroundColor" in textElement).toBe(false);
+				expect(textElement.textAlign).toBe("center");
+				expect(textElement.fontWeight).toBe("bold");
+				expect(textElement.fontStyle).toBe("italic");
+				expect(textElement.textDecoration).toBe("underline");
+				expect(textElement.opacity).toBe(0.75);
+				expect(textElement.transform).toEqual({
+					scale: 1,
+					position: { x: 42, y: -18 },
+					rotate: 12,
+				});
+			} finally {
+				Object.defineProperty(globalThis, "indexedDB", {
+					configurable: true,
+					value: originalIndexedDb,
+				});
+			}
+		});
 	});
 
 	describe("getProjectId", () => {
