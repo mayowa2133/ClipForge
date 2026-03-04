@@ -8,6 +8,7 @@ If the request is unsupported or uncertain, output [].
 When context is present, use selected_segment_ids first for "this" or "that".
 Use playhead_ms only when no suitable selected target exists.
 Carry-over like "it" applies only within the same request.
+If the target is ambiguous, output [].
 Allowed op types:
 REMOVE_SILENCE, TRIM_CLIP, CUT_RANGE, ADD_TEXT_OVERLAY, MOVE_SEGMENT, SWAP_SEGMENTS, DELETE_SEGMENT,
 DUPLICATE_SEGMENT, INSERT_BROLL, SET_ASPECT_RATIO, SET_CAPTION_STYLE, FIX_CAPTION_TEXT, MAKE_VERSION

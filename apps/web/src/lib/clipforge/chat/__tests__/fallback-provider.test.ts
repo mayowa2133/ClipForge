@@ -89,6 +89,44 @@ describe("FallbackChatOpsProvider", () => {
 		expect(result.warnings[0]).toContain("Primary planner returned no ops");
 	});
 
+	test("falls back to deterministic clarification when the primary is non-definitive", async () => {
+		const provider = new FallbackChatOpsProvider(
+			buildProvider({
+				ops: [],
+				provider: "openai",
+				fallbackUsed: false,
+				warnings: [],
+				clarification: null,
+				rawText: "[]",
+			}),
+			buildProvider({
+				ops: [],
+				provider: "heuristic",
+				fallbackUsed: false,
+				warnings: [],
+				clarification: {
+					kind: "segment-target",
+					prompt:
+						"Multiple timeline targets match this request. Choose one target to continue.",
+					referenceLabel: "selection:clip",
+					options: [],
+				},
+				rawText: null,
+			}),
+		);
+
+		const result = await provider.proposeEdits({
+			userText: "delete this clip",
+			projectSummary: summary,
+			context,
+		});
+
+		expect(result.provider).toBe("heuristic");
+		expect(result.fallbackUsed).toBe(true);
+		expect(result.clarification?.referenceLabel).toBe("selection:clip");
+		expect(result.warnings[0]).toContain("deterministic clarification");
+	});
+
 	test("falls back when the primary throws", async () => {
 		const provider = new FallbackChatOpsProvider(
 			{

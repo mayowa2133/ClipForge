@@ -62,6 +62,17 @@ export function parseOrdinalOccurrence({ text }: { text: string }): number {
 	return 1;
 }
 
+function parseExplicitOrdinal({
+	text,
+}: {
+	text: string;
+}): number | undefined {
+	if (!/\b(first|second|third|1st|2nd|3rd|1|2|3)\b/i.test(text)) {
+		return undefined;
+	}
+	return parseOrdinalOccurrence({ text: text.toLowerCase() });
+}
+
 export function parseTextOverlayRequest({
 	text,
 }: {
@@ -386,7 +397,7 @@ export function parseSegmentReferenceText({
 			target: phraseMatch[1].toLowerCase() === "clip" ? "clip" : "segment",
 			mode: "explicit",
 			phrase: phraseMatch[2].trim(),
-			occurrence: parseOrdinalOccurrence({ text: normalized }),
+			occurrence: parseExplicitOrdinal({ text: normalized }),
 			useLast: /\blast\b/.test(normalized),
 		};
 	}
@@ -400,7 +411,7 @@ export function parseSegmentReferenceText({
 			mode: "explicit",
 			occurrence: captionContentMatch[1]
 				? parseOrdinalOccurrence({ text: captionContentMatch[1] })
-				: 1,
+				: undefined,
 			content: captionContentMatch[2].trim(),
 		};
 	}
@@ -426,7 +437,7 @@ export function parseSegmentReferenceText({
 			occurrence:
 				ordinalToken && ordinalToken !== "last"
 					? parseOrdinalOccurrence({ text: ordinalToken })
-					: 1,
+					: undefined,
 			useLast: ordinalToken === "last",
 		};
 	}

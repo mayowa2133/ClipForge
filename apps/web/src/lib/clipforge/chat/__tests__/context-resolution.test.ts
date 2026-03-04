@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
 	createEmptyResolutionState,
+	findPlayheadCandidates,
+	findSelectionCandidates,
 	resolveImplicitReference,
 	resolvePlayheadAnchor,
 	resolveSelectionAnchor,
@@ -135,5 +137,34 @@ describe("context-resolution", () => {
 		expect(selection?.segment_id).toBe("seg-1");
 		expect(carryOver?.segment_id).toBe("seg-1");
 		expect(playhead?.segment_id).toBe("seg-2");
+	});
+
+	test("candidate helpers preserve ambiguity instead of auto-picking", () => {
+		const summary = buildSummary();
+		const context: ChatPlannerContext = {
+			playhead_ms: 1500,
+			selected_segment_ids: ["seg-1", "seg-2"],
+			active_scene_id: "scene-main",
+		};
+
+		const selectionCandidates = findSelectionCandidates({
+			projectSummary: summary,
+			context,
+			allowedKinds: ["video"],
+		});
+		const playheadCandidates = findPlayheadCandidates({
+			projectSummary: summary,
+			context,
+			allowedKinds: ["video", "caption"],
+		});
+
+		expect(selectionCandidates.map((segment) => segment.segment_id)).toEqual([
+			"seg-1",
+			"seg-2",
+		]);
+		expect(playheadCandidates.map((segment) => segment.segment_id)).toEqual([
+			"seg-1",
+			"caption-1",
+		]);
 	});
 });

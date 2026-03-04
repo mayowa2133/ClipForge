@@ -59,11 +59,35 @@ export interface ChatPlannerHealth {
 	checkedAt: string;
 }
 
+export type ChatClarificationKind = "segment-target";
+
+export interface ChatClarificationOption {
+	id: string;
+	label: string;
+	segment_id: string;
+	segment_kind: ChatSegmentKind;
+	start_ms: number;
+	end_ms: number;
+	text_preview: string;
+}
+
+export interface ChatClarificationRequest {
+	kind: ChatClarificationKind;
+	prompt: string;
+	referenceLabel: string;
+	options: ChatClarificationOption[];
+}
+
+export interface ChatPlannerOverrides {
+	forced_segment_ids_by_reference: Record<string, string>;
+}
+
 export interface ChatProposalResult {
 	ops: TimelineDiffOp[];
 	provider: ChatPlannerKind;
 	fallbackUsed: boolean;
 	warnings: string[];
+	clarification?: ChatClarificationRequest | null;
 	rawText?: string | null;
 }
 
@@ -76,5 +100,6 @@ export interface ChatOpsProvider {
 		userText: string;
 		projectSummary: ProjectSummary;
 		context: ChatPlannerContext;
+		overrides?: ChatPlannerOverrides;
 	}): Promise<ChatProposalResult>;
 }

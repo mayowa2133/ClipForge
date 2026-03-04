@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { requestOpenAIChatPlan } from "@/lib/clipforge/chat/server/openai-planner";
-import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat/types";
+import type {
+	ChatPlannerContext,
+	ChatPlannerOverrides,
+	ProjectSummary,
+} from "@/lib/clipforge/chat/types";
 
 export const runtime = "nodejs";
 
@@ -21,13 +25,18 @@ export async function POST(request: Request) {
 		const userText = body.userText;
 		const projectSummary = body.projectSummary;
 		const context = body.context;
+		const overrides = body.overrides;
 		if (
 			typeof userText !== "string" ||
 			!isRecord(projectSummary) ||
-			!isPlannerContext(context)
+			!isPlannerContext(context) ||
+			(overrides !== undefined && !isPlannerOverrides(overrides))
 		) {
 			return NextResponse.json(
-				{ error: "Chat plan payload must include userText, projectSummary, and context." },
+				{
+					error:
+						"Chat plan payload must include userText, projectSummary, and context.",
+				},
 				{ status: 400 },
 			);
 		}
@@ -36,6 +45,7 @@ export async function POST(request: Request) {
 			userText,
 			projectSummary: projectSummary as unknown as ProjectSummary,
 			context,
+			overrides,
 		});
 
 		return NextResponse.json(result);
@@ -69,6 +79,18 @@ export async function POST(request: Request) {
 			{ status },
 		);
 	}
+}
+
+function isPlannerOverrides(value: unknown): value is ChatPlannerOverrides {
+	if (!isRecord(value)) {
+		return false;
+	}
+	if (!isRecord(value.forced_segment_ids_by_reference)) {
+		return false;
+	}
+	return Object.entries(value.forced_segment_ids_by_reference).every(
+		([key, segmentId]) => typeof key === "string" && typeof segmentId === "string",
+	);
 }
 
 function isPlannerContext(value: unknown): value is ChatPlannerContext {

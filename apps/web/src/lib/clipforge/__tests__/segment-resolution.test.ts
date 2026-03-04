@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
 	findAddressableSegments,
+	findCaptionReferenceCandidates,
+	findSegmentReferenceCandidates,
 	resolveCaptionReference,
 	resolveSegmentReference,
 } from "@/lib/clipforge";
@@ -57,6 +59,7 @@ function buildSummary() {
 			{ text: "hello", start_ms: 0, end_ms: 200, segment_id: "seg-1", media_id: "clip-1" },
 			{ text: "bro", start_ms: 200, end_ms: 500, segment_id: "seg-1", media_id: "clip-1" },
 			{ text: "summer", start_ms: 2200, end_ms: 2500, segment_id: "seg-2", media_id: "clip-2" },
+			{ text: "bro", start_ms: 2500, end_ms: 2700, segment_id: "seg-2", media_id: "clip-2" },
 		],
 	};
 }
@@ -94,22 +97,40 @@ describe("segment resolution", () => {
 		const summary = buildSummary();
 
 		expect(
+			findSegmentReferenceCandidates({
+				projectSummary: summary,
+				reference: { target: "clip", phrase: "bro" },
+			}).map((segment) => segment.segment_id),
+		).toEqual(["seg-1", "seg-2"]);
+		expect(
 			resolveSegmentReference({
 				projectSummary: summary,
 				reference: { target: "clip", phrase: "bro", occurrence: 1 },
 			})?.segment_id,
 		).toBe("seg-1");
+		expect(
+			resolveSegmentReference({
+				projectSummary: summary,
+				reference: { target: "clip", phrase: "bro" },
+			}),
+		).toBeNull();
 	});
 
 	test("resolves caption references by content", () => {
 		const summary = buildSummary();
 
 		expect(
+			findCaptionReferenceCandidates({
+				projectSummary: summary,
+				reference: { target: "caption", content: "hello" },
+			}).map((segment) => segment.segment_id),
+		).toEqual(["caption-1", "caption-2"]);
+		expect(
 			resolveCaptionReference({
 				projectSummary: summary,
 				reference: { target: "caption", content: "hello" },
-			})?.segment_id,
-		).toBe("caption-1");
+			}),
+		).toBeNull();
 		expect(
 			resolveCaptionReference({
 				projectSummary: summary,

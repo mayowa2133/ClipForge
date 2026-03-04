@@ -57,6 +57,11 @@ describe("POST /api/clipforge/chat/plan", () => {
 						selected_segment_ids: ["seg-1"],
 						active_scene_id: "scene-main",
 					},
+					overrides: {
+						forced_segment_ids_by_reference: {
+							"selection:clip": "seg-1",
+						},
+					},
 				}),
 			}),
 		);
@@ -86,6 +91,40 @@ describe("POST /api/clipforge/chat/plan", () => {
 						playhead_ms: -1,
 						selected_segment_ids: [],
 						active_scene_id: "scene-main",
+					},
+				}),
+			}),
+		);
+		const body = (await response.json()) as Record<string, unknown>;
+
+		expect(response.status).toBe(400);
+		expect(body.error).toBe(
+			"Chat plan payload must include userText, projectSummary, and context.",
+		);
+	});
+
+	test("rejects malformed override payloads", async () => {
+		const response = await POST(
+			new Request("http://localhost/api/clipforge/chat/plan", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					userText: "make it shorter",
+					projectSummary: {
+						total_duration_s: 10,
+						caption_style_id: null,
+						pause_stats: { region_count: 0, total_pause_ms: 0 },
+						segments: [],
+						media_assets: [],
+						timeline_words: [],
+					},
+					context: {
+						playhead_ms: 1500,
+						selected_segment_ids: ["seg-1"],
+						active_scene_id: "scene-main",
+					},
+					overrides: {
+						forced_segment_ids_by_reference: "bad",
 					},
 				}),
 			}),

@@ -14,14 +14,24 @@ import { useClipForgeChatDraftStore } from "@/stores/clipforge-chat-draft-store"
 import { useClipForgeChatSettingsStore } from "@/stores/clipforge-chat-settings-store";
 import type { TimelineDiffOp } from "@/types/clipforge";
 import type {
+	ChatClarificationRequest,
+	ChatPlannerContext,
+	ChatPlannerOverrides,
 	ChatPlannerHealth,
 	ChatProposalResult,
+	ProjectSummary,
 } from "@/lib/clipforge/chat";
 
 interface ProposalMeta {
 	provider: ChatProposalResult["provider"];
 	fallbackUsed: boolean;
 	warnings: string[];
+}
+
+interface PlannerRequestSnapshot {
+	userText: string;
+	projectSummary: ProjectSummary;
+	context: ChatPlannerContext;
 }
 
 export function ChatContent() {
@@ -43,6 +53,12 @@ export function ChatContent() {
 	const [plannerHealthError, setPlannerHealthError] = useState<string | null>(null);
 	const [isCheckingHealth, setIsCheckingHealth] = useState(false);
 	const [lastPlanError, setLastPlanError] = useState<string | null>(null);
+	const [pendingClarification, setPendingClarification] =
+		useState<ChatClarificationRequest | null>(null);
+	const [lastPlannerRequest, setLastPlannerRequest] =
+		useState<PlannerRequestSnapshot | null>(null);
+	const [, setClarificationOverrides] =
+		useState<ChatPlannerOverrides | null>(null);
 
 	useEffect(() => {
 		if (draft.length === 0) return;
@@ -112,6 +128,8 @@ export function ChatContent() {
 		setLastPlanError(null);
 		setErrors([]);
 		setProposalMeta(null);
+		setPendingClarification(null);
+		setClarificationOverrides(null);
 		try {
 			const projectSummary = buildProjectSummary({
 				project: activeProject,
@@ -121,7 +139,7 @@ export function ChatContent() {
 			const selectedSegmentIds = editor.selection
 				.getSelectedElements()
 				.map((element) => element.elementId);
-			const result = await provider.proposeEdits({
+			const plannerRequest: PlannerRequestSnapshot = {
 				userText: prompt,
 				projectSummary,
 				context: {
@@ -129,7 +147,9 @@ export function ChatContent() {
 					selected_segment_ids: selectedSegmentIds,
 					active_scene_id: activeProject.currentSceneId ?? null,
 				},
-			});
+			};
+			setLastPlannerRequest(plannerRequest);
+			const result = await provider.proposeEdits(plannerRequest);
 			if (activeRequestIdRef.current !== requestId) {
 				return;
 			}
@@ -139,6 +159,14 @@ export function ChatContent() {
 				fallbackUsed: result.fallbackUsed,
 				warnings: result.warnings,
 			});
+			if (result.clarification) {
+				setProposedOps([]);
+				setErrors([]);
+				setPendingClarification(result.clarification);
+				setLastPlanError(null);
+				return;
+			}
+			setPendingClarification(null);
 
 			if (result.ops.length === 0) {
 				setProposedOps([]);
@@ -156,6 +184,79 @@ export function ChatContent() {
 				return;
 			}
 			setProposalMeta(null);
+			const message =
+				error instanceof Error ? error.message : "Please try again.";
+			setLastPlanError(message);
+			toast.error("Failed to propose edits.", {
+				description: message,
+			});
+		} finally {
+			if (activeRequestIdRef.current === requestId) {
+				setIsLoading(false);
+			}
+		}
+	};
+
+	const handleClarificationSelection = async ({
+		referenceLabel,
+		segmentId,
+	}: {
+		referenceLabel: string;
+		segmentId: string;
+	}) => {
+		if (!lastPlannerRequest || isLoading) {
+			return;
+		}
+
+		const requestId = activeRequestIdRef.current + 1;
+		activeRequestIdRef.current = requestId;
+		const overrides: ChatPlannerOverrides = {
+			forced_segment_ids_by_reference: {
+				[referenceLabel]: segmentId,
+			},
+		};
+		setClarificationOverrides(overrides);
+		setIsLoading(true);
+		setLastPlanError(null);
+		setErrors([]);
+		try {
+			const result = await provider.proposeEdits({
+				...lastPlannerRequest,
+				overrides,
+			});
+			if (activeRequestIdRef.current !== requestId) {
+				return;
+			}
+
+			setProposalMeta({
+				provider: result.provider,
+				fallbackUsed: result.fallbackUsed,
+				warnings: result.warnings,
+			});
+
+			if (result.clarification) {
+				setPendingClarification(result.clarification);
+				setProposedOps([]);
+				setErrors([]);
+				return;
+			}
+
+			setPendingClarification(null);
+			if (result.ops.length === 0) {
+				setProposedOps([]);
+				setErrors([]);
+				toast.error("No deterministic ops could be generated.");
+				return;
+			}
+
+			const validation = editor.clipforge.validateOps({ ops: result.ops });
+			setProposedOps(validation.ops);
+			setErrors(validation.errors);
+		} catch (error) {
+			if (activeRequestIdRef.current !== requestId) {
+				return;
+			}
+			setPendingClarification(null);
 			const message =
 				error instanceof Error ? error.message : "Please try again.";
 			setLastPlanError(message);
@@ -188,6 +289,8 @@ export function ChatContent() {
 		setErrors([]);
 		setProposalMeta(null);
 		setLastPlanError(null);
+		setPendingClarification(null);
+		setClarificationOverrides(null);
 	};
 
 	if (!ENABLE_CLIPFORGE_CHAT) {
@@ -290,6 +393,48 @@ export function ChatContent() {
 				</div>
 			)}
 
+			{pendingClarification && (
+				<div className="flex flex-col gap-2 rounded-md border p-3">
+					<div>
+						<p className="text-sm font-medium">Need clarification</p>
+						<p className="text-muted-foreground text-xs">
+							{pendingClarification.prompt}
+						</p>
+					</div>
+					<div className="flex flex-col gap-2">
+						{pendingClarification.options.map((option) => (
+							<button
+								key={option.id}
+								type="button"
+								className="rounded-md border px-3 py-2 text-left text-sm"
+								onClick={() =>
+									void handleClarificationSelection({
+										referenceLabel: pendingClarification.referenceLabel,
+										segmentId: option.segment_id,
+									})
+								}
+							>
+								<span className="block font-medium">{option.label}</span>
+								<span className="text-muted-foreground block text-xs">
+									{option.text_preview}
+								</span>
+							</button>
+						))}
+					</div>
+					<div>
+						<Button
+							variant="outline"
+							onClick={() => {
+								setPendingClarification(null);
+								setClarificationOverrides(null);
+							}}
+						>
+							Cancel
+						</Button>
+					</div>
+				</div>
+			)}
+
 			{proposedOps.length > 0 && (
 				<div className="flex flex-1 flex-col gap-2">
 					<Label>Proposed JSON Ops</Label>
@@ -306,6 +451,8 @@ export function ChatContent() {
 								setProposedOps([]);
 								setErrors([]);
 								setProposalMeta(null);
+								setPendingClarification(null);
+								setClarificationOverrides(null);
 							}}
 						>
 							Cancel

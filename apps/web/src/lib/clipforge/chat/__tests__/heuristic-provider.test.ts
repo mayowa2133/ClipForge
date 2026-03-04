@@ -17,7 +17,7 @@ function buildSummary(): ProjectSummary {
 				ordinal: 1,
 				asset_id: "clip-1",
 				text_content: "",
-				transcript_snippet: "hey bro welcome",
+				transcript_snippet: "hey bro clipforge welcome",
 			},
 			{
 				segment_id: "seg-2",
@@ -40,6 +40,17 @@ function buildSummary(): ProjectSummary {
 				asset_id: null,
 				text_content: "teh hook demo",
 				transcript_snippet: "teh hook demo",
+			},
+			{
+				segment_id: "caption-2",
+				track_type: "text",
+				segment_kind: "caption",
+				start_ms: 3400,
+				end_ms: 4200,
+				ordinal: 2,
+				asset_id: null,
+				text_content: "demo again",
+				transcript_snippet: "demo again",
 			},
 			{
 				segment_id: "overlay-1",
@@ -76,8 +87,15 @@ function buildSummary(): ProjectSummary {
 				media_id: "clip-1",
 			},
 			{
-				text: "welcome",
+				text: "clipforge",
 				start_ms: 1450,
+				end_ms: 1700,
+				segment_id: "seg-1",
+				media_id: "clip-1",
+			},
+			{
+				text: "welcome",
+				start_ms: 1700,
 				end_ms: 1900,
 				segment_id: "seg-1",
 				media_id: "clip-1",
@@ -288,6 +306,19 @@ describe("HeuristicChatOpsProvider", () => {
 		]);
 	});
 
+	test("returns clarification for ambiguous selected clip references", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "delete this clip",
+			context: { selected_segment_ids: ["seg-1", "seg-2"] },
+		});
+
+		expect(result.ops).toEqual([]);
+		expect(result.clarification?.referenceLabel).toBe("selection:clip");
+		expect(result.clarification?.options).toHaveLength(2);
+	});
+
 	test("supports MOVE_SEGMENT prompts", async () => {
 		const provider = new HeuristicChatOpsProvider();
 		const absoluteMove = await propose({
@@ -318,6 +349,50 @@ describe("HeuristicChatOpsProvider", () => {
 		expect(result.ops).toEqual([
 			{ type: "MOVE_SEGMENT", segment_id: "seg-2", to_ms: 2000 },
 		]);
+	});
+
+	test("returns clarification for ambiguous caption replacements", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: 'replace "demo" with "sample" in captions',
+		});
+
+		expect(result.ops).toEqual([]);
+		expect(result.clarification?.options).toHaveLength(2);
+	});
+
+	test("supports clarification overrides for a re-plan", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await provider.proposeEdits({
+			userText: "delete this clip",
+			projectSummary: buildSummary(),
+			context: buildContext({ selected_segment_ids: ["seg-1", "seg-2"] }),
+			overrides: {
+				forced_segment_ids_by_reference: {
+					"selection:clip": "seg-2",
+				},
+			},
+		});
+
+		expect(result.clarification).toBeNull();
+		expect(result.ops).toEqual([
+			{
+				type: "DELETE_SEGMENT",
+				segment_id: "seg-2",
+			},
+		]);
+	});
+
+	test("stops and returns clarification when an early clause is ambiguous", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: 'delete the clip where i say "clipforge" and make it faster',
+		});
+
+		expect(result.ops).toEqual([]);
+		expect(result.clarification?.options).toHaveLength(2);
 	});
 
 	test("supports SWAP_SEGMENTS prompts", async () => {

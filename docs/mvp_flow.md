@@ -37,10 +37,12 @@
    - plus current context (`selected` count and playhead time)
 5. Chat planner proposes deterministic JSON timeline ops.
    - In `auto` mode, ClipForge prefers the server-backed model planner and falls back to the heuristic planner if needed.
-6. Proposed ops are shown in review UI.
+6. If the target is ambiguous, the chat panel shows a clarification step first.
+   - Choose the intended clip or caption, then ClipForge re-runs the plan.
+7. Proposed ops are shown in review UI.
    - The review UI shows which planner produced the result and any fallback warnings.
-7. Click `Apply` to validate + apply ops through OpenCut command stack.
-8. Use undo/redo normally and continue iterating.
+8. Click `Apply` to validate + apply ops through OpenCut command stack.
+9. Use undo/redo normally and continue iterating.
 
 Example chat prompts:
 

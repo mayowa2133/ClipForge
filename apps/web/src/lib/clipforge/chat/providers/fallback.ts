@@ -11,7 +11,7 @@ export class FallbackChatOpsProvider implements ChatOpsProvider {
 	): Promise<ChatProposalResult> {
 		try {
 			const result = await this.primary.proposeEdits(args);
-			if (result.ops.length > 0) {
+			if (result.ops.length > 0 || result.clarification) {
 				return result;
 			}
 
@@ -21,7 +21,9 @@ export class FallbackChatOpsProvider implements ChatOpsProvider {
 				fallbackUsed: true,
 				warnings: [
 					...result.warnings,
-					"Primary planner returned no ops; heuristic fallback was used.",
+					fallbackResult.clarification
+						? "Model plan was not definitive; using deterministic clarification."
+						: "Primary planner returned no ops; heuristic fallback was used.",
 					...fallbackResult.warnings,
 				],
 			};

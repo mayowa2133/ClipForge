@@ -42,40 +42,58 @@ export function findAddressableSegments({
 		.sort((a, b) => a.start_ms - b.start_ms);
 }
 
-export function resolveSegmentReference({
+export function findSegmentReferenceCandidates({
 	projectSummary,
 	reference,
 }: {
 	projectSummary: Pick<ProjectSummary, "segments" | "timeline_words">;
 	reference: SegmentReference;
-}): ProjectSegmentSummary | null {
+}): ProjectSegmentSummary[] {
 	if (reference.mode && reference.mode !== "explicit") {
-		return null;
+		return [];
 	}
 	if (reference.phrase) {
 		const matches = findPhraseOccurrences({
 			projectSummary,
 			phrase: reference.phrase,
 		});
-		const targetMatch = reference.useLast
-			? matches.at(-1)
-			: matches.find(
-				(match) => match.occurrence === (reference.occurrence ?? 1),
-			);
-		if (!targetMatch) {
-			return null;
+		if (matches.length === 0) {
+			return [];
 		}
 
-		return (
-			projectSummary.segments
-				.filter((segment) => segment.segment_kind === "video")
-				.sort((a, b) => a.start_ms - b.start_ms)
-				.find(
-					(segment) =>
-						targetMatch.start_ms >= segment.start_ms &&
-						targetMatch.start_ms < segment.end_ms,
-				) ?? null
-		);
+		if (reference.useLast) {
+			const match = matches.at(-1);
+			return match
+				? findEnclosingVideoSegments({
+						projectSummary,
+						startMs: match.start_ms,
+					}).slice(0, 1)
+				: [];
+		}
+
+		if (typeof reference.occurrence === "number") {
+			const match = matches.find((item) => item.occurrence === reference.occurrence);
+			return match
+				? findEnclosingVideoSegments({
+						projectSummary,
+						startMs: match.start_ms,
+					}).slice(0, 1)
+				: [];
+		}
+
+		const seen = new Set<string>();
+		const candidates: ProjectSegmentSummary[] = [];
+		for (const match of matches) {
+			for (const segment of findEnclosingVideoSegments({
+				projectSummary,
+				startMs: match.start_ms,
+			})) {
+				if (seen.has(segment.segment_id)) continue;
+				seen.add(segment.segment_id);
+				candidates.push(segment);
+			}
+		}
+		return candidates;
 	}
 
 	const candidates = findAddressableSegments({
@@ -83,17 +101,20 @@ export function resolveSegmentReference({
 		target: reference.target,
 	});
 	if (candidates.length === 0) {
-		return null;
+		return [];
 	}
 	if (reference.useLast) {
-		return candidates.at(-1) ?? null;
+		const match = candidates.at(-1);
+		return match ? [match] : [];
 	}
-
-	const occurrence = reference.occurrence ?? 1;
-	return candidates[occurrence - 1] ?? null;
+	if (typeof reference.occurrence === "number" && reference.occurrence > 0) {
+		const match = candidates[reference.occurrence - 1];
+		return match ? [match] : [];
+	}
+	return candidates;
 }
 
-export function resolveCaptionReference({
+export function findCaptionReferenceCandidates({
 	projectSummary,
 	reference,
 	fromText,
@@ -101,9 +122,9 @@ export function resolveCaptionReference({
 	projectSummary: Pick<ProjectSummary, "segments">;
 	reference: SegmentReference;
 	fromText?: string;
-}): ProjectSegmentSummary | null {
+}): ProjectSegmentSummary[] {
 	if (reference.mode && reference.mode !== "explicit") {
-		return null;
+		return [];
 	}
 	let candidates = findAddressableSegments({
 		projectSummary,
@@ -116,14 +137,48 @@ export function resolveCaptionReference({
 		);
 	}
 	if (candidates.length === 0) {
-		return null;
+		return [];
 	}
 	if (reference.useLast) {
-		return candidates.at(-1) ?? null;
+		const match = candidates.at(-1);
+		return match ? [match] : [];
 	}
+	if (typeof reference.occurrence === "number" && reference.occurrence > 0) {
+		const match = candidates[reference.occurrence - 1];
+		return match ? [match] : [];
+	}
+	return candidates;
+}
 
-	const occurrence = reference.occurrence ?? 1;
-	return candidates[occurrence - 1] ?? null;
+export function resolveSegmentReference({
+	projectSummary,
+	reference,
+}: {
+	projectSummary: Pick<ProjectSummary, "segments" | "timeline_words">;
+	reference: SegmentReference;
+}): ProjectSegmentSummary | null {
+	const candidates = findSegmentReferenceCandidates({
+		projectSummary,
+		reference,
+	});
+	return candidates.length === 1 ? candidates[0] : null;
+}
+
+export function resolveCaptionReference({
+	projectSummary,
+	reference,
+	fromText,
+}: {
+	projectSummary: Pick<ProjectSummary, "segments">;
+	reference: SegmentReference;
+	fromText?: string;
+}): ProjectSegmentSummary | null {
+	const candidates = findCaptionReferenceCandidates({
+		projectSummary,
+		reference,
+		fromText,
+	});
+	return candidates.length === 1 ? candidates[0] : null;
 }
 
 function mapTargetToKind({
@@ -141,4 +196,21 @@ function mapTargetToKind({
 		return "text-overlay";
 	}
 	return null;
+}
+
+function findEnclosingVideoSegments({
+	projectSummary,
+	startMs,
+}: {
+	projectSummary: Pick<ProjectSummary, "segments">;
+	startMs: number;
+}): ProjectSegmentSummary[] {
+	return projectSummary.segments
+		.filter(
+			(segment) =>
+				segment.segment_kind === "video" &&
+				startMs >= segment.start_ms &&
+				startMs < segment.end_ms,
+		)
+		.sort((a, b) => a.start_ms - b.start_ms);
 }

@@ -25,7 +25,8 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M17: Demo project onboarding and guided first-run experience.
 - [x] M18: In-app AI settings, planner health, and chat diagnostics.
 - [x] M19: Expand chat planner to full deterministic segment ops.
-- [ ] M20: Context-aware chat planning with playhead, selection, and same-request carry-over.
+- [x] M20: Context-aware chat planning with playhead, selection, and same-request carry-over.
+- [ ] M21: Ambiguity detection, clarification UI, and safe target resolution for chat.
 
 ## Working Rules
 

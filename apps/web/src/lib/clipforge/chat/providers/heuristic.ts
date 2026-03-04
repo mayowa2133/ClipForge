@@ -5,16 +5,17 @@ import {
 import { resolveMediaAssetByName } from "@/lib/clipforge/media-resolver";
 import {
 	createEmptyResolutionState,
-	resolveImplicitReference,
+	findImplicitCandidates,
 	updateResolutionStateFromSegment,
 	type ChatResolutionState,
 } from "@/lib/clipforge/chat/context-resolution";
 import {
-	resolveCaptionReference,
-	resolveSegmentReference,
+	findCaptionReferenceCandidates,
+	findSegmentReferenceCandidates,
 	type SegmentReference,
 	type SegmentReferenceTarget,
 } from "@/lib/clipforge/segment-resolution";
+import { buildClarificationRequest } from "@/lib/clipforge/chat/chat-clarification";
 import { getTextOverlayPresetForPosition } from "@/lib/clipforge/text-overlay-presets";
 import type { TimelineDiffOp } from "@/types/clipforge";
 import { splitCompoundRequest } from "../compound-request";
@@ -31,7 +32,9 @@ import {
 } from "../prompt-parsers";
 import type {
 	ChatOpsProvider,
+	ChatPlannerOverrides,
 	ChatPlannerContext,
+	ChatClarificationRequest,
 	ChatProposalResult,
 	ChatSegmentKind,
 	ProjectSegmentSummary,
@@ -45,10 +48,12 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 		userText,
 		projectSummary,
 		context,
+		overrides,
 	}: {
 		userText: string;
 		projectSummary: Parameters<ChatOpsProvider["proposeEdits"]>[0]["projectSummary"];
 		context: Parameters<ChatOpsProvider["proposeEdits"]>[0]["context"];
+		overrides?: Parameters<ChatOpsProvider["proposeEdits"]>[0]["overrides"];
 	}): Promise<ChatProposalResult> {
 		const clauses = splitCompoundRequest(userText);
 		const resolvedClauses = clauses.length > 0 ? clauses : [userText.trim()];
@@ -62,10 +67,21 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 				clause,
 				projectSummary,
 				context,
+				overrides,
 				warnings,
 				state: resolutionState,
 				deletedSegmentIds,
 			});
+			if (clausePlan.clarification) {
+				return {
+					ops: [],
+					provider: "heuristic",
+					fallbackUsed: false,
+					warnings,
+					clarification: clausePlan.clarification,
+					rawText: null,
+				};
+			}
 			resolutionState = clausePlan.state;
 			for (const op of clausePlan.ops) {
 				if (ops.length >= MAX_HEURISTIC_OPS) {
@@ -84,6 +100,7 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 			provider: "heuristic",
 			fallbackUsed: false,
 			warnings,
+			clarification: null,
 			rawText: null,
 		};
 	}
@@ -93,6 +110,7 @@ function planClause({
 	clause,
 	projectSummary,
 	context,
+	overrides,
 	warnings,
 	state,
 	deletedSegmentIds,
@@ -100,15 +118,21 @@ function planClause({
 	clause: string;
 	projectSummary: ProjectSummary;
 	context: ChatPlannerContext;
+	overrides?: ChatPlannerOverrides;
 	warnings: string[];
 	state: ChatResolutionState;
 	deletedSegmentIds: Set<string>;
-}): { ops: TimelineDiffOp[]; state: ChatResolutionState } {
+}): {
+	ops: TimelineDiffOp[];
+	state: ChatResolutionState;
+	clarification: ChatClarificationRequest | null;
+} {
 	const fixCaptionRequest = parseFixCaptionTextRequest({ text: clause });
 	if (fixCaptionRequest) {
 		const target = resolveReference({
 			projectSummary,
 			context,
+			overrides,
 			state,
 			reference: fixCaptionRequest.reference,
 			allowedKinds: ["caption"],
@@ -116,21 +140,25 @@ function planClause({
 			fromText:
 				fixCaptionRequest.from.trim().length > 0 ? fixCaptionRequest.from : undefined,
 		});
-		if (target) {
+		if (target.segment) {
 			return {
 				ops: [
 					{
 						type: "FIX_CAPTION_TEXT",
-						segment_id: target.segment_id,
+						segment_id: target.segment.segment_id,
 						from:
 							fixCaptionRequest.from.trim().length > 0
 								? fixCaptionRequest.from
-								: target.text_content,
+								: target.segment.text_content,
 						to: fixCaptionRequest.to,
 					},
 				],
-				state: updateResolutionStateFromSegment(state, target),
+				state: updateResolutionStateFromSegment(state, target.segment),
+				clarification: null,
 			};
+		}
+		if (target.clarification) {
+			return { ops: [], state, clarification: target.clarification };
 		}
 		return warnUnsupportedClause({ clause, warnings, state });
 	}
@@ -140,29 +168,42 @@ function planClause({
 		const left = resolveReference({
 			projectSummary,
 			context,
+			overrides,
 			state,
 			reference: swapRequest.aReference,
 			allowedKinds: ["video"],
 			deletedSegmentIds,
 		});
+		if (left.clarification) {
+			return { ops: [], state, clarification: left.clarification };
+		}
 		const right = resolveReference({
 			projectSummary,
 			context,
-			state: left ? updateResolutionStateFromSegment(state, left) : state,
+			overrides,
+			state: left.segment ? updateResolutionStateFromSegment(state, left.segment) : state,
 			reference: swapRequest.bReference,
 			allowedKinds: ["video"],
 			deletedSegmentIds,
 		});
-		if (left && right && left.segment_id !== right.segment_id) {
+		if (right.clarification) {
+			return { ops: [], state, clarification: right.clarification };
+		}
+		if (
+			left.segment &&
+			right.segment &&
+			left.segment.segment_id !== right.segment.segment_id
+		) {
 			return {
 				ops: [
 					{
 						type: "SWAP_SEGMENTS",
-						a_id: left.segment_id,
-						b_id: right.segment_id,
+						a_id: left.segment.segment_id,
+						b_id: right.segment.segment_id,
 					},
 				],
-				state: updateResolutionStateFromSegment(state, right),
+				state: updateResolutionStateFromSegment(state, right.segment),
+				clarification: null,
 			};
 		}
 		return warnUnsupportedClause({ clause, warnings, state });
@@ -173,17 +214,18 @@ function planClause({
 		const target = resolveReference({
 			projectSummary,
 			context,
+			overrides,
 			state,
 			reference: moveRequest.reference,
 			allowedKinds: ["video"],
 			deletedSegmentIds,
 		});
-		if (target) {
+		if (target.segment) {
 			const toMs =
 				moveRequest.absolute_to_ms ??
 				Math.max(
 					0,
-					target.start_ms +
+					target.segment.start_ms +
 						(moveRequest.direction === "earlier"
 							? -(moveRequest.relative_delta_ms ?? 0)
 							: moveRequest.relative_delta_ms ?? 0),
@@ -192,12 +234,16 @@ function planClause({
 				ops: [
 					{
 						type: "MOVE_SEGMENT",
-						segment_id: target.segment_id,
+						segment_id: target.segment.segment_id,
 						to_ms: toMs,
 					},
 				],
-				state: updateResolutionStateFromSegment(state, target),
+				state: updateResolutionStateFromSegment(state, target.segment),
+				clarification: null,
 			};
+		}
+		if (target.clarification) {
+			return { ops: [], state, clarification: target.clarification };
 		}
 		return warnUnsupportedClause({ clause, warnings, state });
 	}
@@ -207,23 +253,28 @@ function planClause({
 		const target = resolveReference({
 			projectSummary,
 			context,
+			overrides,
 			state,
 			reference: trimRequest.reference,
 			allowedKinds: ["video"],
 			deletedSegmentIds,
 		});
-		if (target) {
+		if (target.segment) {
 			return {
 				ops: [
 					{
 						type: "TRIM_CLIP",
-						clip_id: target.segment_id,
+						clip_id: target.segment.segment_id,
 						in_ms: trimRequest.edge === "start" ? trimRequest.amount_ms : 0,
 						out_ms: trimRequest.edge === "end" ? trimRequest.amount_ms : 0,
 					},
 				],
-				state: updateResolutionStateFromSegment(state, target),
+				state: updateResolutionStateFromSegment(state, target.segment),
+				clarification: null,
 			};
+		}
+		if (target.clarification) {
+			return { ops: [], state, clarification: target.clarification };
 		}
 		return warnUnsupportedClause({ clause, warnings, state });
 	}
@@ -233,22 +284,27 @@ function planClause({
 		const target = resolveReference({
 			projectSummary,
 			context,
+			overrides,
 			state,
 			reference: deleteRequest.reference,
 			allowedKinds: ["video"],
 			deletedSegmentIds,
 		});
-		if (target) {
-			deletedSegmentIds.add(target.segment_id);
+		if (target.segment) {
+			deletedSegmentIds.add(target.segment.segment_id);
 			return {
 				ops: [
 					{
 						type: "DELETE_SEGMENT",
-						segment_id: target.segment_id,
+						segment_id: target.segment.segment_id,
 					},
 				],
-				state: updateResolutionStateFromSegment(state, target),
+				state: updateResolutionStateFromSegment(state, target.segment),
+				clarification: null,
 			};
+		}
+		if (target.clarification) {
+			return { ops: [], state, clarification: target.clarification };
 		}
 		return warnUnsupportedClause({ clause, warnings, state });
 	}
@@ -258,24 +314,29 @@ function planClause({
 		const target = resolveReference({
 			projectSummary,
 			context,
+			overrides,
 			state,
 			reference: duplicateRequest.reference,
 			allowedKinds: ["video"],
 			deletedSegmentIds,
 		});
-		if (target) {
+		if (target.segment) {
 			return {
 				ops: [
 					{
 						type: "DUPLICATE_SEGMENT",
-						segment_id: target.segment_id,
+						segment_id: target.segment.segment_id,
 						to_ms: duplicateRequest.after_itself
-							? target.end_ms
-							: duplicateRequest.to_ms ?? target.end_ms,
+							? target.segment.end_ms
+							: duplicateRequest.to_ms ?? target.segment.end_ms,
 					},
 				],
-				state: updateResolutionStateFromSegment(state, target),
+				state: updateResolutionStateFromSegment(state, target.segment),
+				clarification: null,
 			};
+		}
+		if (target.clarification) {
+			return { ops: [], state, clarification: target.clarification };
 		}
 		return warnUnsupportedClause({ clause, warnings, state });
 	}
@@ -303,7 +364,11 @@ function planLegacyClause({
 	projectSummary: ProjectSummary;
 	context: ChatPlannerContext;
 	state: ChatResolutionState;
-}): { ops: TimelineDiffOp[]; state: ChatResolutionState } {
+}): {
+	ops: TimelineDiffOp[];
+	state: ChatResolutionState;
+	clarification: ChatClarificationRequest | null;
+} {
 	const text = clause.toLowerCase();
 	const ops: TimelineDiffOp[] = [];
 	const timedBrollMatch =
@@ -489,12 +554,13 @@ function planLegacyClause({
 		}
 	}
 
-	return { ops, state };
+	return { ops, state, clarification: null };
 }
 
 function resolveReference({
 	projectSummary,
 	context,
+	overrides,
 	state,
 	reference,
 	allowedKinds,
@@ -503,32 +569,53 @@ function resolveReference({
 }: {
 	projectSummary: ProjectSummary;
 	context: ChatPlannerContext;
+	overrides?: ChatPlannerOverrides;
 	state: ChatResolutionState;
 	reference: SegmentReference;
 	allowedKinds: ChatSegmentKind[];
 	deletedSegmentIds: Set<string>;
 	fromText?: string;
-}): ProjectSegmentSummary | null {
+}): {
+	segment: ProjectSegmentSummary | null;
+	clarification: ChatClarificationRequest | null;
+} {
 	if (!isReferenceCompatibleWithKinds(reference.target, allowedKinds)) {
-		return null;
+		return { segment: null, clarification: null };
 	}
 
-	let target: ProjectSegmentSummary | null = null;
+	const referenceLabel = buildReferenceLabel({ reference, fromText });
+	const forcedSegmentId =
+		overrides?.forced_segment_ids_by_reference?.[referenceLabel] ?? null;
+	if (forcedSegmentId) {
+		const forced =
+			projectSummary.segments.find(
+				(segment) =>
+					segment.segment_id === forcedSegmentId &&
+					allowedKinds.includes(segment.segment_kind) &&
+					!deletedSegmentIds.has(segment.segment_id),
+			) ?? null;
+		return {
+			segment: forced,
+			clarification: null,
+		};
+	}
+
+	let candidates: ProjectSegmentSummary[] = [];
 
 	if (!reference.mode || reference.mode === "explicit") {
-		target =
+		candidates =
 			allowedKinds.includes("caption") && reference.target === "caption"
-				? resolveCaptionReference({
+				? findCaptionReferenceCandidates({
 						projectSummary,
 						reference,
 						fromText,
 					})
-				: resolveSegmentReference({
+				: findSegmentReferenceCandidates({
 						projectSummary,
 						reference,
 					});
 	} else {
-		target = resolveImplicitReference({
+		candidates = findImplicitCandidates({
 			projectSummary,
 			context,
 			state,
@@ -537,16 +624,27 @@ function resolveReference({
 		});
 	}
 
-	if (!target) {
-		return null;
+	candidates = candidates.filter(
+		(segment) =>
+			allowedKinds.includes(segment.segment_kind) &&
+			!deletedSegmentIds.has(segment.segment_id),
+	);
+	if (candidates.length === 0) {
+		return { segment: null, clarification: null };
 	}
-	if (!allowedKinds.includes(target.segment_kind)) {
-		return null;
+	if (candidates.length === 1) {
+		return {
+			segment: candidates[0],
+			clarification: null,
+		};
 	}
-	if (deletedSegmentIds.has(target.segment_id)) {
-		return null;
-	}
-	return target;
+	return {
+		segment: null,
+		clarification: buildClarificationRequest({
+			referenceLabel,
+			candidates,
+		}),
+	};
 }
 
 function isReferenceCompatibleWithKinds(
@@ -573,10 +671,45 @@ function warnUnsupportedClause({
 	clause: string;
 	warnings: string[];
 	state: ChatResolutionState;
-}): { ops: TimelineDiffOp[]; state: ChatResolutionState } {
+}): {
+	ops: TimelineDiffOp[];
+	state: ChatResolutionState;
+	clarification: ChatClarificationRequest | null;
+} {
 	warnings.push(`Skipped unsupported clause: "${clause}"`);
 	return {
 		ops: [],
 		state,
+		clarification: null,
 	};
+}
+
+function buildReferenceLabel({
+	reference,
+	fromText,
+}: {
+	reference: SegmentReference;
+	fromText?: string;
+}): string {
+	if (reference.mode === "selection") {
+		return `selection:${reference.target}`;
+	}
+	if (reference.mode === "playhead") {
+		return `playhead:${reference.target}`;
+	}
+	if (reference.mode === "carry-over") {
+		return `carry-over:${reference.target}`;
+	}
+	if (reference.phrase) {
+		return `phrase:${reference.target}:${reference.phrase.toLowerCase()}`;
+	}
+	if (reference.content) {
+		return `content:${reference.target}:${reference.content.toLowerCase()}`;
+	}
+	if (fromText && reference.target === "caption") {
+		return `caption-match:${fromText.toLowerCase()}`;
+	}
+	return `explicit:${reference.target}:${reference.occurrence ?? "any"}:${
+		reference.useLast ? "last" : "no-last"
+	}`;
 }

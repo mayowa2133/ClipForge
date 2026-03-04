@@ -122,6 +122,14 @@ Examples:
 
 Carry-over never persists across separate chat submissions.
 
+## Ambiguity Clarification (M21)
+
+- If more than one valid clip or caption matches a single-target request, ClipForge no longer auto-picks the first match.
+- The chat panel now shows a local clarification step first.
+- After you choose one option, the planner re-runs and then shows the normal JSON ops review.
+- Ordinal references (`first`, `second`, `last`) remain the preferred way to avoid clarification when multiple targets exist.
+- In `auto` mode, the heuristic planner can provide a deterministic clarification when the model planner is non-definitive.
+
 ## Phrase Cut Rules (M14)
 
 - Phrase cuts require an exact quoted phrase.
