@@ -33,7 +33,7 @@ Example chat prompts:
 
 ## Flow C: Best-effort Export
 
-1. Click `Export` in the Assets panel.
+1. Click the top-right `Export` button in the editor header.
 2. ClipForge attempts OpenCut binary export.
 3. If export succeeds, a downloadable media file is produced.
-4. If export is unavailable, ClipForge generates a preview artifact JSON snapshot.
+4. If export is unavailable or fails in an unsupported case, ClipForge can still generate a preview artifact JSON snapshot as a last-resort fallback.

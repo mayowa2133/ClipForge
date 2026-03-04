@@ -19,6 +19,7 @@ import { Check, Copy, Download, RotateCcw } from "lucide-react";
 import {
 	EXPORT_FORMAT_VALUES,
 	EXPORT_QUALITY_VALUES,
+	type ExportDiagnostics,
 	type ExportFormat,
 	type ExportQuality,
 	type ExportResult,
@@ -152,6 +153,7 @@ function ExportPopover({
 			{exportResult && !exportResult.success ? (
 				<ExportError
 					error={exportResult.error || "Unknown error occurred"}
+					diagnostics={exportResult.diagnostics}
 					onRetry={handleExport}
 				/>
 			) : (
@@ -292,15 +294,20 @@ function isExportQuality(value: string): value is ExportQuality {
 
 function ExportError({
 	error,
+	diagnostics,
 	onRetry,
 }: {
 	error: string;
+	diagnostics?: ExportDiagnostics;
 	onRetry: () => void;
 }) {
 	const [copied, setCopied] = useState(false);
+	const diagnosticsLine = formatExportDiagnostics({ diagnostics });
 
 	const handleCopy = async () => {
-		await navigator.clipboard.writeText(error);
+		await navigator.clipboard.writeText(
+			diagnosticsLine ? `${error}\n${diagnosticsLine}` : error,
+		);
 		setCopied(true);
 		setTimeout(() => setCopied(false), 1000);
 	};
@@ -310,6 +317,9 @@ function ExportError({
 			<div className="flex flex-col gap-1.5">
 				<p className="text-destructive text-sm font-medium">Export failed</p>
 				<p className="text-muted-foreground text-xs">{error}</p>
+				{diagnosticsLine ? (
+					<p className="text-muted-foreground text-[11px]">{diagnosticsLine}</p>
+				) : null}
 			</div>
 
 			<div className="flex gap-2">
@@ -334,4 +344,30 @@ function ExportError({
 			</div>
 		</div>
 	);
+}
+
+function formatExportDiagnostics({
+	diagnostics,
+}: {
+	diagnostics?: ExportDiagnostics;
+}): string | null {
+	if (!diagnostics) {
+		return null;
+	}
+
+	const parts = [
+		diagnostics.failureCode ? `code=${diagnostics.failureCode}` : null,
+		typeof diagnostics.failedFrameIndex === "number"
+			? `frame=${diagnostics.failedFrameIndex}`
+			: null,
+		typeof diagnostics.failedTimeSeconds === "number"
+			? `time=${diagnostics.failedTimeSeconds.toFixed(2)}s`
+			: null,
+		`backend=${diagnostics.backendUsed}`,
+		diagnostics.audioIncluded ? "audio=on" : "audio=off",
+		`format=${diagnostics.format}`,
+		`quality=${diagnostics.quality}`,
+	].filter(Boolean);
+
+	return parts.join(" • ");
 }

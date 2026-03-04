@@ -12,7 +12,11 @@ import {
 	QUALITY_HIGH,
 	QUALITY_VERY_HIGH,
 } from "mediabunny";
-import type { ExportFormat, ExportQuality } from "@/types/export";
+import type {
+	ExportFailureCode,
+	ExportFormat,
+	ExportQuality,
+} from "@/types/export";
 import type { RenderGraph } from "@/services/renderer/types";
 import type { RenderBackend } from "@/services/renderer/backends/types";
 
@@ -41,6 +45,18 @@ export type SceneExporterEvents = {
 	error: [error: Error];
 	cancelled: [];
 };
+
+export class SceneExportError extends Error {
+	constructor(
+		message: string,
+		public readonly failureCode: ExportFailureCode,
+		public readonly frameIndex?: number,
+		public readonly timeSeconds?: number,
+	) {
+		super(message);
+		this.name = "SceneExportError";
+	}
+}
 
 export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 	private readonly format: ExportFormat;
@@ -86,10 +102,21 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		const outputFormat =
 			this.format === "webm" ? new WebMOutputFormat() : new Mp4OutputFormat();
 
-		const output = new Output({
-			format: outputFormat,
-			target: new BufferTarget(),
-		});
+		const output = (() => {
+			try {
+				return new Output({
+					format: outputFormat,
+					target: new BufferTarget(),
+				});
+			} catch (error) {
+				throw new SceneExportError(
+					error instanceof Error
+						? error.message
+						: "Failed to initialize export output",
+					"encoder-init-failed",
+				);
+			}
+		})();
 
 		const encoderCanvas = document.createElement("canvas");
 		encoderCanvas.width = this.width;
@@ -114,10 +141,29 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 			output.addAudioTrack(audioSource);
 		}
 
-		await output.start();
+		try {
+			await output.start();
+		} catch (error) {
+			throw new SceneExportError(
+				error instanceof Error ? error.message : "Failed to start encoder",
+				"encoder-init-failed",
+			);
+		}
 		if (audioSource && this.audioBuffer) {
-			await audioSource.add(this.audioBuffer);
-			audioSource.close();
+			try {
+				await audioSource.add(this.audioBuffer);
+				audioSource.close();
+			} catch (error) {
+				try {
+					await output.cancel();
+				} catch {
+					// Ignore secondary cancellation errors.
+				}
+				throw new SceneExportError(
+					error instanceof Error ? error.message : "Failed to add audio track",
+					"audio-mix-failed",
+				);
+			}
 		}
 
 		for (let i = 0; i < frameCount; i++) {
@@ -128,11 +174,26 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 			}
 
 			const time = i / this.fps;
-			const frame = await this.backend.renderFrame({
-				graph: this.graph,
-				time,
-				targetSize: { width: this.width, height: this.height },
-			});
+			let frame: Awaited<ReturnType<RenderBackend["renderFrame"]>>;
+			try {
+				frame = await this.backend.renderFrame({
+					graph: this.graph,
+					time,
+					targetSize: { width: this.width, height: this.height },
+				});
+			} catch (error) {
+				try {
+					await output.cancel();
+				} catch {
+					// Ignore secondary cancellation errors.
+				}
+				throw new SceneExportError(
+					error instanceof Error ? error.message : "Failed to render frame",
+					"render-frame-failed",
+					i,
+					time,
+				);
+			}
 			encoderCtx.clearRect(0, 0, this.width, this.height);
 			if (frame.kind === "image-bitmap" && frame.bitmap) {
 				encoderCtx.drawImage(frame.bitmap, 0, 0, this.width, this.height);
@@ -140,8 +201,29 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 			} else if (frame.canvas) {
 				encoderCtx.drawImage(frame.canvas, 0, 0, this.width, this.height);
 			}
-			await videoSource.add(time, 1 / this.fps);
-			this.emit("progress", i / frameCount);
+			try {
+				await videoSource.add(time, 1 / this.fps);
+			} catch (error) {
+				try {
+					await output.cancel();
+				} catch {
+					// Ignore secondary cancellation errors.
+				}
+				throw new SceneExportError(
+					error instanceof Error ? error.message : "Failed to encode frame",
+					"render-frame-failed",
+					i,
+					time,
+				);
+			}
+			const renderProgressBase = this.shouldIncludeAudio ? 0.05 : 0;
+			const renderProgressRange = this.shouldIncludeAudio ? 0.9 : 0.95;
+			this.emit(
+				"progress",
+				frameCount === 0
+					? 0.95
+					: renderProgressBase + ((i + 1) / frameCount) * renderProgressRange,
+			);
 		}
 
 		if (this.isCancelled) {
@@ -151,7 +233,15 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		}
 
 		videoSource.close();
-		await output.finalize();
+		try {
+			this.emit("progress", 0.95);
+			await output.finalize();
+		} catch (error) {
+			throw new SceneExportError(
+				error instanceof Error ? error.message : "Failed to finalize export",
+				"encoder-finalize-failed",
+			);
+		}
 		this.emit("progress", 1);
 
 		const buffer = output.target.buffer;

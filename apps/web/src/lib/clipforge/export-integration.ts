@@ -1,5 +1,9 @@
 import type { EditorCore } from "@/core";
-import type { ExportFormat, ExportQuality } from "@/types/export";
+import type {
+	ExportDiagnostics,
+	ExportFormat,
+	ExportQuality,
+} from "@/types/export";
 import { buildProjectSummary } from "./chat/project-summarizer";
 
 export interface ClipForgeExportArtifact {
@@ -8,6 +12,8 @@ export interface ClipForgeExportArtifact {
 	fileName: string;
 	mimeType: string;
 	message: string;
+	diagnostics?: ExportDiagnostics;
+	fallbackReason?: string;
 }
 
 export interface ClipForgeExportIntegration {
@@ -32,6 +38,9 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 		format?: ExportFormat;
 		quality?: ExportQuality;
 	}): Promise<ClipForgeExportArtifact> {
+		let exportDiagnostics: ExportDiagnostics | undefined;
+		let fallbackReason = "Export pipeline unavailable.";
+
 		try {
 			const result = await editor.project.export({
 				options: {
@@ -40,6 +49,7 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 					includeAudio: true,
 				},
 			});
+			exportDiagnostics = result.diagnostics;
 
 			if (result.success && result.buffer) {
 				const mimeType = format === "webm" ? "video/webm" : "video/mp4";
@@ -53,10 +63,14 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 					fileName,
 					mimeType,
 					message: "Export completed using OpenCut renderer.",
+					diagnostics: result.diagnostics,
 				};
 			}
+			fallbackReason = result.error || fallbackReason;
 		} catch (error) {
 			console.warn("Best-effort export fallback triggered:", error);
+			fallbackReason =
+				error instanceof Error ? error.message : "Export pipeline failed unexpectedly.";
 		}
 
 		const activeProject = editor.project.getActive();
@@ -77,6 +91,8 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 						: [],
 			}),
 			ops_audit_count: activeProject.clipforge?.opsAudit.length ?? 0,
+			export_diagnostics: exportDiagnostics ?? null,
+			fallback_reason: fallbackReason,
 		};
 		const fileName = `clipforge_preview_artifact_${Date.now()}.json`;
 		const mimeType = "application/json";
@@ -84,13 +100,16 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 			new Blob([JSON.stringify(payload, null, 2)], { type: mimeType }),
 		);
 
+		const artifactMessage = `${fallbackReason} Generated preview artifact with timeline metadata and diagnostics.`;
+
 		return {
 			status: "preview-artifact",
 			url,
 			fileName,
 			mimeType,
-			message:
-				"Export pipeline unavailable. Generated preview artifact with timeline metadata.",
+			message: artifactMessage,
+			diagnostics: exportDiagnostics,
+			fallbackReason,
 		};
 	}
 }

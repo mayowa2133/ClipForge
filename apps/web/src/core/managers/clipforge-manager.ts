@@ -3,6 +3,7 @@ import {
 	BestEffortExportIntegration,
 	buildClipIndex,
 	buildEmptyMediaMetadata,
+	type ClipForgeExportArtifact,
 	detectSilenceRegions,
 	ensureClipForgeProjectData,
 	resolveClipForgeTranscriber,
@@ -354,13 +355,7 @@ export class ClipForgeManager {
 		};
 	}
 
-	async exportBestEffort(): Promise<{
-		status: "exported" | "preview-artifact";
-		url: string;
-		fileName: string;
-		mimeType: string;
-		message: string;
-	}> {
+	async exportBestEffort(): Promise<ClipForgeExportArtifact> {
 		return this.exportIntegration.exportBestEffort({
 			editor: this.editor,
 		});

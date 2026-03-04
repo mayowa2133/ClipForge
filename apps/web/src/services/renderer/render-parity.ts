@@ -23,3 +23,32 @@ export async function computeCanvasFrameHash({
 
 	return `${canvas.width}x${canvas.height}:${(hash >>> 0).toString(16)}`;
 }
+
+export interface ParityCheckResult {
+	match: boolean;
+	previewHash: string;
+	exportHash: string;
+	time: number;
+}
+
+export async function compareCanvasFrameParity({
+	previewCanvas,
+	exportCanvas,
+	time,
+}: {
+	previewCanvas: HTMLCanvasElement;
+	exportCanvas: HTMLCanvasElement;
+	time: number;
+}): Promise<ParityCheckResult> {
+	const [previewHash, exportHash] = await Promise.all([
+		computeCanvasFrameHash({ canvas: previewCanvas }),
+		computeCanvasFrameHash({ canvas: exportCanvas }),
+	]);
+
+	return {
+		match: previewHash === exportHash,
+		previewHash,
+		exportHash,
+		time,
+	};
+}

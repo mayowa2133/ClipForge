@@ -141,7 +141,7 @@ The editor preview keeps the same DOM interaction overlays, but frame generation
 5. Open `Captions` tab and generate captions using `Clean Bottom` or `Bold Center`.
 6. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `add text at the top that says "this"`, `cut where I say "bro"`, or `add b-roll using beach.mp4 when I say "summer" for 3s`), review JSON ops, confirm which planner was used, then click `Apply`.
 7. Use normal OpenCut `Undo/Redo` shortcuts.
-8. Click `Export` for best-effort export (binary export if available, otherwise preview artifact JSON).
+8. Click the top-right `Export` button for best-effort export (real video for supported timelines; preview artifact JSON only as a last-resort fallback).
 
 ### Self-Hosting with Docker
 

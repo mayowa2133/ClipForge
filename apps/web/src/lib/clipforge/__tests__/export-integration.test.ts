@@ -43,7 +43,19 @@ describe("BestEffortExportIntegration", () => {
 		const editor = {
 			project: {
 				export: async () => {
-					throw new Error("renderer unavailable");
+					return {
+						success: false,
+						error: "renderer unavailable",
+						diagnostics: {
+							failureCode: "render-frame-failed",
+							failedFrameIndex: 12,
+							failedTimeSeconds: 0.4,
+							backendUsed: "binary-canvas",
+							audioIncluded: true,
+							format: "mp4",
+							quality: "high",
+						},
+					};
 				},
 				getActive: () => project,
 			},
@@ -55,6 +67,8 @@ describe("BestEffortExportIntegration", () => {
 
 		expect(artifact.status).toBe("preview-artifact");
 		expect(artifact.fileName.endsWith(".json")).toBe(true);
+		expect(artifact.fallbackReason).toBe("renderer unavailable");
+		expect(artifact.diagnostics?.failureCode).toBe("render-frame-failed");
 	});
 
 	test("returns binary artifact when core export succeeds", async () => {
@@ -76,5 +90,6 @@ describe("BestEffortExportIntegration", () => {
 
 		expect(artifact.status).toBe("exported");
 		expect(artifact.fileName.endsWith(".mp4")).toBe(true);
+		expect(artifact.diagnostics).toBeUndefined();
 	});
 });

@@ -1,14 +1,19 @@
 import type { EditorCore } from "@/core";
 import { ENABLE_BINARY_PREVIEW_RENDERER } from "@/constants/feature-flags";
+import { compareCanvasFrameParity } from "@/services/renderer/render-parity";
 import { buildRenderGraph } from "@/services/renderer/scene-builder";
-import { SceneExporter } from "@/services/renderer/scene-exporter";
+import { SceneExporter, SceneExportError } from "@/services/renderer/scene-exporter";
 import { RenderAssetRegistry } from "@/services/renderer/render-asset-registry";
 import type { RenderGraph } from "@/services/renderer/types";
 import { BinaryCanvasBackend } from "@/services/renderer/backends/binary-canvas-backend";
 import { BinaryPreviewBackend } from "@/services/renderer/backends/binary-preview-backend";
 import { LegacyCanvasBackend } from "@/services/renderer/backends/legacy-canvas-backend";
 import type { RenderBackend } from "@/services/renderer/backends/types";
-import type { ExportOptions, ExportResult } from "@/types/export";
+import type {
+	ExportDiagnostics,
+	ExportOptions,
+	ExportResult,
+} from "@/types/export";
 import { createTimelineAudioBuffer } from "@/lib/media/audio";
 import { formatTimeCode, getLastFrameTime } from "@/lib/time";
 import { downloadBlob } from "@/utils/browser";
@@ -124,30 +129,69 @@ export class RendererManager {
 		options: ExportOptions;
 	}): Promise<ExportResult> {
 		const { format, quality, fps, includeAudio, onProgress, onCancel } = options;
+		let lastExportBackendUsed: "binary-canvas" | "legacy-canvas" = "binary-canvas";
+		let getLastExportBackendUsed = () => lastExportBackendUsed;
 
 		try {
 			const tracks = this.editor.timeline.getTracks();
 			const mediaAssets = this.editor.media.getAssets();
 			const activeProject = this.editor.project.getActive();
+			const buildDiagnostics = ({
+				failureCode,
+				failedFrameIndex = null,
+				failedTimeSeconds = null,
+				backendUsed = "binary-canvas",
+			}: {
+				failureCode?: ExportDiagnostics["failureCode"];
+				failedFrameIndex?: number | null;
+				failedTimeSeconds?: number | null;
+				backendUsed?: ExportDiagnostics["backendUsed"];
+			}): ExportDiagnostics => ({
+				failureCode,
+				failedFrameIndex,
+				failedTimeSeconds,
+				backendUsed,
+				audioIncluded: !!includeAudio,
+				format,
+				quality,
+			});
 			if (!activeProject) {
-				return { success: false, error: "No active project" };
+				return {
+					success: false,
+					error: "No active project",
+					diagnostics: buildDiagnostics({ failureCode: "no-active-project" }),
+				};
 			}
 
 			const duration = this.editor.timeline.getTotalDuration();
 			if (duration === 0) {
-				return { success: false, error: "Project is empty" };
+				return {
+					success: false,
+					error: "Project is empty",
+					diagnostics: buildDiagnostics({ failureCode: "empty-project" }),
+				};
 			}
 
 			const exportFps = fps || activeProject.settings.fps;
 			const canvasSize = activeProject.settings.canvasSize;
 			let audioBuffer: AudioBuffer | null = null;
 			if (includeAudio) {
+				onProgress?.({ progress: 0.02 });
+				try {
+					audioBuffer = await createTimelineAudioBuffer({
+						tracks,
+						mediaAssets,
+						duration,
+					});
+				} catch (error) {
+					return {
+						success: false,
+						error:
+							error instanceof Error ? error.message : "Failed to mix audio for export",
+						diagnostics: buildDiagnostics({ failureCode: "audio-mix-failed" }),
+					};
+				}
 				onProgress?.({ progress: 0.05 });
-				audioBuffer = await createTimelineAudioBuffer({
-					tracks,
-					mediaAssets,
-					duration,
-				});
 			}
 
 			const renderGraph = buildRenderGraph({
@@ -159,7 +203,20 @@ export class RendererManager {
 			});
 			this.assetRegistry.setAssets(mediaAssets);
 
-			const backend = this.createExportBackend();
+			const exportBackend = this.createExportBackend();
+			const backend = exportBackend.backend;
+			getLastExportBackendUsed = exportBackend.getLastUsedBackend;
+			lastExportBackendUsed = exportBackend.getLastUsedBackend();
+			if (
+				process.env.NODE_ENV !== "production" &&
+				typeof document !== "undefined"
+			) {
+				void this.logExportParityCheck({
+					renderGraph,
+					exportBackend: backend,
+					canvasSize,
+				});
+			}
 			const exporter = new SceneExporter({
 				width: canvasSize.width,
 				height: canvasSize.height,
@@ -173,8 +230,7 @@ export class RendererManager {
 			});
 
 			exporter.on("progress", (progress) => {
-				const adjustedProgress = includeAudio ? 0.05 + progress * 0.95 : progress;
-				onProgress?.({ progress: adjustedProgress });
+				onProgress?.({ progress });
 			});
 
 			let cancelled = false;
@@ -189,23 +245,56 @@ export class RendererManager {
 			try {
 				const buffer = await exporter.export();
 				clearInterval(cancelInterval);
-				backend.dispose();
+				lastExportBackendUsed = exportBackend.getLastUsedBackend();
 
 				if (cancelled) {
-					return { success: false, cancelled: true };
+					return {
+						success: false,
+						cancelled: true,
+						diagnostics: buildDiagnostics({
+							failureCode: "cancelled",
+							backendUsed: lastExportBackendUsed,
+						}),
+					};
 				}
 				if (!buffer) {
-					return { success: false, error: "Export failed to produce buffer" };
+					return {
+						success: false,
+						error: "Export failed to produce buffer",
+						diagnostics: buildDiagnostics({
+							failureCode: "unknown",
+							backendUsed: lastExportBackendUsed,
+						}),
+					};
 				}
-				return { success: true, buffer };
+				return {
+					success: true,
+					buffer,
+					diagnostics: buildDiagnostics({
+						backendUsed: lastExportBackendUsed,
+					}),
+				};
 			} finally {
 				clearInterval(cancelInterval);
+				backend.dispose();
 			}
 		} catch (error) {
 			console.error("Export failed:", error);
+			const sceneExportError =
+				error instanceof SceneExportError ? error : null;
 			return {
 				success: false,
-				error: error instanceof Error ? error.message : "Unknown export error",
+				error:
+					error instanceof Error ? error.message : "Unknown export error",
+				diagnostics: {
+					failureCode: sceneExportError?.failureCode ?? "unknown",
+					failedFrameIndex: sceneExportError?.frameIndex ?? null,
+					failedTimeSeconds: sceneExportError?.timeSeconds ?? null,
+					backendUsed: getLastExportBackendUsed(),
+					audioIncluded: !!includeAudio,
+					format,
+					quality,
+				},
 			};
 		}
 	}
@@ -222,29 +311,90 @@ export class RendererManager {
 		return new LegacyCanvasBackend(this.assetRegistry);
 	}
 
-	private createExportBackend(): RenderBackend {
+	private createExportBackend(): {
+		backend: RenderBackend;
+		getLastUsedBackend: () => "binary-canvas" | "legacy-canvas";
+	} {
 		const binaryBackend = new BinaryCanvasBackend(this.assetRegistry);
 		const legacyBackend = new LegacyCanvasBackend(this.assetRegistry);
+		let lastUsedBackend: "binary-canvas" | "legacy-canvas" = "binary-canvas";
 		return {
-			renderFrame: async (request) => {
-				try {
-					return await binaryBackend.renderFrame(request);
-				} catch (error) {
-					if (process.env.NODE_ENV !== "production") {
-						console.warn(
-							`[RendererManager] Falling back to legacy export backend: ${
-								error instanceof Error ? error.message : "unknown error"
-							}`,
-						);
+			getLastUsedBackend: () => lastUsedBackend,
+			backend: {
+				renderFrame: async (request) => {
+					try {
+						lastUsedBackend = "binary-canvas";
+						return await binaryBackend.renderFrame(request);
+					} catch (error) {
+						if (process.env.NODE_ENV !== "production") {
+							console.warn(
+								`[RendererManager] Falling back to legacy export backend: ${
+									error instanceof Error ? error.message : "unknown error"
+								}`,
+							);
+						}
+						lastUsedBackend = "legacy-canvas";
+						return legacyBackend.renderFrame(request);
 					}
-					return legacyBackend.renderFrame(request);
-				}
-			},
-			dispose: () => {
-				binaryBackend.dispose();
-				legacyBackend.dispose();
+				},
+				dispose: () => {
+					binaryBackend.dispose();
+					legacyBackend.dispose();
+				},
 			},
 		};
+	}
+
+	private async logExportParityCheck({
+		renderGraph,
+		exportBackend,
+		canvasSize,
+	}: {
+		renderGraph: RenderGraph;
+		exportBackend: RenderBackend;
+		canvasSize: { width: number; height: number };
+	}): Promise<void> {
+		const previewCanvas = document.createElement("canvas");
+		previewCanvas.width = canvasSize.width;
+		previewCanvas.height = canvasSize.height;
+		const exportCanvas = document.createElement("canvas");
+		exportCanvas.width = canvasSize.width;
+		exportCanvas.height = canvasSize.height;
+
+		try {
+			const previewFrame = await this.previewBackend.renderFrame({
+				graph: renderGraph,
+				time: 0,
+				targetSize: canvasSize,
+			});
+			await drawRenderedFrameToCanvas({
+				frame: previewFrame,
+				targetCanvas: previewCanvas,
+			});
+
+			const exportFrame = await exportBackend.renderFrame({
+				graph: renderGraph,
+				time: 0,
+				targetSize: canvasSize,
+			});
+			await drawRenderedFrameToCanvas({
+				frame: exportFrame,
+				targetCanvas: exportCanvas,
+			});
+
+			const parity = await compareCanvasFrameParity({
+				previewCanvas,
+				exportCanvas,
+				time: 0,
+			});
+			if (!parity.match) {
+				console.warn(
+					`[RendererManager] Preview/export first-frame parity mismatch at ${parity.time}s (${parity.previewHash} vs ${parity.exportHash})`,
+				);
+			}
+		} catch {
+			// Parity logging is dev-only and best-effort.
+		}
 	}
 
 	private notify(): void {
