@@ -3,6 +3,7 @@ export * from "./few-shot-prompt";
 export * from "./json-ops-parser";
 export * from "./planner-health";
 export * from "./project-summarizer";
+export * from "./compound-request";
 export * from "./prompt-parsers";
 export * from "./provider-resolver";
 export * from "./providers/heuristic";

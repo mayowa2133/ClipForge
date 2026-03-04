@@ -1,3 +1,4 @@
+import type { SegmentReference } from "@/lib/clipforge/segment-resolution";
 import type { OverlayTextPosition } from "@/types/clipforge";
 
 export interface ParsedTextOverlayRequest {
@@ -19,10 +20,44 @@ export interface ParsedPhraseBrollRequest {
 	occurrence: number;
 }
 
+export interface ParsedTrimClipRequest {
+	reference: SegmentReference;
+	amount_ms: number;
+	edge: "start" | "end";
+}
+
+export interface ParsedMoveSegmentRequest {
+	reference: SegmentReference;
+	absolute_to_ms: number | null;
+	relative_delta_ms: number | null;
+	direction: "earlier" | "later" | null;
+}
+
+export interface ParsedSwapSegmentsRequest {
+	aReference: SegmentReference;
+	bReference: SegmentReference;
+}
+
+export interface ParsedDeleteSegmentRequest {
+	reference: SegmentReference;
+}
+
+export interface ParsedDuplicateSegmentRequest {
+	reference: SegmentReference;
+	to_ms: number | null;
+	after_itself: boolean;
+}
+
+export interface ParsedFixCaptionTextRequest {
+	reference: SegmentReference;
+	from: string;
+	to: string;
+}
+
 export function parseOrdinalOccurrence({ text }: { text: string }): number {
-	if (/\bthird time\b/.test(text)) return 3;
-	if (/\bsecond time\b/.test(text)) return 2;
-	if (/\bfirst time\b/.test(text)) return 1;
+	if (/\bthird\b|\b3rd\b/.test(text)) return 3;
+	if (/\bsecond\b|\b2nd\b/.test(text)) return 2;
+	if (/\bfirst\b|\b1st\b/.test(text)) return 1;
 	return 1;
 }
 
@@ -38,9 +73,7 @@ export function parseTextOverlayRequest({
 		text.match(/\badd\s+(?:a\s+)?(?:text|caption)\s+["']([^"']+)["']/i);
 	if (!contentMatch) return null;
 
-	if (
-		!/(?:\badd\b.*\b(?:text|caption)\b|\bput\s+["'])/i.test(text)
-	) {
+	if (!/(?:\badd\b.*\b(?:text|caption)\b|\bput\s+["'])/i.test(text)) {
 		return null;
 	}
 
@@ -72,7 +105,7 @@ export function parsePhraseCutRequest({
 	text: string;
 }): ParsedPhraseCutRequest | null {
 	if (
-		!/\b(cut where i say|cut when i say|remove the part where i say|remove when i say)\b/i.test(
+		!/(\bcut where i say\b|\bcut when i say\b|\bremove the part where i say\b|\bremove when i say\b)/i.test(
 			text,
 		)
 	) {
@@ -113,4 +146,242 @@ export function parsePhraseBrollRequest({
 		duration_ms: durationMs,
 		occurrence: parseOrdinalOccurrence({ text: text.toLowerCase() }),
 	};
+}
+
+export function parseTrimClipRequest({
+	text,
+}: {
+	text: string;
+}): ParsedTrimClipRequest | null {
+	const match = text.match(
+		/^trim\s+(.+?)\s+by\s+(\d+(?:\.\d+)?)s?\s+at\s+the\s+(start|end)$/i,
+	);
+	if (!match) return null;
+
+	const reference = parseSegmentReferenceText({ text: match[1] });
+	if (!reference) return null;
+
+	return {
+		reference,
+		amount_ms: Math.round(Number(match[2]) * 1000),
+		edge: match[3].toLowerCase() === "start" ? "start" : "end",
+	};
+}
+
+export function parseMoveSegmentRequest({
+	text,
+}: {
+	text: string;
+}): ParsedMoveSegmentRequest | null {
+	const absoluteMatch = text.match(/^move\s+(.+?)\s+to\s+(\d+(?:\.\d+)?)s?$/i);
+	if (absoluteMatch) {
+		const reference = parseSegmentReferenceText({ text: absoluteMatch[1] });
+		if (!reference) return null;
+		return {
+			reference,
+			absolute_to_ms: Math.round(Number(absoluteMatch[2]) * 1000),
+			relative_delta_ms: null,
+			direction: null,
+		};
+	}
+
+	const relativeMatch = text.match(
+		/^move\s+(.+?)\s+(earlier|later)\s+by\s+(\d+(?:\.\d+)?)s?$/i,
+	);
+	if (!relativeMatch) return null;
+
+	const reference = parseSegmentReferenceText({ text: relativeMatch[1] });
+	if (!reference) return null;
+
+	return {
+		reference,
+		absolute_to_ms: null,
+		relative_delta_ms: Math.round(Number(relativeMatch[3]) * 1000),
+		direction: relativeMatch[2].toLowerCase() === "earlier" ? "earlier" : "later",
+	};
+}
+
+export function parseSwapSegmentsRequest({
+	text,
+}: {
+	text: string;
+}): ParsedSwapSegmentsRequest | null {
+	const pairedOrdinalMatch = text.match(
+		/^swap\s+the\s+(first|second|third|1|2|3)\s+and\s+(first|second|third|1|2|3)\s+clips?$/i,
+	);
+	if (pairedOrdinalMatch) {
+		const aReference = parseSegmentReferenceText({
+			text: `the ${pairedOrdinalMatch[1]} clip`,
+		});
+		const bReference = parseSegmentReferenceText({
+			text: `the ${pairedOrdinalMatch[2]} clip`,
+		});
+		if (!aReference || !bReference) return null;
+		return { aReference, bReference };
+	}
+
+	const numberedMatch = text.match(/^swap\s+clip\s+(1|2|3|first|second|third)\s+with\s+clip\s+(1|2|3|first|second|third)$/i);
+	if (numberedMatch) {
+		const aReference = parseSegmentReferenceText({ text: `the ${numberedMatch[1]} clip` });
+		const bReference = parseSegmentReferenceText({ text: `the ${numberedMatch[2]} clip` });
+		if (!aReference || !bReference) return null;
+		return { aReference, bReference };
+	}
+
+	const match = text.match(/^swap\s+(.+?)\s+(?:with|and)\s+(.+)$/i);
+	if (!match) return null;
+
+	const aReference = parseSegmentReferenceText({ text: match[1] });
+	const bReference = parseSegmentReferenceText({ text: match[2] });
+	if (!aReference || !bReference) return null;
+
+	return { aReference, bReference };
+}
+
+export function parseDeleteSegmentRequest({
+	text,
+}: {
+	text: string;
+}): ParsedDeleteSegmentRequest | null {
+	if (/\bremove the part where i say\b/i.test(text)) {
+		return null;
+	}
+	const match = text.match(/^(?:delete|remove)\s+(.+)$/i);
+	if (!match) return null;
+
+	const reference = parseSegmentReferenceText({ text: match[1] });
+	if (!reference) return null;
+
+	return { reference };
+}
+
+export function parseDuplicateSegmentRequest({
+	text,
+}: {
+	text: string;
+}): ParsedDuplicateSegmentRequest | null {
+	const absoluteMatch = text.match(/^duplicate\s+(.+?)\s+to\s+(\d+(?:\.\d+)?)s?$/i);
+	if (absoluteMatch) {
+		const reference = parseSegmentReferenceText({ text: absoluteMatch[1] });
+		if (!reference) return null;
+		return {
+			reference,
+			to_ms: Math.round(Number(absoluteMatch[2]) * 1000),
+			after_itself: false,
+		};
+	}
+
+	const relativeMatch = text.match(/^duplicate\s+(.+?)\s+after\s+itself$/i);
+	if (!relativeMatch) return null;
+
+	const reference = parseSegmentReferenceText({ text: relativeMatch[1] });
+	if (!reference) return null;
+
+	return {
+		reference,
+		to_ms: null,
+		after_itself: true,
+	};
+}
+
+export function parseFixCaptionTextRequest({
+	text,
+}: {
+	text: string;
+}): ParsedFixCaptionTextRequest | null {
+	const replaceMatch = text.match(/^replace\s+["']([^"']+)["']\s+with\s+["']([^"']+)["']\s+in\s+captions$/i);
+	if (replaceMatch) {
+		return {
+			reference: { target: "caption" },
+			from: replaceMatch[1],
+			to: replaceMatch[2],
+		};
+	}
+
+	const changeMatch = text.match(/^change\s+caption\s+["']([^"']+)["']\s+to\s+["']([^"']+)["']$/i);
+	if (changeMatch) {
+		return {
+			reference: { target: "caption", content: changeMatch[1] },
+			from: changeMatch[1],
+			to: changeMatch[2],
+		};
+	}
+
+	const fixMatch = text.match(/^fix\s+the\s+(.+?)\s+to\s+say\s+["']([^"']+)["']$/i);
+	if (!fixMatch) return null;
+	const reference = parseSegmentReferenceText({ text: fixMatch[1] });
+	if (!reference || reference.target !== "caption") return null;
+	if (!reference.content) return null;
+
+	return {
+		reference,
+		from: reference.content,
+		to: fixMatch[2],
+	};
+}
+
+export function parseSegmentReferenceText({
+	text,
+}: {
+	text: string;
+}): SegmentReference | null {
+	const trimmed = text.trim();
+	if (trimmed.length === 0) return null;
+	const normalized = trimmed.toLowerCase();
+
+	if (/\bit\b|\bthat one\b|\bthis clip\b/.test(normalized)) {
+		return null;
+	}
+
+	const phraseMatch = normalized.match(
+		/^the\s+(clip|segment)\s+(?:where i say|that says)\s+["']([^"']+)["']$/i,
+	);
+	if (phraseMatch) {
+		return {
+			target: phraseMatch[1].toLowerCase() === "clip" ? "clip" : "segment",
+			phrase: phraseMatch[2].trim(),
+			occurrence: parseOrdinalOccurrence({ text: normalized }),
+			useLast: /\blast\b/.test(normalized),
+		};
+	}
+
+	const captionContentMatch = normalized.match(
+		/^the\s+(?:(first|second|third)\s+)?caption\s+(?:that says|containing)\s+["']([^"']+)["']$/i,
+	);
+	if (captionContentMatch) {
+		return {
+			target: "caption",
+			occurrence: captionContentMatch[1]
+				? parseOrdinalOccurrence({ text: captionContentMatch[1] })
+				: 1,
+			content: captionContentMatch[2].trim(),
+		};
+	}
+
+	const bareMatch = normalized.match(
+		/^(?:the\s+)?(?:(first|second|third|last|1|2|3)\s+)?(clip|segment|caption|text|overlay|text overlay)s?$/i,
+	);
+	if (bareMatch) {
+		const ordinalToken = bareMatch[1]?.toLowerCase();
+		const nounToken = bareMatch[2].toLowerCase();
+		const target =
+			nounToken === "clip"
+				? "clip"
+				: nounToken === "caption"
+					? "caption"
+					: nounToken === "text" || nounToken === "overlay" || nounToken === "text overlay"
+						? "overlay"
+						: "segment";
+
+		return {
+			target,
+			occurrence:
+				ordinalToken && ordinalToken !== "last"
+					? parseOrdinalOccurrence({ text: ordinalToken })
+					: 1,
+			useLast: ordinalToken === "last",
+		};
+	}
+
+	return null;
 }

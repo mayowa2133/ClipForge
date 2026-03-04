@@ -127,8 +127,12 @@ describe("requestOpenAIChatPlan", () => {
 				segments: Array.from({ length: 501 }, (_, index) => ({
 					segment_id: `seg-${index}`,
 					track_type: "video",
+					segment_kind: "video" as const,
 					start_ms: index * 10,
 					end_ms: index * 10 + 10,
+					ordinal: index + 1,
+					asset_id: `asset-${index}`,
+					text_content: "",
 					transcript_snippet: "x",
 				})),
 				timeline_words: Array.from({ length: 5001 }, (_, index) => ({

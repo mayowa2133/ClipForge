@@ -199,4 +199,55 @@ describe("ClipForge integration flow", () => {
 			});
 		}
 	});
+
+	test("chat can swap the first and second clips", async () => {
+		const project = buildProjectFixture();
+		const autoDraft = buildAutoEditTikTokDraft({
+			project,
+			mediaAssets: buildMediaFixtures(),
+		});
+		const provider = new HeuristicChatOpsProvider();
+		const summary = buildProjectSummary({ project: autoDraft });
+		const result = await provider.proposeEdits({
+			userText: "swap the first and second clips",
+			projectSummary: summary,
+		});
+
+		expect(result.ops).toEqual([
+			{
+				type: "SWAP_SEGMENTS",
+				a_id: expect.any(String),
+				b_id: expect.any(String),
+			},
+		]);
+
+		const beforeMediaIds =
+			autoDraft.scenes
+				.find((scene) => scene.id === autoDraft.currentSceneId)
+				?.tracks.find((track) => track.type === "video" && track.isMain)?.elements
+				.map((segment) =>
+					"mediaId" in segment && typeof segment.mediaId === "string"
+						? segment.mediaId
+						: null,
+				) ?? [];
+		const swapped = applyTimelineDiffOpsToProject({
+			project: autoDraft,
+			ops: result.ops,
+			source: "chat",
+			now: new Date("2026-02-27T12:00:00.000Z"),
+		});
+		const afterMediaIds =
+			swapped.scenes
+				.find((scene) => scene.id === swapped.currentSceneId)
+				?.tracks.find((track) => track.type === "video" && track.isMain)?.elements
+				.map((segment) =>
+					"mediaId" in segment && typeof segment.mediaId === "string"
+						? segment.mediaId
+						: null,
+				) ?? [];
+
+		expect(afterMediaIds.length).toBeGreaterThanOrEqual(2);
+		expect(afterMediaIds[0]).toBe(beforeMediaIds[1]);
+		expect(afterMediaIds[1]).toBe(beforeMediaIds[0]);
+	});
 });

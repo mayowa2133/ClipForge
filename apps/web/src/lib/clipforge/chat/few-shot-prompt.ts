@@ -28,6 +28,9 @@ Ops: [{"type":"MAKE_VERSION","duration_target_s":30,"aggressiveness":0.75}]
 User: "trim clip abc"
 Ops: [{"type":"TRIM_CLIP","clip_id":"abc","in_ms":200,"out_ms":300}]
 
+User: "trim the first clip by 0.5s at the start"
+Ops: [{"type":"TRIM_CLIP","clip_id":"seg_1","in_ms":500,"out_ms":0}]
+
 User: "add text at the top that says \"this\""
 Ops: [{"type":"ADD_TEXT_OVERLAY","text":"this","start_ms":0,"end_ms":2500,"position":"top","style_id":"overlay-top","font":"Arial","size":64,"color":"#FFFFFF","outline":true,"background":false}]
 
@@ -40,8 +43,14 @@ Ops: [{"type":"DUPLICATE_SEGMENT","segment_id":"seg_7","to_ms":8000}]
 User: "move segment seg_2 to 4s"
 Ops: [{"type":"MOVE_SEGMENT","segment_id":"seg_2","to_ms":4000}]
 
+User: "move the second clip earlier by 1s"
+Ops: [{"type":"MOVE_SEGMENT","segment_id":"seg_2","to_ms":3000}]
+
 User: "swap segment a and b"
 Ops: [{"type":"SWAP_SEGMENTS","a_id":"a","b_id":"b"}]
+
+User: "swap the first and second clips"
+Ops: [{"type":"SWAP_SEGMENTS","a_id":"seg_1","b_id":"seg_2"}]
 
 User: "add b-roll using beach.mp4 from 5s to 8s"
 Ops: [{"type":"INSERT_BROLL","media_id":"beach","start_ms":5000,"end_ms":8000,"lane":"overlay-primary","fit_mode":"cover","mute":true}]
@@ -57,6 +66,15 @@ Ops: [{"type":"ADD_TEXT_OVERLAY","text":"watch this","start_ms":0,"end_ms":2500,
 
 User: "use beach.mp4 as b-roll when I say \"summer\""
 Ops: [{"type":"INSERT_BROLL","media_id":"beach","start_ms":2200,"end_ms":4600,"lane":"overlay-primary","fit_mode":"cover","mute":true}]
+
+User: "replace \"teh\" with \"the\" in captions"
+Ops: [{"type":"FIX_CAPTION_TEXT","segment_id":"caption_1","from":"teh","to":"the"}]
+
+User: "duplicate the first clip after itself"
+Ops: [{"type":"DUPLICATE_SEGMENT","segment_id":"seg_1","to_ms":5000}]
+
+User: "make it faster and use bold center captions"
+Ops: [{"type":"MAKE_VERSION","duration_target_s":35,"aggressiveness":0.7},{"type":"SET_CAPTION_STYLE","style_id":"bold-center","font":"Arial","size":74,"position":"center","outline":true,"highlight_mode":"line"}]
 
 User: "add a cinematic zoom effect"
 Ops: []

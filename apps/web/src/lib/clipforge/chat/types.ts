@@ -1,11 +1,23 @@
 import type { TimelineTranscriptWord } from "@/lib/clipforge/timeline-transcript";
 import type { TimelineDiffOp } from "@/types/clipforge";
 
+export type ChatSegmentKind =
+	| "video"
+	| "caption"
+	| "text-overlay"
+	| "audio"
+	| "sticker"
+	| "unknown";
+
 export interface ProjectSegmentSummary {
 	segment_id: string;
 	track_type: string;
+	segment_kind: ChatSegmentKind;
 	start_ms: number;
 	end_ms: number;
+	ordinal: number;
+	asset_id: string | null;
+	text_content: string;
 	transcript_snippet: string;
 }
 

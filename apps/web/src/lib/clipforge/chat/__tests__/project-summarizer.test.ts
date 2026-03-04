@@ -6,7 +6,7 @@ import {
 import type { TProject } from "@/types/project";
 
 describe("buildProjectSummary", () => {
-	test("uses indexed clip metadata for transcript snippets", () => {
+	test("uses indexed clip metadata for transcript snippets and enriches segment metadata", () => {
 		const project: TProject = {
 			metadata: {
 				id: "project-1",
@@ -52,6 +52,47 @@ describe("buildProjectSummary", () => {
 								},
 							],
 						},
+						{
+							id: "text-1",
+							type: "text",
+							name: "Captions",
+							hidden: false,
+							elements: [
+								{
+									id: "caption-1",
+									type: "text",
+									name: "Caption line",
+									content: "hello world",
+									startTime: 1,
+									duration: 1,
+									trimStart: 0,
+									trimEnd: 0,
+									background: {
+										color: "transparent",
+										cornerRadius: 0,
+										paddingX: 0,
+										paddingY: 0,
+										offsetX: 0,
+										offsetY: 0,
+									},
+									fontSize: 48,
+									fontFamily: "Arial",
+									color: "#fff",
+									textAlign: "center",
+									fontWeight: "normal",
+									fontStyle: "normal",
+									textDecoration: "none",
+									transform: {
+										scale: 1,
+										position: { x: 0, y: 0 },
+										rotate: 0,
+									},
+									opacity: 1,
+									blendMode: "normal",
+									hidden: false,
+								},
+							],
+						},
 					],
 				},
 			],
@@ -70,9 +111,7 @@ describe("buildProjectSummary", () => {
 							{ text: "hello", start_ms: 0, end_ms: 500 },
 							{ text: "world", start_ms: 500, end_ms: 1000 },
 						],
-						segments: [
-							{ text: "hello world", start_ms: 0, end_ms: 1000 },
-						],
+						segments: [{ text: "hello world", start_ms: 0, end_ms: 1000 }],
 						silenceRegions: [],
 						transcriptionStatus: "ready",
 						transcriptionProvider: "browser-whisper",
@@ -86,7 +125,22 @@ describe("buildProjectSummary", () => {
 
 		const summary = buildProjectSummary({ project });
 
-		expect(summary.segments[0]?.transcript_snippet).toBe("hello world");
+		expect(summary.segments[0]).toMatchObject({
+			segment_id: "clip-1",
+			segment_kind: "video",
+			ordinal: 1,
+			asset_id: "media-1",
+			text_content: "",
+			transcript_snippet: "hello world",
+		});
+		expect(summary.segments[1]).toMatchObject({
+			segment_id: "caption-1",
+			segment_kind: "caption",
+			ordinal: 1,
+			asset_id: null,
+			text_content: "hello world",
+			transcript_snippet: "hello world",
+		});
 		expect(summary.timeline_words).toEqual([
 			{
 				text: "hello",
