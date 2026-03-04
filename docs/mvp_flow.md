@@ -1,5 +1,18 @@
 # ClipForge MVP Flow
 
+## Flow 0: Built-in Demo
+
+1. Open a fresh empty project.
+2. Click `Try Demo Project` in the onboarding modal (or in the empty `Assets` panel).
+3. ClipForge creates a separate `ClipForge Demo` project and imports bundled demo clips through the normal media pipeline.
+4. Demo transcript and silence metadata are seeded deterministically, so no Whisper setup is required.
+5. ClipForge auto-builds a draft timeline, generates captions, and opens a short guided checklist.
+6. Use the guided checklist to:
+   - press play
+   - open Chat
+   - try a sample prompt
+   - export from the top-right `Export` button
+
 ## Flow A: Import + Auto Edit
 
 1. Open the Assets panel.
@@ -36,4 +49,4 @@ Example chat prompts:
 1. Click the top-right `Export` button in the editor header.
 2. ClipForge attempts OpenCut binary export.
 3. If export succeeds, a downloadable media file is produced.
-4. If export is unavailable or fails in an unsupported case, ClipForge can still generate a preview artifact JSON snapshot as a last-resort fallback.
+4. If export is unavailable or fails in an unsupported case, ClipForge can still generate a preview artifact JSON snapshot as a last-resort fallback with diagnostics.

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PanelView } from "@/components/editor/panels/assets/views/base-view";
@@ -25,15 +26,20 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ENABLE_CLIPFORGE_AUTO_EDIT } from "@/constants/feature-flags";
+import {
+	ENABLE_CLIPFORGE_AUTO_EDIT,
+	ENABLE_CLIPFORGE_EXPERIENCE,
+} from "@/constants/feature-flags";
 import { TIMELINE_CONSTANTS } from "@/constants/timeline-constants";
 import { useEditor } from "@/hooks/use-editor";
+import { DemoProjectCreationError } from "@/lib/clipforge";
 import { useFileUpload } from "@/hooks/use-file-upload";
 import { useRevealItem } from "@/hooks/use-reveal-item";
 import { processMediaAssets } from "@/lib/media/processing";
 import { buildElementFromMedia } from "@/lib/timeline/element-utils";
 import { invokeAction } from "@/lib/actions";
 import { useAssetsPanelStore } from "@/stores/assets-panel-store";
+import { useClipForgeOnboardingStore } from "@/stores/clipforge-onboarding-store";
 import type { MediaAsset } from "@/types/assets";
 import { cn } from "@/utils/ui";
 import {
@@ -49,8 +55,12 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 
 export function MediaView() {
 	const editor = useEditor();
+	const router = useRouter();
 	const mediaFiles = editor.media.getAssets();
 	const activeProject = editor.project.getActive();
+	const startPendingGuide = useClipForgeOnboardingStore(
+		(state) => state.startPendingGuide,
+	);
 
 	const { mediaViewMode, setMediaViewMode, highlightMediaId, clearHighlight } =
 		useAssetsPanelStore();
@@ -60,6 +70,7 @@ export function MediaView() {
 	);
 
 	const [isProcessing, setIsProcessing] = useState(false);
+	const [isCreatingDemo, setIsCreatingDemo] = useState(false);
 	const [progress, setProgress] = useState(0);
 	const [pendingSrtMediaId, setPendingSrtMediaId] = useState<string | null>(null);
 	const [sortBy, setSortBy] = useState<"name" | "type" | "duration" | "size">(
@@ -139,6 +150,29 @@ export function MediaView() {
 			multiple: true,
 			onFilesSelected: (files) => processFiles({ files }),
 		});
+
+	const handleCreateDemoProject = async () => {
+		if (isCreatingDemo) return;
+
+		setIsCreatingDemo(true);
+		try {
+			const result = await editor.clipforge.createDemoProject();
+			startPendingGuide();
+			router.replace(`/editor/${result.projectId}`);
+		} catch (error) {
+			const maybeDemoError =
+				error instanceof DemoProjectCreationError ? error : null;
+			if (maybeDemoError?.projectId) {
+				router.replace(`/editor/${maybeDemoError.projectId}`);
+			}
+			toast.error("Failed to create demo project.", {
+				description:
+					error instanceof Error ? error.message : "Please try again.",
+			});
+		} finally {
+			setIsCreatingDemo(false);
+		}
+	};
 
 	const handleRemove = async ({
 		event,
@@ -450,7 +484,20 @@ export function MediaView() {
 						isVisible={true}
 						isProcessing={isProcessing}
 						progress={progress}
-						onClick={openFilePicker}
+						onClick={isCreatingDemo ? undefined : openFilePicker}
+						secondaryAction={
+							!isDragOver &&
+							filteredMediaItems.length === 0 &&
+							ENABLE_CLIPFORGE_EXPERIENCE
+								? {
+										label: isCreatingDemo
+											? "Creating Demo..."
+											: "Try Demo Project",
+										onClick: () => void handleCreateDemoProject(),
+										disabled: isCreatingDemo,
+									}
+								: undefined
+						}
 					/>
 				) : mediaViewMode === "grid" ? (
 					<GridView

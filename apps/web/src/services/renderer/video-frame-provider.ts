@@ -35,7 +35,7 @@ export class MainThreadVideoFrameProvider implements RenderVideoFrameProvider {
 			file: resolvedFile,
 			time,
 		});
-		return (frame as CanvasImageSource | null) ?? null;
+		return frame?.canvas ?? null;
 	}
 
 	clearVideo({ mediaId }: { mediaId: string }): void {

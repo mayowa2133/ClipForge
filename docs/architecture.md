@@ -62,6 +62,13 @@ This is versioned through OpenCut's migration system.
 - Silence maps are computed from decoded clip audio and stored alongside transcript metadata.
 - Captions and transcript-aware chat summarization read from stored clip metadata first, then fall back to timeline transcription only when metadata is missing.
 
+### 6) Demo-first Onboarding
+
+- ClipForge overrides the generic first-run onboarding when ClipForge features are enabled and the active project is empty.
+- A bundled demo pack lives in `apps/web/public/clipforge-demo/`.
+- The demo flow creates a separate project, imports media through the normal pipeline, seeds deterministic metadata, auto-builds a timeline, and generates captions before opening a short guided checklist.
+- The guided checklist reuses the existing right-side chat panel and top-right export button; it does not introduce a parallel UI shell.
+
 ## Data Flow (Target MVP)
 
 1. User imports clips

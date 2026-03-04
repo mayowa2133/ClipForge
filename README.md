@@ -134,14 +134,26 @@ The editor preview keeps the same DOM interaction overlays, but frame generation
 
 ### MVP workflow
 
-1. Go to `Assets` panel and click `Import Clips`.
-2. ClipForge indexes imported audio in the background for captions and smarter edits.
-3. Use `Index All Clips`, `Index Clip`, or `Import SRT...` in the Assets panel if you need to re-run or override transcript metadata.
-4. Click `Auto Edit TikTok` to build a 9:16 draft timeline.
-5. Open `Captions` tab and generate captions using `Clean Bottom` or `Bold Center`.
-6. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `add text at the top that says "this"`, `cut where I say "bro"`, or `add b-roll using beach.mp4 when I say "summer" for 3s`), review JSON ops, confirm which planner was used, then click `Apply`.
-7. Use normal OpenCut `Undo/Redo` shortcuts.
-8. Click the top-right `Export` button for best-effort export (real video for supported timelines; preview artifact JSON only as a last-resort fallback).
+1. On a fresh empty project, click `Try Demo Project` in the onboarding modal (or the empty `Assets` panel) to load a built-in sample project without bringing your own clips.
+2. If you are using your own footage, go to `Assets` panel and click `Import Clips`.
+3. ClipForge indexes imported audio in the background for captions and smarter edits.
+4. Use `Index All Clips`, `Index Clip`, or `Import SRT...` in the Assets panel if you need to re-run or override transcript metadata.
+5. Click `Auto Edit TikTok` to build a 9:16 draft timeline.
+6. Open `Captions` tab and generate captions using `Clean Bottom` or `Bold Center`.
+7. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `add text at the top that says "this"`, `cut where I say "bro"`, or `add b-roll using beach.mp4 when I say "summer" for 3s`), review JSON ops, confirm which planner was used, then click `Apply`.
+8. Use normal OpenCut `Undo/Redo` shortcuts.
+9. Click the top-right `Export` button for best-effort export (real video for supported timelines; preview artifact JSON only as a last-resort fallback).
+
+### Built-in demo project
+
+ClipForge ships with a bundled demo project under `apps/web/public/clipforge-demo/`.
+
+- It imports through the normal media pipeline.
+- It seeds deterministic transcript and silence metadata, so it works without Whisper setup.
+- It auto-builds a draft timeline and captions before showing the guided checklist.
+- It remains a normal editable project after it loads.
+
+The guided demo points users to the same top-right `Export` button used everywhere else.
 
 ### Self-Hosting with Docker
 

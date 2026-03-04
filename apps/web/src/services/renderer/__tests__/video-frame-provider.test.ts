@@ -27,8 +27,18 @@ describe("MainThreadVideoFrameProvider", () => {
 			},
 		]);
 
-		const frame = { width: 320, height: 180 } as unknown as CanvasImageSource;
-		const getFrameAtMock = mock(async () => frame);
+		const canvas = {
+			width: 320,
+			height: 180,
+		} as unknown as HTMLCanvasElement;
+		const getFrameAtMock = mock(
+			async () =>
+				({
+					canvas,
+					timestamp: 0,
+					duration: 1 / 30,
+				}) as Awaited<ReturnType<typeof videoCache.getFrameAt>>,
+		);
 		videoCache.getFrameAt = getFrameAtMock as unknown as typeof videoCache.getFrameAt;
 
 		const provider = new MainThreadVideoFrameProvider(registry);
@@ -37,7 +47,7 @@ describe("MainThreadVideoFrameProvider", () => {
 			time: 1.25,
 		});
 
-		expect(result).toBe(frame);
+		expect(result).toBe(canvas);
 		expect(getFrameAtMock).toHaveBeenCalledWith({
 			mediaId: "media-1",
 			file,

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,7 @@ import {
 	createChatOpsProvider,
 	type TimelineOpsValidationError,
 } from "@/lib/clipforge";
+import { useClipForgeChatDraftStore } from "@/stores/clipforge-chat-draft-store";
 import type { TimelineDiffOp } from "@/types/clipforge";
 import type { ChatProposalResult } from "@/lib/clipforge/chat";
 
@@ -27,12 +28,23 @@ export function ChatContent() {
 		() => createChatOpsProvider({ mode: CLIPFORGE_CHAT_PLANNER_MODE }),
 		[],
 	);
+	const draft = useClipForgeChatDraftStore((state) => state.draft);
+	const clearDraft = useClipForgeChatDraftStore((state) => state.clearDraft);
 	const activeRequestIdRef = useRef(0);
 	const [prompt, setPrompt] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
 	const [proposedOps, setProposedOps] = useState<TimelineDiffOp[]>([]);
 	const [errors, setErrors] = useState<TimelineOpsValidationError[]>([]);
 	const [proposalMeta, setProposalMeta] = useState<ProposalMeta | null>(null);
+
+	useEffect(() => {
+		if (draft.length === 0) return;
+
+		if (prompt.trim().length === 0) {
+			setPrompt(draft);
+		}
+		clearDraft();
+	}, [draft, prompt, clearDraft]);
 
 	const handlePropose = async () => {
 		if (isLoading) return;
@@ -49,6 +61,7 @@ export function ChatContent() {
 
 		const requestId = activeRequestIdRef.current + 1;
 		activeRequestIdRef.current = requestId;
+		clearDraft();
 		setIsLoading(true);
 		setErrors([]);
 		setProposalMeta(null);

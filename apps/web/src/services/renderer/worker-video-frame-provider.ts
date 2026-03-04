@@ -77,7 +77,7 @@ export class WorkerVideoFrameProvider implements RenderVideoFrameProvider {
 			if (!sinkData.nextFrame && !sinkData.prefetching) {
 				this.startPrefetch({ sinkData });
 			}
-			return (sinkData.currentFrame as unknown as CanvasImageSource) ?? null;
+			return sinkData.currentFrame.canvas ?? null;
 		}
 
 		if (
@@ -91,7 +91,7 @@ export class WorkerVideoFrameProvider implements RenderVideoFrameProvider {
 				if (!sinkData.nextFrame && !sinkData.prefetching) {
 					this.startPrefetch({ sinkData });
 				}
-				return (frame as unknown as CanvasImageSource) ?? null;
+				return frame.canvas ?? null;
 			}
 		}
 
@@ -99,7 +99,7 @@ export class WorkerVideoFrameProvider implements RenderVideoFrameProvider {
 		if (frame && !sinkData.nextFrame && !sinkData.prefetching) {
 			this.startPrefetch({ sinkData });
 		}
-		return (frame as unknown as CanvasImageSource) ?? null;
+		return frame?.canvas ?? null;
 	}
 
 	clearVideo({ mediaId }: { mediaId: string }): void {

@@ -15,3 +15,5 @@ export * from "./timeline-transcript";
 export * from "./phrase-resolution";
 export * from "./text-overlay-presets";
 export * from "./transcribers/whisper-cli";
+export * from "./demo/manifest";
+export * from "./demo/create-demo-project";

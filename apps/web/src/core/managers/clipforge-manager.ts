@@ -3,6 +3,7 @@ import {
 	BestEffortExportIntegration,
 	buildClipIndex,
 	buildEmptyMediaMetadata,
+	createClipForgeDemoProject,
 	type ClipForgeExportArtifact,
 	detectSilenceRegions,
 	ensureClipForgeProjectData,
@@ -16,6 +17,7 @@ import {
 	ApplyTimelineDiffOpsCommand,
 	AutoEditTikTokDraftCommand,
 } from "@/lib/commands";
+import { useClipForgeChatDraftStore } from "@/stores/clipforge-chat-draft-store";
 import type { MediaAsset } from "@/types/assets";
 import type {
 	ClipMediaMetadata,
@@ -115,6 +117,16 @@ export class ClipForgeManager {
 			},
 		});
 		this.editor.save.markDirty();
+	}
+
+	seedMediaMetadata({
+		mediaId,
+		metadata,
+	}: {
+		mediaId: string;
+		metadata: ClipMediaMetadata;
+	}): void {
+		this.upsertMediaMetadata({ mediaId, metadata });
 	}
 
 	getMediaMetadata({ mediaId }: { mediaId: string }): ClipMediaMetadata | null {
@@ -359,6 +371,16 @@ export class ClipForgeManager {
 		return this.exportIntegration.exportBestEffort({
 			editor: this.editor,
 		});
+	}
+
+	async createDemoProject(): Promise<{ projectId: string; mediaIds: string[] }> {
+		return createClipForgeDemoProject({
+			editor: this.editor,
+		});
+	}
+
+	populateChatDraft(text: string): void {
+		useClipForgeChatDraftStore.getState().setDraft(text);
 	}
 
 	resolveMediaAssetByName(

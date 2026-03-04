@@ -12,7 +12,7 @@ import { ENABLE_CLIPFORGE_CHAT } from "@/constants/feature-flags";
 import { useChatPanelStore } from "@/stores/chat-panel-store";
 import { usePanelStore } from "@/stores/panel-store";
 
-const MIN_SPLIT_WIDTH_PX = 520;
+const MIN_SPLIT_WIDTH_PX = 220;
 
 export function RightSidebarPanel() {
 	const { panels, setPanel } = usePanelStore();
