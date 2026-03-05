@@ -70,9 +70,16 @@ The prompt includes examples for:
 2. Provider proposes ops
    - server-backed model output is parsed and structurally guarded before it reaches the UI
    - phrase-based cuts and B-roll now resolve against indexed timeline word timestamps
-3. `OpsValidator` validates structure/ids/ranges
-4. User reviews in chat panel
-5. Apply via OpenCut command manager
+3. Deterministic semantic safety runs before UI acceptance
+   - repairs safe issues (for example: clamped ranges, recovered IDs)
+   - drops unrecoverable ops
+   - returns clarification when repair target recovery is ambiguous
+4. Validator-aware deterministic reconciliation runs once
+   - captures first-pass `validateOps` errors (`code`, `opIndex`)
+   - applies deterministic repair/drop actions for known validator codes
+   - re-validates exactly once before UI review acceptance
+5. User reviews in chat panel
+6. Apply via OpenCut command manager
 
 The model layer never bypasses `OpsValidator`. Invalid model output is rejected before the normal validation pass, and `auto` mode falls back to the heuristic planner.
 
@@ -130,6 +137,16 @@ Carry-over never persists across separate chat submissions.
 - Ordinal references (`first`, `second`, `last`) remain the preferred way to avoid clarification when multiple targets exist.
 - Ambiguity safety now runs after planning in all modes (`auto`, `openai`, `heuristic`), so model output is also blocked when deterministic ambiguity remains.
 - In `auto` mode, heuristic fallback still provides deterministic clarification when the model planner is non-definitive.
+
+## Semantic Plan Safety (M23)
+
+- After planner output, ClipForge applies a deterministic semantic safety pass before showing JSON for review.
+- Safety outcomes:
+  - repaired: the op is kept with deterministic fixes and a warning
+  - dropped: the op is removed as unsafe/unrecoverable
+  - blocked: no safe ops remain, or repair itself is ambiguous and clarification is required
+- This layer is provider-agnostic and applies to `openai`, `auto`, and `heuristic`.
+- `OpsValidator` remains the final authority before apply.
 
 ## Phrase Cut Rules (M14)
 

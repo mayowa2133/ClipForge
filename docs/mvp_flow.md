@@ -41,6 +41,8 @@
    - Choose the intended clip or caption, then ClipForge re-runs the plan.
 7. Proposed ops are shown in review UI.
    - The review UI shows which planner produced the result and any fallback warnings.
+   - A plan safety summary shows repaired/dropped/blocked outcomes across semantic safety + validator reconciliation.
+   - Validator-aware reconciliation runs once before review so proposed ops are usually apply-ready.
 8. Click `Apply` to validate + apply ops through OpenCut command stack.
 9. Use undo/redo normally and continue iterating.
 

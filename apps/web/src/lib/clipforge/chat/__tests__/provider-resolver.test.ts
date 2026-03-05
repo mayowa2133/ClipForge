@@ -1,25 +1,25 @@
 import { describe, expect, test } from "bun:test";
 import {
-	AmbiguitySafeChatOpsProvider,
 	createChatOpsProvider,
+	SemanticSafeChatOpsProvider,
 } from "@/lib/clipforge/chat";
 
 describe("createChatOpsProvider", () => {
-	test("wraps heuristic mode with ambiguity safety", () => {
+	test("wraps heuristic mode with semantic safety", () => {
 		expect(createChatOpsProvider({ mode: "heuristic" })).toBeInstanceOf(
-			AmbiguitySafeChatOpsProvider,
+			SemanticSafeChatOpsProvider,
 		);
 	});
 
-	test("wraps openai mode with ambiguity safety", () => {
+	test("wraps openai mode with semantic safety", () => {
 		expect(createChatOpsProvider({ mode: "openai" })).toBeInstanceOf(
-			AmbiguitySafeChatOpsProvider,
+			SemanticSafeChatOpsProvider,
 		);
 	});
 
-	test("wraps auto mode with ambiguity safety", () => {
+	test("wraps auto mode with semantic safety", () => {
 		expect(createChatOpsProvider({ mode: "auto" })).toBeInstanceOf(
-			AmbiguitySafeChatOpsProvider,
+			SemanticSafeChatOpsProvider,
 		);
 	});
 });

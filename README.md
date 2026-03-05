@@ -162,6 +162,15 @@ The editor preview keeps the same DOM interaction overlays, but frame generation
   - playhead is used as fallback
   - `it` carries over only within the current prompt
 - If more than one clip or caption matches a single-target request, the chat panel asks for clarification before proposing JSON ops in all planner modes (`auto`, `openai`, `heuristic`).
+- Proposed ops now pass through a deterministic semantic safety layer before review:
+  - safe repairs are applied automatically (with warnings),
+  - unrecoverable ops are dropped,
+  - and ambiguous repair targets trigger clarification instead of unsafe guesses.
+- Proposed ops then pass through a validator-aware reconciliation pass:
+  - first-pass `validateOps` failures are captured,
+  - known validator codes are deterministically repaired or dropped,
+  - validation is re-run exactly once before JSON review is accepted.
+- Validator reconciliation is provider-agnostic and applies to `openai`, `auto`, and `heuristic` modes.
 
 ### Built-in demo project
 

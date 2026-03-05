@@ -27,7 +27,9 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M19: Expand chat planner to full deterministic segment ops.
 - [x] M20: Context-aware chat planning with playhead, selection, and same-request carry-over.
 - [x] M21: Ambiguity detection, clarification UI, and safe target resolution for chat.
-- [ ] M22: Provider-agnostic ambiguity safety layer across all planner modes.
+- [x] M22: Provider-agnostic ambiguity safety layer across all planner modes.
+- [x] M23: Project-aware plan safety and deterministic auto-repair before apply.
+- [x] M24: Validator-aware deterministic reconciliation before apply.
 
 ## Working Rules
 

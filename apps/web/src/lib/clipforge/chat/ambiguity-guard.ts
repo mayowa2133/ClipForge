@@ -38,6 +38,13 @@ export interface TargetIntent {
 	referenceLabel: string;
 	allowedKinds: ChatSegmentKind[];
 	reference: SegmentReference;
+	operation:
+		| "trim"
+		| "move"
+		| "swap"
+		| "delete"
+		| "duplicate"
+		| "fix-caption";
 	clauseIndex: number;
 	referenceIndex: number;
 	fromText?: string;
@@ -99,7 +106,7 @@ export function evaluateAmbiguityGuard({
 	};
 }
 
-function collectTargetIntents({
+export function collectTargetIntents({
 	clause,
 	clauseIndex,
 }: {
@@ -113,6 +120,7 @@ function collectTargetIntents({
 		intents.push({
 			reference: fixCaptionRequest.reference,
 			allowedKinds: ["caption"],
+			operation: "fix-caption",
 			referenceLabel: buildReferenceLabel({
 				reference: fixCaptionRequest.reference,
 				fromText:
@@ -135,6 +143,7 @@ function collectTargetIntents({
 		intents.push({
 			reference: swapRequest.aReference,
 			allowedKinds: ["video"],
+			operation: "swap",
 			referenceLabel: buildReferenceLabel({ reference: swapRequest.aReference }),
 			clauseIndex,
 			referenceIndex: 0,
@@ -142,6 +151,7 @@ function collectTargetIntents({
 		intents.push({
 			reference: swapRequest.bReference,
 			allowedKinds: ["video"],
+			operation: "swap",
 			referenceLabel: buildReferenceLabel({ reference: swapRequest.bReference }),
 			clauseIndex,
 			referenceIndex: 1,
@@ -154,6 +164,7 @@ function collectTargetIntents({
 		intents.push({
 			reference: moveRequest.reference,
 			allowedKinds: ["video"],
+			operation: "move",
 			referenceLabel: buildReferenceLabel({ reference: moveRequest.reference }),
 			clauseIndex,
 			referenceIndex: 0,
@@ -166,6 +177,7 @@ function collectTargetIntents({
 		intents.push({
 			reference: trimRequest.reference,
 			allowedKinds: ["video"],
+			operation: "trim",
 			referenceLabel: buildReferenceLabel({ reference: trimRequest.reference }),
 			clauseIndex,
 			referenceIndex: 0,
@@ -178,6 +190,7 @@ function collectTargetIntents({
 		intents.push({
 			reference: deleteRequest.reference,
 			allowedKinds: ["video"],
+			operation: "delete",
 			referenceLabel: buildReferenceLabel({ reference: deleteRequest.reference }),
 			clauseIndex,
 			referenceIndex: 0,
@@ -190,6 +203,7 @@ function collectTargetIntents({
 		intents.push({
 			reference: duplicateRequest.reference,
 			allowedKinds: ["video"],
+			operation: "duplicate",
 			referenceLabel: buildReferenceLabel({ reference: duplicateRequest.reference }),
 			clauseIndex,
 			referenceIndex: 0,

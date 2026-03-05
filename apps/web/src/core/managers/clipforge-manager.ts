@@ -12,6 +12,7 @@ import {
 	SrtImportTranscriber,
 	validateTimelineDiffOps,
 } from "@/lib/clipforge";
+import { reconcileValidatorErrors } from "@/lib/clipforge/chat/validator-reconciliation";
 import { extractMediaAssetAudioToFloat32 } from "@/lib/media/audio";
 import {
 	ApplyTimelineDiffOpsCommand,
@@ -24,6 +25,12 @@ import type {
 	TimelineDiffOp,
 	TimelineDiffOpSource,
 } from "@/types/clipforge";
+import type {
+	ChatPlannerContext,
+	ChatPlannerOverrides,
+	ChatValidatorReconciliationResult,
+	ProjectSummary,
+} from "@/lib/clipforge/chat/types";
 
 export class ClipForgeManager {
 	private exportIntegration = new BestEffortExportIntegration();
@@ -333,6 +340,60 @@ export class ClipForgeManager {
 			project: activeProject,
 			ops,
 			mediaAssets: this.editor.media.getAssets(),
+		});
+	}
+
+	reconcileAndValidateOps({
+		userText,
+		projectSummary,
+		context,
+		overrides,
+		ops,
+	}: {
+		userText: string;
+		projectSummary: ProjectSummary;
+		context: ChatPlannerContext;
+		overrides?: ChatPlannerOverrides;
+		ops: TimelineDiffOp[];
+	}): ChatValidatorReconciliationResult {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			return {
+				ops: [],
+				clarification: null,
+				safety: {
+					repairedCount: 0,
+					droppedCount: 0,
+					blocked: true,
+					notices: [
+						{
+							code: "blocked_validator_reconcile_failed",
+							severity: "error",
+							source: "validator",
+							message: "No active project.",
+							validatorCode: "no_active_project",
+						},
+					],
+				},
+				firstPassErrors: [
+					{
+						opIndex: -1,
+						code: "no_active_project",
+						message: "No active project.",
+					},
+				],
+				secondPassErrors: [],
+				blocked: true,
+			};
+		}
+
+		return reconcileValidatorErrors({
+			userText,
+			projectSummary,
+			context,
+			overrides,
+			ops,
+			validateOps: ({ ops: candidateOps }) => this.validateOps({ ops: candidateOps }),
 		});
 	}
 

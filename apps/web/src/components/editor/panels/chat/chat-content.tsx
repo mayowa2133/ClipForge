@@ -8,6 +8,7 @@ import {
 	buildProjectSummary,
 	createChatOpsProvider,
 	fetchChatPlannerHealth,
+	projectValidatorWarnings,
 	type TimelineOpsValidationError,
 } from "@/lib/clipforge";
 import { useClipForgeChatDraftStore } from "@/stores/clipforge-chat-draft-store";
@@ -18,6 +19,7 @@ import type {
 	ChatPlannerContext,
 	ChatPlannerOverrides,
 	ChatPlannerHealth,
+	ChatPlanSafetySummary,
 	ChatProposalResult,
 	ProjectSummary,
 } from "@/lib/clipforge/chat";
@@ -26,6 +28,7 @@ interface ProposalMeta {
 	provider: ChatProposalResult["provider"];
 	fallbackUsed: boolean;
 	warnings: string[];
+	safety: ChatProposalResult["safety"];
 }
 
 interface PlannerRequestSnapshot {
@@ -154,12 +157,13 @@ export function ChatContent() {
 				return;
 			}
 
-			setProposalMeta({
-				provider: result.provider,
-				fallbackUsed: result.fallbackUsed,
-				warnings: result.warnings,
-			});
 			if (result.clarification) {
+				setProposalMeta({
+					provider: result.provider,
+					fallbackUsed: result.fallbackUsed,
+					warnings: result.warnings,
+					safety: result.safety ?? null,
+				});
 				setProposedOps([]);
 				setErrors([]);
 				setPendingClarification(result.clarification);
@@ -175,9 +179,49 @@ export function ChatContent() {
 				return;
 			}
 
-			const validation = editor.clipforge.validateOps({ ops: result.ops });
-			setProposedOps(validation.ops);
-			setErrors(validation.errors);
+			const reconciliation = editor.clipforge.reconcileAndValidateOps({
+				userText: plannerRequest.userText,
+				projectSummary: plannerRequest.projectSummary,
+				context: plannerRequest.context,
+				ops: result.ops,
+			});
+			const validatorWarnings = projectValidatorWarnings({
+				notices: reconciliation.safety.notices,
+			});
+			const mergedWarnings = [...result.warnings, ...validatorWarnings];
+			const mergedSafety = mergeSafetySummaries(
+				result.safety ?? null,
+				reconciliation.safety,
+			);
+			setProposalMeta({
+				provider: result.provider,
+				fallbackUsed: result.fallbackUsed,
+				warnings: mergedWarnings,
+				safety: mergedSafety,
+			});
+
+			if (reconciliation.clarification) {
+				setPendingClarification(reconciliation.clarification);
+				setProposedOps([]);
+				setErrors([]);
+				setLastPlanError(null);
+				return;
+			}
+
+			if (reconciliation.blocked || reconciliation.ops.length === 0) {
+				setProposedOps([]);
+				setErrors(
+					reconciliation.secondPassErrors.length > 0
+						? reconciliation.secondPassErrors
+						: reconciliation.firstPassErrors,
+				);
+				setLastPlanError(null);
+				toast.error("Unable to produce validator-clean deterministic ops.");
+				return;
+			}
+
+			setProposedOps(reconciliation.ops);
+			setErrors([]);
 			setLastPlanError(null);
 		} catch (error) {
 			if (activeRequestIdRef.current !== requestId) {
@@ -228,13 +272,13 @@ export function ChatContent() {
 				return;
 			}
 
-			setProposalMeta({
-				provider: result.provider,
-				fallbackUsed: result.fallbackUsed,
-				warnings: result.warnings,
-			});
-
 			if (result.clarification) {
+				setProposalMeta({
+					provider: result.provider,
+					fallbackUsed: result.fallbackUsed,
+					warnings: result.warnings,
+					safety: result.safety ?? null,
+				});
 				setPendingClarification(result.clarification);
 				setProposedOps([]);
 				setErrors([]);
@@ -249,9 +293,48 @@ export function ChatContent() {
 				return;
 			}
 
-			const validation = editor.clipforge.validateOps({ ops: result.ops });
-			setProposedOps(validation.ops);
-			setErrors(validation.errors);
+			const reconciliation = editor.clipforge.reconcileAndValidateOps({
+				userText: lastPlannerRequest.userText,
+				projectSummary: lastPlannerRequest.projectSummary,
+				context: lastPlannerRequest.context,
+				overrides,
+				ops: result.ops,
+			});
+			const validatorWarnings = projectValidatorWarnings({
+				notices: reconciliation.safety.notices,
+			});
+			const mergedWarnings = [...result.warnings, ...validatorWarnings];
+			const mergedSafety = mergeSafetySummaries(
+				result.safety ?? null,
+				reconciliation.safety,
+			);
+			setProposalMeta({
+				provider: result.provider,
+				fallbackUsed: result.fallbackUsed,
+				warnings: mergedWarnings,
+				safety: mergedSafety,
+			});
+
+			if (reconciliation.clarification) {
+				setPendingClarification(reconciliation.clarification);
+				setProposedOps([]);
+				setErrors([]);
+				return;
+			}
+
+			if (reconciliation.blocked || reconciliation.ops.length === 0) {
+				setProposedOps([]);
+				setErrors(
+					reconciliation.secondPassErrors.length > 0
+						? reconciliation.secondPassErrors
+						: reconciliation.firstPassErrors,
+				);
+				toast.error("Unable to produce validator-clean deterministic ops.");
+				return;
+			}
+
+			setProposedOps(reconciliation.ops);
+			setErrors([]);
 		} catch (error) {
 			if (activeRequestIdRef.current !== requestId) {
 				return;
@@ -393,6 +476,17 @@ export function ChatContent() {
 				</div>
 			)}
 
+			{proposalMeta?.safety && (
+				<div className="rounded-md border p-3">
+					<p className="mb-1 text-sm font-medium">Plan safety</p>
+					<p className="text-xs">
+						Repaired: {proposalMeta.safety.repairedCount} · Dropped:{" "}
+						{proposalMeta.safety.droppedCount} · Blocked:{" "}
+						{proposalMeta.safety.blocked ? "Yes" : "No"}
+					</p>
+				</div>
+			)}
+
 			{pendingClarification && (
 				<div className="flex flex-col gap-2 rounded-md border p-3">
 					<div>
@@ -482,4 +576,25 @@ function formatPlannerTime(playheadMs: number): string {
 	const minutes = Math.floor(totalSeconds / 60);
 	const seconds = totalSeconds % 60;
 	return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function mergeSafetySummaries(
+	primary: ChatPlanSafetySummary | null,
+	secondary: ChatPlanSafetySummary | null,
+): ChatPlanSafetySummary | null {
+	if (!primary && !secondary) {
+		return null;
+	}
+	if (!primary) {
+		return secondary;
+	}
+	if (!secondary) {
+		return primary;
+	}
+	return {
+		repairedCount: primary.repairedCount + secondary.repairedCount,
+		droppedCount: primary.droppedCount + secondary.droppedCount,
+		blocked: primary.blocked || secondary.blocked,
+		notices: [...primary.notices, ...secondary.notices],
+	};
 }
