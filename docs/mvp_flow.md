@@ -62,6 +62,20 @@ Example chat prompts:
 ## Flow C: Best-effort Export
 
 1. Click the top-right `Export` button in the editor header.
-2. ClipForge attempts OpenCut binary export.
-3. If export succeeds, a downloadable media file is produced.
-4. If export is unavailable or fails in an unsupported case, ClipForge can still generate a preview artifact JSON snapshot as a last-resort fallback with diagnostics.
+2. The export popover runs deterministic preflight checks before render starts.
+3. While the popover is open, preflight health refreshes reactively when timeline/media/project state changes.
+4. Blocking issues disable the `Export` button until repaired.
+5. For missing media blockers, use `Relink` first to restore the same missing `mediaId` with a compatible file and preserve timeline segment IDs/timing.
+6. For compatibility blockers, preflight hard-blocks unresolved (`media-compatibility-unverified`) and incompatible decode paths (`unsupported-media-codec`, `unsupported-audio-decode`) before export starts.
+7. Use `Scan` to verify unresolved compatibility, then `Relink` to replace incompatible media while preserving timeline IDs/timing.
+8. If relink is not possible, use explicit destructive fallback (`Remove Affected Segments`) for that media reference.
+9. Use per-issue `Fix` or `Fix all` for other deterministic repairs (for example invalid ranges or duration metadata mismatch).
+10. Warning-only issues do not block export.
+11. ClipForge attempts OpenCut binary export once preflight is ready.
+12. If export succeeds, a downloadable media file is produced.
+13. If runtime export fails, the same popover shows deterministic recovery actions:
+   - `Retry same settings`
+   - `Retry safe profile` (for recommended deterministic fallback profile when available)
+   - `Download diagnostics` incident bundle JSON
+14. Every retry re-runs preflight before encoding starts.
+15. If export is unavailable or fails in an unsupported case, ClipForge can still generate a preview artifact JSON snapshot as a last-resort fallback with diagnostics (including preflight snapshot metadata when available).

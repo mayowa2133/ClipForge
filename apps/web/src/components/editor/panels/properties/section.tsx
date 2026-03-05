@@ -50,7 +50,7 @@ export function Section({
 		<SectionCtx.Provider value={{ isOpen, toggle, collapsible }}>
 			<div
 				className={cn(
-					"flex flex-col",
+					"relative flex flex-col",
 					hasBorderTop && "border-t",
 					hasBorderBottom && "last:border-b",
 					className,
@@ -129,7 +129,7 @@ export function SectionHeader({
 		);
 	}
 
-	return <div className={baseClassName}>{content}</div>;
+	return <div className={cn(baseClassName, "pointer-events-none")}>{content}</div>;
 }
 
 export function SectionFields({

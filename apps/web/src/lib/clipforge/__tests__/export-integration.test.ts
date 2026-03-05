@@ -69,6 +69,12 @@ describe("BestEffortExportIntegration", () => {
 		expect(artifact.fileName.endsWith(".json")).toBe(true);
 		expect(artifact.fallbackReason).toBe("renderer unavailable");
 		expect(artifact.diagnostics?.failureCode).toBe("render-frame-failed");
+		expect(artifact.preflightResult).not.toBeNull();
+		expect(artifact.attempts).toHaveLength(1);
+		expect(artifact.attempts?.[0]?.result).toBe("failed");
+		expect(artifact.recoveryRecommendation?.recommendedProfile).toBe(
+			"safe-mp4-medium",
+		);
 	});
 
 	test("returns binary artifact when core export succeeds", async () => {
@@ -91,5 +97,9 @@ describe("BestEffortExportIntegration", () => {
 		expect(artifact.status).toBe("exported");
 		expect(artifact.fileName.endsWith(".mp4")).toBe(true);
 		expect(artifact.diagnostics).toBeUndefined();
+		expect(artifact.preflightResult).not.toBeNull();
+		expect(artifact.attempts).toHaveLength(1);
+		expect(artifact.attempts?.[0]?.result).toBe("success");
+		expect(artifact.recoveryRecommendation).toBeNull();
 	});
 });

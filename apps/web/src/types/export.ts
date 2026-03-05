@@ -19,6 +19,76 @@ export type ExportFailureCode =
 	| "cancelled"
 	| "unknown";
 
+export type ExportPreflightSeverity = "error" | "warning";
+
+export type ExportPreflightCode =
+	| "no-active-project"
+	| "empty-project"
+	| "no-supported-video-segments"
+	| "missing-media-asset"
+	| "unsupported-media-type"
+	| "media-compatibility-unverified"
+	| "unsupported-media-codec"
+	| "unsupported-audio-decode"
+	| "invalid-segment-range"
+	| "timeline-duration-mismatch"
+	| "audio-disabled-warning"
+	| "low-quality-warning"
+	| "webm-compat-warning"
+	| "unknown";
+
+export type ExportPreflightAction =
+	| "remove-missing-segments"
+	| "remove-invalid-ranges"
+	| "normalize-duration"
+	| "switch-format-mp4"
+	| "switch-quality-medium"
+	| "scan-media-compatibility"
+	| "disable-export-audio";
+
+export interface ExportPreflightIssue {
+	id: string;
+	code: ExportPreflightCode;
+	severity: ExportPreflightSeverity;
+	message: string;
+	actionable: boolean;
+	action?: ExportPreflightAction | null;
+	trackId?: string | null;
+	segmentId?: string | null;
+	mediaId?: string | null;
+	referenceCount?: number;
+	allowedReplacementTypes?: Array<"video" | "image" | "audio"> | null;
+	compatibilityStatus?:
+		| "unknown"
+		| "pending"
+		| "compatible"
+		| "incompatible"
+		| "error"
+		| null;
+	compatibilityReason?: string | null;
+	compatibilityCheckedAt?: string | null;
+}
+
+export interface ExportPreflightResult {
+	ready: boolean;
+	issues: ExportPreflightIssue[];
+	blockingCount: number;
+	warningCount: number;
+	computedAt: string;
+	healthFingerprint: string;
+}
+
+export type ExportRetryProfile =
+	| "same-settings"
+	| "safe-mp4-medium"
+	| "safe-mp4-medium-no-audio";
+
+export interface ExportRecoveryRecommendation {
+	recommendedProfile: ExportRetryProfile | null;
+	reason: string;
+	canRetry: boolean;
+}
+
 export interface ExportDiagnostics {
 	failureCode?: ExportFailureCode;
 	failedFrameIndex?: number | null;
@@ -27,6 +97,30 @@ export interface ExportDiagnostics {
 	audioIncluded: boolean;
 	format: ExportFormat;
 	quality: ExportQuality;
+}
+
+export interface ExportIncidentAttempt {
+	attemptIndex: number;
+	timestamp: string;
+	format: ExportFormat;
+	quality: ExportQuality;
+	includeAudio: boolean;
+	result: "success" | "failed" | "cancelled";
+	error?: string;
+	diagnostics?: ExportDiagnostics;
+}
+
+export interface ExportIncidentBundle {
+	bundleVersion: 1;
+	projectId: string | null;
+	projectName: string | null;
+	preflightResult?: ExportPreflightResult | null;
+	attempts: ExportIncidentAttempt[];
+	finalFailure?: {
+		error: string;
+		diagnostics?: ExportDiagnostics;
+	} | null;
+	generatedAt: string;
 }
 
 export interface ExportOptions {

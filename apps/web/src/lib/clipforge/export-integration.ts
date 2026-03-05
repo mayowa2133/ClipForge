@@ -1,8 +1,13 @@
 import type { EditorCore } from "@/core";
+import { evaluateExportPreflight } from "@/lib/clipforge/export-preflight";
+import { getExportRecoveryRecommendation } from "@/lib/clipforge/export-recovery";
 import type {
 	ExportDiagnostics,
 	ExportFormat,
+	ExportIncidentAttempt,
+	ExportPreflightResult,
 	ExportQuality,
+	ExportRecoveryRecommendation,
 } from "@/types/export";
 import { buildProjectSummary } from "./chat/project-summarizer";
 
@@ -14,6 +19,9 @@ export interface ClipForgeExportArtifact {
 	message: string;
 	diagnostics?: ExportDiagnostics;
 	fallbackReason?: string;
+	preflightResult?: ExportPreflightResult | null;
+	attempts?: ExportIncidentAttempt[];
+	recoveryRecommendation?: ExportRecoveryRecommendation | null;
 }
 
 export interface ClipForgeExportIntegration {
@@ -40,6 +48,20 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 	}): Promise<ClipForgeExportArtifact> {
 		let exportDiagnostics: ExportDiagnostics | undefined;
 		let fallbackReason = "Export pipeline unavailable.";
+		const attempts: ExportIncidentAttempt[] = [];
+		const activeProject = editor.project.getActive();
+		const preflightResult = activeProject
+			? evaluateExportPreflight({
+					project: activeProject,
+					mediaAssets:
+						typeof (editor as Partial<EditorCore>).media?.getAssets === "function"
+							? editor.media.getAssets()
+							: [],
+					format,
+					quality,
+					includeAudio: true,
+				})
+			: null;
 
 		try {
 			const result = await editor.project.export({
@@ -50,6 +72,20 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 				},
 			});
 			exportDiagnostics = result.diagnostics;
+			attempts.push({
+				attemptIndex: 1,
+				timestamp: new Date().toISOString(),
+				format,
+				quality,
+				includeAudio: true,
+				result: result.cancelled
+					? "cancelled"
+					: result.success
+						? "success"
+						: "failed",
+				error: result.error,
+				diagnostics: result.diagnostics,
+			});
 
 			if (result.success && result.buffer) {
 				const mimeType = format === "webm" ? "video/webm" : "video/mp4";
@@ -64,6 +100,9 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 					mimeType,
 					message: "Export completed using OpenCut renderer.",
 					diagnostics: result.diagnostics,
+					preflightResult,
+					attempts,
+					recoveryRecommendation: null,
 				};
 			}
 			fallbackReason = result.error || fallbackReason;
@@ -71,12 +110,29 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 			console.warn("Best-effort export fallback triggered:", error);
 			fallbackReason =
 				error instanceof Error ? error.message : "Export pipeline failed unexpectedly.";
+			attempts.push({
+				attemptIndex: 1,
+				timestamp: new Date().toISOString(),
+				format,
+				quality,
+				includeAudio: true,
+				result: "failed",
+				error: fallbackReason,
+			});
 		}
 
-		const activeProject = editor.project.getActive();
 		if (!activeProject) {
 			throw new Error("No active project to export.");
 		}
+
+		const recoveryRecommendation = getExportRecoveryRecommendation({
+			diagnostics: exportDiagnostics,
+			options: {
+				format,
+				quality,
+				includeAudio: true,
+			},
+		});
 
 		const payload = {
 			kind: "clipforge-preview-artifact",
@@ -91,6 +147,9 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 						: [],
 			}),
 			ops_audit_count: activeProject.clipforge?.opsAudit.length ?? 0,
+			preflight_result: preflightResult,
+			export_attempts: attempts,
+			recovery_recommendation: recoveryRecommendation,
 			export_diagnostics: exportDiagnostics ?? null,
 			fallback_reason: fallbackReason,
 		};
@@ -110,6 +169,9 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 			message: artifactMessage,
 			diagnostics: exportDiagnostics,
 			fallbackReason,
+			preflightResult,
+			attempts,
+			recoveryRecommendation,
 		};
 	}
 }

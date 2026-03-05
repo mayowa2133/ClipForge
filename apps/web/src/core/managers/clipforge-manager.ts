@@ -3,10 +3,18 @@ import {
 	BestEffortExportIntegration,
 	buildClipIndex,
 	buildEmptyMediaMetadata,
+	collectIncompatibleMediaReferences,
+	collectMissingMediaReferences,
+	collectUnverifiedMediaReferences,
 	createClipForgeDemoProject,
 	type ClipForgeExportArtifact,
+	applyExportPreflightActions,
 	detectSilenceRegions,
+	evaluateExportPreflight,
 	ensureClipForgeProjectData,
+	isReplacementTypeAllowed,
+	type IncompatibleMediaReference,
+	type MissingMediaReference,
 	resolveClipForgeTranscriber,
 	resolveMediaAssetByName,
 	SrtImportTranscriber,
@@ -26,6 +34,12 @@ import type {
 	TimelineDiffOp,
 	TimelineDiffOpSource,
 } from "@/types/clipforge";
+import type {
+	ExportFormat,
+	ExportPreflightAction,
+	ExportPreflightResult,
+	ExportQuality,
+} from "@/types/export";
 import type {
 	ChatPlannerContext,
 	ChatPlannerOverrides,
@@ -458,6 +472,220 @@ export class ClipForgeManager {
 		return this.exportIntegration.exportBestEffort({
 			editor: this.editor,
 		});
+	}
+
+	runExportPreflight({
+		format,
+		quality,
+		includeAudio,
+	}: {
+		format: ExportFormat;
+		quality: ExportQuality;
+		includeAudio: boolean;
+	}): ExportPreflightResult {
+		return evaluateExportPreflight({
+			project: this.editor.project.getActive(),
+			mediaAssets: this.editor.media.getAssets(),
+			format,
+			quality,
+			includeAudio,
+		});
+	}
+
+	applyExportPreflightFixes({
+		actions,
+	}: {
+		actions: ExportPreflightAction[];
+	}): { applied: number; failed: number; messages: string[] } {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			return {
+				applied: 0,
+				failed: actions.length,
+				messages: ["No active project to repair."],
+			};
+		}
+
+		return applyExportPreflightActions({
+			project: activeProject,
+			getProject: () => this.editor.project.getActive(),
+			mediaAssets: this.editor.media.getAssets(),
+			actions,
+			applyOps: ({ ops }) =>
+				this.applyOps({
+					ops,
+					source: "manual",
+				}),
+			setProject: ({ project }) => this.editor.project.setActiveProject({ project }),
+			markDirty: () => this.editor.save.markDirty(),
+		});
+	}
+
+	listMissingMediaReferences(): MissingMediaReference[] {
+		return collectMissingMediaReferences({
+			project: this.editor.project.getActive(),
+			mediaAssets: this.editor.media.getAssets(),
+		});
+	}
+
+	listIncompatibleMediaReferences({
+		includeAudio,
+	}: {
+		includeAudio: boolean;
+	}): IncompatibleMediaReference[] {
+		const project = this.editor.project.getActive();
+		const mediaAssets = this.editor.media.getAssets();
+		const unverified = collectUnverifiedMediaReferences({
+			project,
+			mediaAssets,
+			includeAudio,
+		});
+		const incompatible = collectIncompatibleMediaReferences({
+			project,
+			mediaAssets,
+			includeAudio,
+		});
+		return [...unverified, ...incompatible].sort((a, b) => {
+			const aStart = a.segments[0]?.startMs ?? Number.POSITIVE_INFINITY;
+			const bStart = b.segments[0]?.startMs ?? Number.POSITIVE_INFINITY;
+			if (aStart !== bStart) return aStart - bStart;
+			return a.mediaId.localeCompare(b.mediaId);
+		});
+	}
+
+	async scanReferencedMediaCompatibility({
+		includeAudio,
+	}: {
+		includeAudio: boolean;
+	}): Promise<{ scanned: number; updated: number; failed: number }> {
+		const references = this.listIncompatibleMediaReferences({
+			includeAudio,
+		});
+		const mediaIds = [...new Set(references.map((reference) => reference.mediaId))];
+		return this.editor.media.probeMediaCompatibility({
+			ids: mediaIds,
+		});
+	}
+
+	async relinkMissingMediaReference({
+		mediaId,
+		replacementAsset,
+	}: {
+		mediaId: string;
+		replacementAsset: Omit<MediaAsset, "id">;
+	}): Promise<{ mediaId: string; restoredReferences: number }> {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+
+		const missingReference = this.listMissingMediaReferences().find(
+			(reference) => reference.mediaId === mediaId,
+		);
+		const incompatibleReference = this.listIncompatibleMediaReferences({
+			includeAudio: true,
+		}).find((reference) => reference.mediaId === mediaId);
+		const targetReference = missingReference ?? incompatibleReference ?? null;
+		if (!targetReference) {
+			throw new Error("Missing media reference not found.");
+		}
+		if (
+			!isReplacementTypeAllowed({
+				allowedReplacementTypes: targetReference.allowedReplacementTypes,
+				replacementType: replacementAsset.type,
+			})
+		) {
+			const allowedTypes =
+				targetReference.allowedReplacementTypes.join(", ") || "none";
+			throw new Error(
+				`Replacement type "${replacementAsset.type}" is incompatible. Allowed types: ${allowedTypes}.`,
+			);
+		}
+
+		const relinked = await this.editor.media.relinkMediaAsset({
+			projectId: activeProject.metadata.id,
+			id: mediaId,
+			asset: replacementAsset,
+		});
+		if (!relinked) {
+			throw new Error("Failed to relink missing media.");
+		}
+
+		this.upsertMediaMetadata({
+			mediaId,
+			metadata: buildEmptyMediaMetadata(),
+		});
+
+		return {
+			mediaId,
+			restoredReferences: targetReference.referenceCount,
+		};
+	}
+
+	removeSegmentsReferencingMedia({
+		mediaId,
+	}: {
+		mediaId: string;
+	}): {
+		applied: boolean;
+		removed: number;
+		errors: Array<{ code: string; message: string }>;
+	} {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			return {
+				applied: false,
+				removed: 0,
+				errors: [{ code: "no_active_project", message: "No active project." }],
+			};
+		}
+
+		const activeScene =
+			activeProject.scenes.find((scene) => scene.id === activeProject.currentSceneId) ??
+			activeProject.scenes[0] ??
+			null;
+		if (!activeScene) {
+			return {
+				applied: false,
+				removed: 0,
+				errors: [{ code: "empty_project", message: "No active scene to repair." }],
+			};
+		}
+
+		const segmentIds = activeScene.tracks.flatMap((track) =>
+			track.elements
+				.filter(
+					(element) =>
+						"mediaId" in element &&
+						typeof element.mediaId === "string" &&
+						element.mediaId === mediaId,
+				)
+				.map((element) => element.id),
+		);
+		if (segmentIds.length === 0) {
+			return {
+				applied: true,
+				removed: 0,
+				errors: [],
+			};
+		}
+
+		const result = this.applyOps({
+			ops: segmentIds.map((segmentId) => ({
+				type: "DELETE_SEGMENT",
+				segment_id: segmentId,
+			})),
+			source: "manual",
+		});
+
+		return {
+			applied: result.applied,
+			removed: result.applied ? segmentIds.length : 0,
+			errors: result.errors.map((error) => ({
+				code: error.code,
+				message: error.message,
+			})),
+		};
 	}
 
 	async createDemoProject(): Promise<{ projectId: string; mediaIds: string[] }> {

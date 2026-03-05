@@ -2,6 +2,7 @@ import { toast } from "sonner";
 import type { MediaAsset } from "@/types/assets";
 import { getMediaTypeFromFile } from "@/lib/media/media-utils";
 import { getVideoInfo } from "./mediabunny";
+import { buildUnknownMediaCompatibilitySnapshot } from "@/lib/media/media-compatibility";
 import { Input, ALL_FORMATS, BlobSource, VideoSampleSink } from "mediabunny";
 
 export interface ProcessedMediaAsset extends Omit<MediaAsset, "id"> {}
@@ -211,6 +212,8 @@ export async function processMediaAssets({
 				width,
 				height,
 				fps,
+				mimeType: file.type ?? "",
+				compatibility: buildUnknownMediaCompatibilitySnapshot(),
 			});
 
 			await new Promise((resolve) => setTimeout(resolve, 0));

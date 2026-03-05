@@ -1,4 +1,4 @@
-import type { MediaType } from "@/types/assets";
+import type { MediaCompatibilitySnapshot, MediaType } from "@/types/assets";
 import type {
 	TProject,
 	TProjectMetadata,
@@ -27,6 +27,8 @@ export interface MediaAssetData {
 	fps?: number;
 	ephemeral?: boolean;
 	thumbnailUrl?: string;
+	mimeType?: string;
+	compatibility?: MediaCompatibilitySnapshot;
 }
 
 export type SerializedScene = Omit<TScene, "createdAt" | "updatedAt"> & {

@@ -160,6 +160,13 @@ Carry-over never persists across separate chat submissions.
 - Users can disable individual ops before apply.
 - Apply always runs on the selected subset only after validation passes.
 
+## Export Preflight (M26 cross-reference)
+
+- Chat-generated timelines and manual timelines now share the same top-right export preflight gate.
+- Export preflight runs deterministic readiness checks before encoding starts and blocks export only on errors.
+- One-click repair actions (when available) run explicitly via existing editor state/command paths, then preflight re-runs.
+- Runtime export diagnostics remain the final authority after export starts.
+
 ## Phrase Cut Rules (M14)
 
 - Phrase cuts require an exact quoted phrase.

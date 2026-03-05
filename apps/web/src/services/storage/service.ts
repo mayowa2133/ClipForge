@@ -253,20 +253,22 @@ class StorageService {
 
 		await mediaAssetsAdapter.set(mediaAsset.id, mediaAsset.file);
 
-		const metadata: MediaAssetData = {
-			id: mediaAsset.id,
-			name: mediaAsset.name,
-			type: mediaAsset.type,
-			size: mediaAsset.file.size,
-			lastModified: mediaAsset.file.lastModified,
-			width: mediaAsset.width,
-			height: mediaAsset.height,
-			duration: mediaAsset.duration,
-			thumbnailUrl: mediaAsset.thumbnailUrl,
-			ephemeral: mediaAsset.ephemeral,
-		};
+		const metadata = this.buildMediaAssetMetadata({
+			mediaAsset,
+		});
 
 		await mediaMetadataAdapter.set(mediaAsset.id, metadata);
+	}
+
+	async saveMediaAssetMetadata({
+		projectId,
+		metadata,
+	}: {
+		projectId: string;
+		metadata: MediaAssetData;
+	}): Promise<void> {
+		const { mediaMetadataAdapter } = this.getProjectMediaAdapters({ projectId });
+		await mediaMetadataAdapter.set(metadata.id, metadata);
 	}
 
 	async loadMediaAsset({
@@ -314,6 +316,29 @@ class StorageService {
 			duration: metadata.duration,
 			thumbnailUrl: metadata.thumbnailUrl,
 			ephemeral: metadata.ephemeral,
+			mimeType: metadata.mimeType,
+			compatibility: metadata.compatibility,
+		};
+	}
+
+	private buildMediaAssetMetadata({
+		mediaAsset,
+	}: {
+		mediaAsset: MediaAsset;
+	}): MediaAssetData {
+		return {
+			id: mediaAsset.id,
+			name: mediaAsset.name,
+			type: mediaAsset.type,
+			size: mediaAsset.file.size,
+			lastModified: mediaAsset.file.lastModified,
+			width: mediaAsset.width,
+			height: mediaAsset.height,
+			duration: mediaAsset.duration,
+			thumbnailUrl: mediaAsset.thumbnailUrl,
+			ephemeral: mediaAsset.ephemeral,
+			mimeType: mediaAsset.mimeType ?? mediaAsset.file.type ?? "",
+			compatibility: mediaAsset.compatibility,
 		};
 	}
 

@@ -32,7 +32,11 @@ import {
 } from "@/constants/feature-flags";
 import { TIMELINE_CONSTANTS } from "@/constants/timeline-constants";
 import { useEditor } from "@/hooks/use-editor";
-import { DemoProjectCreationError } from "@/lib/clipforge";
+import {
+	DemoProjectCreationError,
+	type IncompatibleMediaReference,
+	type MissingMediaReference,
+} from "@/lib/clipforge";
 import { useFileUpload } from "@/hooks/use-file-upload";
 import { useRevealItem } from "@/hooks/use-reveal-item";
 import { processMediaAssets } from "@/lib/media/processing";
@@ -71,13 +75,20 @@ export function MediaView() {
 
 	const [isProcessing, setIsProcessing] = useState(false);
 	const [isCreatingDemo, setIsCreatingDemo] = useState(false);
+	const [isRelinkingMissingMedia, setIsRelinkingMissingMedia] = useState(false);
+	const [isScanningCompatibility, setIsScanningCompatibility] = useState(false);
 	const [progress, setProgress] = useState(0);
 	const [pendingSrtMediaId, setPendingSrtMediaId] = useState<string | null>(null);
+	const [pendingMissingMediaRelink, setPendingMissingMediaRelink] = useState<{
+		mediaId: string;
+		allowedReplacementTypes: Array<"video" | "image" | "audio">;
+	} | null>(null);
 	const [sortBy, setSortBy] = useState<"name" | "type" | "duration" | "size">(
 		"name",
 	);
 	const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 	const srtInputRef = useRef<HTMLInputElement>(null);
+	const missingMediaRelinkInputRef = useRef<HTMLInputElement>(null);
 
 	const runIndexing = async ({
 		mediaIds,
@@ -256,6 +267,115 @@ export function MediaView() {
 		}
 	};
 
+	const openMissingMediaRelinkPicker = ({
+		mediaId,
+		allowedReplacementTypes,
+	}: {
+		mediaId: string;
+		allowedReplacementTypes: Array<"video" | "image" | "audio">;
+	}) => {
+		if (!missingMediaRelinkInputRef.current) {
+			return;
+		}
+		missingMediaRelinkInputRef.current.accept = buildRelinkAccept({
+			allowedReplacementTypes,
+		});
+		missingMediaRelinkInputRef.current.multiple = false;
+		setPendingMissingMediaRelink({
+			mediaId,
+			allowedReplacementTypes,
+		});
+		missingMediaRelinkInputRef.current.click();
+	};
+
+	const handleMissingMediaRelinkInputChange = async (
+		event: React.ChangeEvent<HTMLInputElement>,
+	) => {
+		const file = event.target.files?.[0];
+		event.currentTarget.value = "";
+		const pendingRelink = pendingMissingMediaRelink;
+		setPendingMissingMediaRelink(null);
+		if (!file || !pendingRelink) return;
+
+		setIsRelinkingMissingMedia(true);
+		try {
+			const processedAssets = await processMediaAssets({
+				files: [file],
+			});
+			const replacementAsset = processedAssets[0];
+			if (!replacementAsset) {
+				throw new Error("Failed to process replacement media.");
+			}
+			const result = await editor.clipforge.relinkMissingMediaReference({
+				mediaId: pendingRelink.mediaId,
+				replacementAsset,
+			});
+			toast.success(
+				`Relinked ${result.restoredReferences} segment(s) for missing media ${result.mediaId}.`,
+			);
+		} catch (error) {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Failed to relink missing media reference.",
+			);
+		} finally {
+			setIsRelinkingMissingMedia(false);
+		}
+	};
+
+	const handleRemoveMissingMediaSegments = ({ mediaId }: { mediaId: string }) => {
+		const result = editor.clipforge.removeSegmentsReferencingMedia({
+			mediaId,
+		});
+		if (!result.applied) {
+			toast.error(
+				result.errors[0]?.message ??
+					`Failed to remove segments referencing missing media ${mediaId}.`,
+			);
+			return;
+		}
+
+		toast.success(
+			result.removed > 0
+				? `Removed ${result.removed} segment(s) referencing missing media ${mediaId}.`
+				: `No segments referencing missing media ${mediaId} were found.`,
+		);
+	};
+
+	const handleRescanCompatibility = async ({
+		mediaId,
+	}: {
+		mediaId?: string;
+	}) => {
+		setIsScanningCompatibility(true);
+		try {
+			const result = mediaId
+				? await editor.media.probeMediaCompatibility({
+						ids: [mediaId],
+					})
+				: await editor.clipforge.scanReferencedMediaCompatibility({
+						includeAudio: true,
+					});
+			toast.success(
+				`Scanned ${result.scanned} media asset(s); updated ${result.updated}.`,
+			);
+			if (result.failed > 0) {
+				toast.warning(
+					`${result.failed} media asset(s) failed compatibility probing.`,
+				);
+			}
+		} catch (error) {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Failed to scan media compatibility.",
+			);
+		} finally {
+			setIsScanningCompatibility(false);
+		}
+	};
+
 	const filteredMediaItems = useMemo(() => {
 		const filtered = mediaFiles.filter((item) => !item.ephemeral);
 
@@ -291,6 +411,10 @@ export function MediaView() {
 
 		return filtered;
 	}, [mediaFiles, sortBy, sortOrder]);
+	const missingMediaReferences = editor.clipforge.listMissingMediaReferences();
+	const incompatibleMediaReferences = editor.clipforge.listIncompatibleMediaReferences({
+		includeAudio: true,
+	});
 
 	const hasVideoAssets = filteredMediaItems.some((item) => item.type === "video");
 
@@ -472,6 +596,12 @@ export function MediaView() {
 				className="hidden"
 				onChange={handleSrtInputChange}
 			/>
+			<input
+				ref={missingMediaRelinkInputRef}
+				type="file"
+				className="hidden"
+				onChange={handleMissingMediaRelinkInputChange}
+			/>
 
 			<PanelView
 				title="Assets"
@@ -479,7 +609,27 @@ export function MediaView() {
 				className={isDragOver ? "bg-accent/30" : ""}
 				{...dragProps}
 			>
-				{isDragOver || filteredMediaItems.length === 0 ? (
+				{missingMediaReferences.length > 0 ? (
+					<MissingMediaSection
+						references={missingMediaReferences}
+						isRelinking={isRelinkingMissingMedia || isScanningCompatibility}
+						onRelink={openMissingMediaRelinkPicker}
+						onRemoveSegments={handleRemoveMissingMediaSegments}
+					/>
+				) : null}
+				{incompatibleMediaReferences.length > 0 ? (
+					<IncompatibleMediaSection
+						references={incompatibleMediaReferences}
+						isBusy={isRelinkingMissingMedia || isScanningCompatibility}
+						onRelink={openMissingMediaRelinkPicker}
+						onRemoveSegments={handleRemoveMissingMediaSegments}
+						onRescan={handleRescanCompatibility}
+					/>
+				) : null}
+				{isDragOver ||
+				(filteredMediaItems.length === 0 &&
+					missingMediaReferences.length === 0 &&
+					incompatibleMediaReferences.length === 0) ? (
 					<MediaDragOverlay
 						isVisible={true}
 						isProcessing={isProcessing}
@@ -686,6 +836,182 @@ function ListView({
 			))}
 		</div>
 	);
+}
+
+function MissingMediaSection({
+	references,
+	isRelinking,
+	onRelink,
+	onRemoveSegments,
+}: {
+	references: MissingMediaReference[];
+	isRelinking: boolean;
+	onRelink: ({
+		mediaId,
+		allowedReplacementTypes,
+	}: {
+		mediaId: string;
+		allowedReplacementTypes: Array<"video" | "image" | "audio">;
+	}) => void;
+	onRemoveSegments: ({ mediaId }: { mediaId: string }) => void;
+}) {
+	return (
+		<div className="mb-3 space-y-2 rounded border border-red-500/30 bg-red-500/5 p-2">
+			<p className="text-xs font-medium">Missing Media</p>
+			{references.map((reference) => (
+				<div
+					key={reference.mediaId}
+					className="space-y-1 rounded border border-border/70 bg-background/60 p-2"
+				>
+					<p className="text-xs leading-4">
+						{reference.mediaId} · {reference.referenceCount} segment
+						{reference.referenceCount === 1 ? "" : "s"}
+					</p>
+					<p className="text-muted-foreground text-[11px]">
+						Allowed replacement types:{" "}
+						{reference.allowedReplacementTypes.length > 0
+							? reference.allowedReplacementTypes.join(" / ")
+							: "none"}
+					</p>
+					<div className="flex gap-2">
+						<Button
+							variant="outline"
+							size="sm"
+							className="h-7 flex-1 text-xs"
+							onClick={() =>
+								onRelink({
+									mediaId: reference.mediaId,
+									allowedReplacementTypes: reference.allowedReplacementTypes,
+								})
+							}
+							disabled={isRelinking || reference.allowedReplacementTypes.length === 0}
+						>
+							Relink File
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							className="h-7 flex-1 text-xs"
+							onClick={() =>
+								onRemoveSegments({
+									mediaId: reference.mediaId,
+								})
+							}
+							disabled={isRelinking}
+						>
+							Remove Affected Segments
+						</Button>
+					</div>
+				</div>
+			))}
+		</div>
+	);
+}
+
+function IncompatibleMediaSection({
+	references,
+	isBusy,
+	onRelink,
+	onRemoveSegments,
+	onRescan,
+}: {
+	references: IncompatibleMediaReference[];
+	isBusy: boolean;
+	onRelink: ({
+		mediaId,
+		allowedReplacementTypes,
+	}: {
+		mediaId: string;
+		allowedReplacementTypes: Array<"video" | "image" | "audio">;
+	}) => void;
+	onRemoveSegments: ({ mediaId }: { mediaId: string }) => void;
+	onRescan: ({ mediaId }: { mediaId?: string }) => void;
+}) {
+	return (
+		<div className="mb-3 space-y-2 rounded border border-yellow-500/30 bg-yellow-500/5 p-2">
+			<p className="text-xs font-medium">Incompatible Media</p>
+			{references.map((reference) => (
+				<div
+					key={reference.mediaId}
+					className="space-y-1 rounded border border-border/70 bg-background/60 p-2"
+				>
+					<p className="text-xs leading-4">
+						{reference.mediaId} · {reference.referenceCount} segment
+						{reference.referenceCount === 1 ? "" : "s"}
+					</p>
+					<p className="text-muted-foreground text-[11px]">
+						Status: {reference.compatibilityStatus}
+						{reference.compatibilityReason
+							? ` (${reference.compatibilityReason})`
+							: ""}
+					</p>
+					<p className="text-muted-foreground text-[11px]">
+						Allowed replacement types:{" "}
+						{reference.allowedReplacementTypes.length > 0
+							? reference.allowedReplacementTypes.join(" / ")
+							: "none"}
+					</p>
+					<div className="flex gap-2">
+						<Button
+							variant="outline"
+							size="sm"
+							className="h-7 flex-1 text-xs"
+							onClick={() =>
+								onRelink({
+									mediaId: reference.mediaId,
+									allowedReplacementTypes: reference.allowedReplacementTypes,
+								})
+							}
+							disabled={isBusy || reference.allowedReplacementTypes.length === 0}
+						>
+							Relink File
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							className="h-7 flex-1 text-xs"
+							onClick={() =>
+								onRemoveSegments({
+									mediaId: reference.mediaId,
+								})
+							}
+							disabled={isBusy}
+						>
+							Remove Affected Segments
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							className="h-7 flex-1 text-xs"
+							onClick={() =>
+								onRescan({
+									mediaId: reference.mediaId,
+								})
+							}
+							disabled={isBusy}
+						>
+							Re-scan
+						</Button>
+					</div>
+				</div>
+			))}
+		</div>
+	);
+}
+
+export function buildRelinkAccept({
+	allowedReplacementTypes,
+}: {
+	allowedReplacementTypes: Array<"video" | "image" | "audio">;
+}): string {
+	if (allowedReplacementTypes.length === 0) {
+		return "*";
+	}
+
+	return allowedReplacementTypes
+		.flatMap((type) => (type === "audio" ? ["audio/*", "video/*"] : [`${type}/*`]))
+		.filter((value, index, values) => values.indexOf(value) === index)
+		.join(",");
 }
 
 const formatDuration = ({ duration }: { duration: number }) => {

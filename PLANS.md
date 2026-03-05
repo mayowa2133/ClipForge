@@ -31,6 +31,11 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M23: Project-aware plan safety and deterministic auto-repair before apply.
 - [x] M24: Validator-aware deterministic reconciliation before apply.
 - [x] M25: Deterministic plan preview, selective apply, and jump-to-target.
+- [x] M26: Export preflight gate with deterministic one-click repairs.
+- [x] M27: Runtime export recovery with safe retry profiles and incident diagnostics bundle.
+- [x] M28: Missing media relink and non-destructive broken-reference recovery.
+- [x] M29: Reactive project health snapshots and export preflight consistency across Assets/Export surfaces.
+- [ ] M30: Export media compatibility guard with guided non-destructive recovery.
 
 ## Working Rules
 
