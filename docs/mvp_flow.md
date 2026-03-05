@@ -43,7 +43,10 @@
    - The review UI shows which planner produced the result and any fallback warnings.
    - A plan safety summary shows repaired/dropped/blocked outcomes across semantic safety + validator reconciliation.
    - Validator-aware reconciliation runs once before review so proposed ops are usually apply-ready.
-8. Click `Apply` to validate + apply ops through OpenCut command stack.
+   - A deterministic dry-run impact preview shows each op’s expected change before apply.
+   - You can toggle individual ops on/off; ClipForge re-validates the selected subset.
+   - `Jump` on a card seeks to its target time and selects the target segment when available.
+8. Click `Apply` to validate + apply the selected subset through OpenCut command stack.
 9. Use undo/redo normally and continue iterating.
 
 Example chat prompts:

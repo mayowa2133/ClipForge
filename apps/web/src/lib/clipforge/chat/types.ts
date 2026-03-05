@@ -125,6 +125,52 @@ export interface ChatPlanSafetySummary {
 	notices: ChatPlanSafetyNotice[];
 }
 
+export type ChatPlanImpactKind =
+	| "trim"
+	| "move"
+	| "swap"
+	| "delete"
+	| "duplicate"
+	| "fix-caption"
+	| "add-text"
+	| "cut-range"
+	| "insert-broll"
+	| "caption-style"
+	| "aspect-ratio"
+	| "make-version"
+	| "remove-silence"
+	| "unknown";
+
+export interface ChatPlanImpactJumpTarget {
+	time_ms: number;
+	track_id: string | null;
+	segment_id: string | null;
+}
+
+export interface ChatPlanImpactCard {
+	opIndex: number;
+	opType: TimelineDiffOp["type"];
+	kind: ChatPlanImpactKind;
+	title: string;
+	detail: string;
+	beforeText?: string | null;
+	afterText?: string | null;
+	beforeRangeMs?: { start: number; end: number } | null;
+	afterRangeMs?: { start: number; end: number } | null;
+	jump?: ChatPlanImpactJumpTarget | null;
+}
+
+export interface ChatPlanPreviewSummary {
+	totalOps: number;
+	impactCount: number;
+	simulatedDurationDeltaMs: number;
+}
+
+export interface ChatPlanPreviewResult {
+	cards: ChatPlanImpactCard[];
+	summary: ChatPlanPreviewSummary;
+}
+
 export interface ChatValidatorReconciliationResult {
 	ops: TimelineDiffOp[];
 	clarification: ChatClarificationRequest | null;

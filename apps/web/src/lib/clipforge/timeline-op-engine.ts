@@ -421,7 +421,7 @@ function applyMoveSegmentOp({
 	if (!location) return;
 
 	const element = tracks[location.trackIndex].elements[location.elementIndex];
-	element.startTime = Math.max(0, toMs);
+	element.startTime = clampTimelineSecondsFromMs(toMs);
 }
 
 function applySwapSegmentsOp({
@@ -480,8 +480,12 @@ function applyDuplicateSegmentOp({
 	elements.push({
 		...element,
 		id: generateUUID(),
-		startTime: Math.max(0, toMs),
+		startTime: clampTimelineSecondsFromMs(toMs),
 	});
+}
+
+function clampTimelineSecondsFromMs(valueMs: number): number {
+	return Math.max(0, valueMs / 1000);
 }
 
 function applyInsertBrollOp({

@@ -30,6 +30,7 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M22: Provider-agnostic ambiguity safety layer across all planner modes.
 - [x] M23: Project-aware plan safety and deterministic auto-repair before apply.
 - [x] M24: Validator-aware deterministic reconciliation before apply.
+- [x] M25: Deterministic plan preview, selective apply, and jump-to-target.
 
 ## Working Rules
 

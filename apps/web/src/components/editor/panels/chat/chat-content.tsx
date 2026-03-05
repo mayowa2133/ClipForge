@@ -16,6 +16,7 @@ import { useClipForgeChatSettingsStore } from "@/stores/clipforge-chat-settings-
 import type { TimelineDiffOp } from "@/types/clipforge";
 import type {
 	ChatClarificationRequest,
+	ChatPlanPreviewResult,
 	ChatPlannerContext,
 	ChatPlannerOverrides,
 	ChatPlannerHealth,
@@ -50,6 +51,12 @@ export function ChatContent() {
 	const [prompt, setPrompt] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
 	const [proposedOps, setProposedOps] = useState<TimelineDiffOp[]>([]);
+	const [impactPreview, setImpactPreview] = useState<ChatPlanPreviewResult | null>(
+		null,
+	);
+	const [enabledOpsByIndex, setEnabledOpsByIndex] = useState<
+		Record<number, boolean>
+	>({});
 	const [errors, setErrors] = useState<TimelineOpsValidationError[]>([]);
 	const [proposalMeta, setProposalMeta] = useState<ProposalMeta | null>(null);
 	const [plannerHealth, setPlannerHealth] = useState<ChatPlannerHealth | null>(null);
@@ -62,6 +69,14 @@ export function ChatContent() {
 		useState<PlannerRequestSnapshot | null>(null);
 	const [, setClarificationOverrides] =
 		useState<ChatPlannerOverrides | null>(null);
+	const selectedOps = useMemo(
+		() =>
+			selectEnabledOps({
+				ops: proposedOps,
+				enabledOpsByIndex,
+			}),
+		[proposedOps, enabledOpsByIndex],
+	);
 
 	useEffect(() => {
 		if (draft.length === 0) return;
@@ -111,6 +126,24 @@ export function ChatContent() {
 		};
 	}, [plannerMode]);
 
+	useEffect(() => {
+		if (proposedOps.length === 0) return;
+
+		const validation = editor.clipforge.validateOps({ ops: selectedOps });
+		setErrors(validation.valid ? [] : validation.errors);
+	}, [editor, proposedOps, selectedOps]);
+
+	const resetPreview = () => {
+		setImpactPreview(null);
+		setEnabledOpsByIndex({});
+	};
+
+	const buildPreviewForOps = ({ ops }: { ops: TimelineDiffOp[] }) => {
+		const preview = editor.clipforge.previewOpsImpact({ ops });
+		setImpactPreview(preview);
+		setEnabledOpsByIndex(buildEnabledOpsMap({ ops }));
+	};
+
 	const handlePropose = async () => {
 		if (isLoading) return;
 
@@ -131,6 +164,7 @@ export function ChatContent() {
 		setLastPlanError(null);
 		setErrors([]);
 		setProposalMeta(null);
+		resetPreview();
 		setPendingClarification(null);
 		setClarificationOverrides(null);
 		try {
@@ -166,6 +200,7 @@ export function ChatContent() {
 				});
 				setProposedOps([]);
 				setErrors([]);
+				resetPreview();
 				setPendingClarification(result.clarification);
 				setLastPlanError(null);
 				return;
@@ -175,6 +210,7 @@ export function ChatContent() {
 			if (result.ops.length === 0) {
 				setProposedOps([]);
 				setErrors([]);
+				resetPreview();
 				toast.error("No deterministic ops could be generated.");
 				return;
 			}
@@ -204,6 +240,7 @@ export function ChatContent() {
 				setPendingClarification(reconciliation.clarification);
 				setProposedOps([]);
 				setErrors([]);
+				resetPreview();
 				setLastPlanError(null);
 				return;
 			}
@@ -215,12 +252,14 @@ export function ChatContent() {
 						? reconciliation.secondPassErrors
 						: reconciliation.firstPassErrors,
 				);
+				resetPreview();
 				setLastPlanError(null);
 				toast.error("Unable to produce validator-clean deterministic ops.");
 				return;
 			}
 
 			setProposedOps(reconciliation.ops);
+			buildPreviewForOps({ ops: reconciliation.ops });
 			setErrors([]);
 			setLastPlanError(null);
 		} catch (error) {
@@ -228,6 +267,7 @@ export function ChatContent() {
 				return;
 			}
 			setProposalMeta(null);
+			resetPreview();
 			const message =
 				error instanceof Error ? error.message : "Please try again.";
 			setLastPlanError(message);
@@ -263,6 +303,7 @@ export function ChatContent() {
 		setIsLoading(true);
 		setLastPlanError(null);
 		setErrors([]);
+		resetPreview();
 		try {
 			const result = await provider.proposeEdits({
 				...lastPlannerRequest,
@@ -282,6 +323,7 @@ export function ChatContent() {
 				setPendingClarification(result.clarification);
 				setProposedOps([]);
 				setErrors([]);
+				resetPreview();
 				return;
 			}
 
@@ -289,6 +331,7 @@ export function ChatContent() {
 			if (result.ops.length === 0) {
 				setProposedOps([]);
 				setErrors([]);
+				resetPreview();
 				toast.error("No deterministic ops could be generated.");
 				return;
 			}
@@ -319,6 +362,7 @@ export function ChatContent() {
 				setPendingClarification(reconciliation.clarification);
 				setProposedOps([]);
 				setErrors([]);
+				resetPreview();
 				return;
 			}
 
@@ -329,17 +373,20 @@ export function ChatContent() {
 						? reconciliation.secondPassErrors
 						: reconciliation.firstPassErrors,
 				);
+				resetPreview();
 				toast.error("Unable to produce validator-clean deterministic ops.");
 				return;
 			}
 
 			setProposedOps(reconciliation.ops);
+			buildPreviewForOps({ ops: reconciliation.ops });
 			setErrors([]);
 		} catch (error) {
 			if (activeRequestIdRef.current !== requestId) {
 				return;
 			}
 			setPendingClarification(null);
+			resetPreview();
 			const message =
 				error instanceof Error ? error.message : "Please try again.";
 			setLastPlanError(message);
@@ -354,10 +401,10 @@ export function ChatContent() {
 	};
 
 	const handleApply = () => {
-		if (proposedOps.length === 0) return;
+		if (selectedOps.length === 0) return;
 
 		const result = editor.clipforge.applyOps({
-			ops: proposedOps,
+			ops: selectedOps,
 			source: "chat",
 		});
 		if (!result.applied) {
@@ -369,11 +416,36 @@ export function ChatContent() {
 		toast.success("Chat edits applied.");
 		setPrompt("");
 		setProposedOps([]);
+		resetPreview();
 		setErrors([]);
 		setProposalMeta(null);
 		setLastPlanError(null);
 		setPendingClarification(null);
 		setClarificationOverrides(null);
+	};
+
+	const handleToggleOp = ({ opIndex }: { opIndex: number }) => {
+		setEnabledOpsByIndex((previous) => ({
+			...previous,
+			[opIndex]: previous[opIndex] === false,
+		}));
+	};
+
+	const handleJumpToTarget = ({
+		timeMs,
+		trackId,
+		segmentId,
+	}: {
+		timeMs: number;
+		trackId: string | null;
+		segmentId: string | null;
+	}) => {
+		editor.playback.seek({ time: Math.max(0, timeMs) / 1000 });
+		if (trackId && segmentId) {
+			editor.selection.setSelectedElements({
+				elements: [{ trackId, elementId: segmentId }],
+			});
+		}
 	};
 
 	if (!ENABLE_CLIPFORGE_CHAT) {
@@ -531,18 +603,92 @@ export function ChatContent() {
 
 			{proposedOps.length > 0 && (
 				<div className="flex flex-1 flex-col gap-2">
-					<Label>Proposed JSON Ops</Label>
+					{impactPreview && (
+						<div className="rounded-md border p-3">
+							<p className="text-sm font-medium">Plan impact</p>
+							<p className="text-muted-foreground mb-2 text-xs">
+								{impactPreview.summary.impactCount} impacts · Duration delta{" "}
+								{formatSignedDurationMs(
+									impactPreview.summary.simulatedDurationDeltaMs,
+								)}
+							</p>
+							<div className="flex max-h-52 flex-col gap-2 overflow-auto pr-1">
+								{impactPreview.cards.map((card) => {
+									const enabled = enabledOpsByIndex[card.opIndex] !== false;
+									return (
+										<div
+											key={`${card.opType}-${card.opIndex}`}
+											className="rounded-md border px-3 py-2"
+										>
+											<div className="flex items-start justify-between gap-2">
+												<label className="flex cursor-pointer items-start gap-2 text-sm">
+													<input
+														type="checkbox"
+														checked={enabled}
+														onChange={() =>
+															handleToggleOp({ opIndex: card.opIndex })
+														}
+													/>
+													<span>
+														<span className="block font-medium">
+															{card.title}
+														</span>
+														<span className="text-muted-foreground block text-xs">
+															{card.detail}
+														</span>
+														{card.beforeText && (
+															<span className="text-muted-foreground block text-xs">
+																Before: {card.beforeText}
+															</span>
+														)}
+														{card.afterText && (
+															<span className="text-muted-foreground block text-xs">
+																After: {card.afterText}
+															</span>
+														)}
+													</span>
+												</label>
+												{card.jump && (
+													<Button
+														type="button"
+														variant="outline"
+														size="sm"
+														onClick={() =>
+															handleJumpToTarget({
+																timeMs: card.jump?.time_ms ?? 0,
+																trackId: card.jump?.track_id ?? null,
+																segmentId: card.jump?.segment_id ?? null,
+															})
+														}
+													>
+														Jump
+													</Button>
+												)}
+											</div>
+										</div>
+									);
+								})}
+							</div>
+						</div>
+					)}
+					<Label>
+						Selected JSON Ops ({selectedOps.length}/{proposedOps.length})
+					</Label>
 					<pre className="bg-muted max-h-64 overflow-auto rounded-md border p-3 text-xs">
-						{JSON.stringify(proposedOps, null, 2)}
+						{JSON.stringify(selectedOps, null, 2)}
 					</pre>
 					<div className="flex gap-2">
-						<Button onClick={handleApply} disabled={errors.length > 0}>
+						<Button
+							onClick={handleApply}
+							disabled={errors.length > 0 || selectedOps.length === 0}
+						>
 							Apply
 						</Button>
 						<Button
 							variant="outline"
 							onClick={() => {
 								setProposedOps([]);
+								resetPreview();
 								setErrors([]);
 								setProposalMeta(null);
 								setPendingClarification(null);
@@ -576,6 +722,35 @@ function formatPlannerTime(playheadMs: number): string {
 	const minutes = Math.floor(totalSeconds / 60);
 	const seconds = totalSeconds % 60;
 	return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatSignedDurationMs(durationMs: number): string {
+	const sign = durationMs >= 0 ? "+" : "-";
+	const absoluteMs = Math.abs(durationMs);
+	const seconds = absoluteMs / 1000;
+	return `${sign}${seconds.toFixed(2)}s`;
+}
+
+export function buildEnabledOpsMap({
+	ops,
+}: {
+	ops: TimelineDiffOp[];
+}): Record<number, boolean> {
+	const next: Record<number, boolean> = {};
+	for (const [index] of ops.entries()) {
+		next[index] = true;
+	}
+	return next;
+}
+
+export function selectEnabledOps({
+	ops,
+	enabledOpsByIndex,
+}: {
+	ops: TimelineDiffOp[];
+	enabledOpsByIndex: Record<number, boolean>;
+}): TimelineDiffOp[] {
+	return ops.filter((_, index) => enabledOpsByIndex[index] !== false);
 }
 
 function mergeSafetySummaries(

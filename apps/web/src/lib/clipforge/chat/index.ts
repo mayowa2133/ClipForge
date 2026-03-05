@@ -11,6 +11,7 @@ export * from "./prompt-parsers";
 export * from "./reference-label";
 export * from "./provider-resolver";
 export * from "./plan-safety";
+export * from "./plan-impact";
 export * from "./validator-reconciliation";
 export * from "./providers/ambiguity-safe";
 export * from "./providers/semantic-safe";

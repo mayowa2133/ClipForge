@@ -12,6 +12,7 @@ import {
 	SrtImportTranscriber,
 	validateTimelineDiffOps,
 } from "@/lib/clipforge";
+import { buildPlanImpactPreview } from "@/lib/clipforge/chat/plan-impact";
 import { reconcileValidatorErrors } from "@/lib/clipforge/chat/validator-reconciliation";
 import { extractMediaAssetAudioToFloat32 } from "@/lib/media/audio";
 import {
@@ -28,6 +29,7 @@ import type {
 import type {
 	ChatPlannerContext,
 	ChatPlannerOverrides,
+	ChatPlanPreviewResult,
 	ChatValidatorReconciliationResult,
 	ProjectSummary,
 } from "@/lib/clipforge/chat/types";
@@ -394,6 +396,30 @@ export class ClipForgeManager {
 			overrides,
 			ops,
 			validateOps: ({ ops: candidateOps }) => this.validateOps({ ops: candidateOps }),
+		});
+	}
+
+	previewOpsImpact({
+		ops,
+	}: {
+		ops: TimelineDiffOp[];
+	}): ChatPlanPreviewResult {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			return {
+				cards: [],
+				summary: {
+					totalOps: ops.length,
+					impactCount: 0,
+					simulatedDurationDeltaMs: 0,
+				},
+			};
+		}
+
+		return buildPlanImpactPreview({
+			project: activeProject,
+			mediaAssets: this.editor.media.getAssets(),
+			ops,
 		});
 	}
 

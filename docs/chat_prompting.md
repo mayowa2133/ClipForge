@@ -78,8 +78,13 @@ The prompt includes examples for:
    - captures first-pass `validateOps` errors (`code`, `opIndex`)
    - applies deterministic repair/drop actions for known validator codes
    - re-validates exactly once before UI review acceptance
-5. User reviews in chat panel
-6. Apply via OpenCut command manager
+5. Deterministic non-mutating plan preview runs on reconciled ops
+   - renders human-readable impact cards
+   - supports per-op include/exclude toggles
+   - re-validates the selected subset before apply
+   - supports jump-to-target (seek + select) from each impact card
+6. User reviews selected JSON ops in the chat panel
+7. Apply via OpenCut command manager
 
 The model layer never bypasses `OpsValidator`. Invalid model output is rejected before the normal validation pass, and `auto` mode falls back to the heuristic planner.
 
@@ -147,6 +152,13 @@ Carry-over never persists across separate chat submissions.
   - blocked: no safe ops remain, or repair itself is ambiguous and clarification is required
 - This layer is provider-agnostic and applies to `openai`, `auto`, and `heuristic`.
 - `OpsValidator` remains the final authority before apply.
+
+## Deterministic Plan Preview (M25)
+
+- Preview is dry-run only and never mutates project state.
+- Impact cards are deterministic and generated from before/after timeline snapshots.
+- Users can disable individual ops before apply.
+- Apply always runs on the selected subset only after validation passes.
 
 ## Phrase Cut Rules (M14)
 

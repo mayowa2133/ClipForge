@@ -171,6 +171,12 @@ The editor preview keeps the same DOM interaction overlays, but frame generation
   - known validator codes are deterministically repaired or dropped,
   - validation is re-run exactly once before JSON review is accepted.
 - Validator reconciliation is provider-agnostic and applies to `openai`, `auto`, and `heuristic` modes.
+- Chat now includes deterministic dry-run impact preview cards before apply:
+  - each proposed op gets a human-readable impact summary,
+  - each card can be toggled on/off for selective apply,
+  - the selected subset is re-validated before apply is enabled,
+  - and `Jump` seeks playhead + selects the target segment when available.
+- Preview is non-mutating and never bypasses the existing validator/apply authority.
 
 ### Built-in demo project
 

@@ -173,7 +173,10 @@ describe("timeline op engine", () => {
 
 		expect(applied.settings.canvasSize).toEqual({ width: 1080, height: 1920 });
 		expect(videoTrack?.elements.length).toBe(3);
-		expect(videoTrack?.elements.some((element) => element.startTime === 7000)).toBe(
+		expect(videoTrack?.elements.some((element) => element.startTime === 7)).toBe(
+			true,
+		);
+		expect(videoTrack?.elements.some((element) => element.startTime === 13)).toBe(
 			true,
 		);
 		expect(textTrack?.type).toBe("text");
