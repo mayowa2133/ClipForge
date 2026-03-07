@@ -8,10 +8,21 @@ import { VideoNode } from "@/services/renderer/nodes/video-node";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
 import type { RenderAssetRegistry } from "@/services/renderer/render-asset-registry";
 import type { RenderGraph } from "@/services/renderer/types";
-import type { RenderBackend, RenderFrameRequest, RenderedFrame } from "./types";
+import type {
+	RenderBackend,
+	RenderBackendDiagnostics,
+	RenderFrameRequest,
+	RenderedFrame,
+} from "./types";
 
 export class LegacyCanvasBackend implements RenderBackend {
 	private renderer: CanvasRenderer | null = null;
+	private readonly diagnostics: RenderBackendDiagnostics = {
+		backendKind: "legacy-canvas",
+		usedBinaryFallback: false,
+		usedLegacyFallback: false,
+		unsupportedFeatures: [],
+	};
 
 	constructor(private readonly assetRegistry: RenderAssetRegistry) {}
 
@@ -44,6 +55,19 @@ export class LegacyCanvasBackend implements RenderBackend {
 	}
 
 	dispose(): void {}
+
+	getDiagnostics(): RenderBackendDiagnostics {
+		return {
+			...this.diagnostics,
+			unsupportedFeatures: [...this.diagnostics.unsupportedFeatures],
+		};
+	}
+
+	resetDiagnostics(): void {
+		this.diagnostics.usedBinaryFallback = false;
+		this.diagnostics.usedLegacyFallback = false;
+		this.diagnostics.unsupportedFeatures = [];
+	}
 }
 
 function buildRootNodeFromGraph({

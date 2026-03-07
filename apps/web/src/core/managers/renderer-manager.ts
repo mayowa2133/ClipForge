@@ -4,11 +4,19 @@ import { compareCanvasFrameParity } from "@/services/renderer/render-parity";
 import { buildRenderGraph } from "@/services/renderer/scene-builder";
 import { SceneExporter, SceneExportError } from "@/services/renderer/scene-exporter";
 import { RenderAssetRegistry } from "@/services/renderer/render-asset-registry";
-import type { RenderGraph } from "@/services/renderer/types";
+import {
+	buildPreviewFidelityReport,
+	buildPreviewParitySampleTimes,
+	buildRenderGraphFingerprint,
+} from "@/services/renderer/preview-fidelity";
+import type { RenderGraph, PreviewFidelityReport } from "@/services/renderer/types";
 import { BinaryCanvasBackend } from "@/services/renderer/backends/binary-canvas-backend";
 import { BinaryPreviewBackend } from "@/services/renderer/backends/binary-preview-backend";
 import { LegacyCanvasBackend } from "@/services/renderer/backends/legacy-canvas-backend";
-import type { RenderBackend } from "@/services/renderer/backends/types";
+import type {
+	RenderBackend,
+	RenderBackendDiagnostics,
+} from "@/services/renderer/backends/types";
 import type {
 	ExportDiagnostics,
 	ExportOptions,
@@ -22,15 +30,31 @@ export class RendererManager {
 	private renderGraph: RenderGraph | null = null;
 	private readonly assetRegistry = new RenderAssetRegistry();
 	private readonly listeners = new Set<() => void>();
+	private readonly fidelityListeners = new Set<() => void>();
 	private previewBackend: RenderBackend;
+	private previewFidelityReport: PreviewFidelityReport | null = null;
+	private fidelityEvaluationPromise: Promise<PreviewFidelityReport | null> | null =
+		null;
+	private fidelityEvaluationFingerprint: string | null = null;
 
 	constructor(private editor: EditorCore) {
 		this.previewBackend = this.createBackend();
 	}
 
 	setRenderGraph({ renderGraph }: { renderGraph: RenderGraph | null }): void {
+		const previousFingerprint = buildRenderGraphFingerprint({
+			graph: this.renderGraph,
+		});
 		this.renderGraph = renderGraph;
 		this.assetRegistry.setAssets(this.editor.media.getAssets());
+		const nextFingerprint = buildRenderGraphFingerprint({ graph: renderGraph });
+		if (previousFingerprint !== nextFingerprint) {
+			this.previewBackend.resetDiagnostics?.();
+			this.previewFidelityReport = null;
+			this.fidelityEvaluationPromise = null;
+			this.fidelityEvaluationFingerprint = null;
+			this.notifyFidelity();
+		}
 		this.notify();
 	}
 
@@ -40,6 +64,15 @@ export class RendererManager {
 
 	getBackend(): RenderBackend {
 		return this.previewBackend;
+	}
+
+	getPreviewFidelityReport(): PreviewFidelityReport | null {
+		return this.previewFidelityReport;
+	}
+
+	subscribeFidelity(listener: () => void): () => void {
+		this.fidelityListeners.add(listener);
+		return () => this.fidelityListeners.delete(listener);
 	}
 
 	async renderFrameToCanvas({
@@ -207,16 +240,6 @@ export class RendererManager {
 			const backend = exportBackend.backend;
 			getLastExportBackendUsed = exportBackend.getLastUsedBackend;
 			lastExportBackendUsed = exportBackend.getLastUsedBackend();
-			if (
-				process.env.NODE_ENV !== "production" &&
-				typeof document !== "undefined"
-			) {
-				void this.logExportParityCheck({
-					renderGraph,
-					exportBackend: backend,
-					canvasSize,
-				});
-			}
 			const exporter = new SceneExporter({
 				width: canvasSize.width,
 				height: canvasSize.height,
@@ -304,6 +327,56 @@ export class RendererManager {
 		return () => this.listeners.delete(listener);
 	}
 
+	async evaluatePreviewFidelity({
+		force = false,
+	}: {
+		force?: boolean;
+	} = {}): Promise<PreviewFidelityReport | null> {
+		const renderGraph = this.getRenderGraph();
+		const activeProject = this.editor.project.getActive();
+		const graphFingerprint = buildRenderGraphFingerprint({
+			graph: renderGraph,
+		});
+
+		if (!renderGraph || !activeProject || !graphFingerprint || renderGraph.duration <= 0) {
+			this.previewFidelityReport = null;
+			this.notifyFidelity();
+			return null;
+		}
+
+		if (
+			!force &&
+			this.previewFidelityReport?.graphFingerprint === graphFingerprint
+		) {
+			return this.previewFidelityReport;
+		}
+
+		if (
+			!force &&
+			this.fidelityEvaluationPromise &&
+			this.fidelityEvaluationFingerprint === graphFingerprint
+		) {
+			return this.fidelityEvaluationPromise;
+		}
+
+		const evaluationPromise = this.runPreviewFidelityEvaluation({
+			renderGraph,
+			graphFingerprint,
+			fps: activeProject.settings.fps,
+		});
+		this.fidelityEvaluationPromise = evaluationPromise;
+		this.fidelityEvaluationFingerprint = graphFingerprint;
+
+		try {
+			return await evaluationPromise;
+		} finally {
+			if (this.fidelityEvaluationPromise === evaluationPromise) {
+				this.fidelityEvaluationPromise = null;
+				this.fidelityEvaluationFingerprint = null;
+			}
+		}
+	}
+
 	private createBackend(): RenderBackend {
 		if (ENABLE_BINARY_PREVIEW_RENDERER) {
 			return new BinaryPreviewBackend(this.assetRegistry);
@@ -314,12 +387,27 @@ export class RendererManager {
 	private createExportBackend(): {
 		backend: RenderBackend;
 		getLastUsedBackend: () => "binary-canvas" | "legacy-canvas";
+		getDiagnostics: () => RenderBackendDiagnostics;
 	} {
 		const binaryBackend = new BinaryCanvasBackend(this.assetRegistry);
 		const legacyBackend = new LegacyCanvasBackend(this.assetRegistry);
 		let lastUsedBackend: "binary-canvas" | "legacy-canvas" = "binary-canvas";
 		return {
 			getLastUsedBackend: () => lastUsedBackend,
+			getDiagnostics: () =>
+				lastUsedBackend === "legacy-canvas"
+					? legacyBackend.getDiagnostics?.() ?? {
+							backendKind: "legacy-canvas",
+							usedBinaryFallback: false,
+							usedLegacyFallback: false,
+							unsupportedFeatures: [],
+						}
+					: binaryBackend.getDiagnostics?.() ?? {
+							backendKind: "binary-canvas",
+							usedBinaryFallback: false,
+							usedLegacyFallback: false,
+							unsupportedFeatures: [],
+						},
 			backend: {
 				renderFrame: async (request) => {
 					try {
@@ -345,60 +433,110 @@ export class RendererManager {
 		};
 	}
 
-	private async logExportParityCheck({
+	private async runPreviewFidelityEvaluation({
 		renderGraph,
-		exportBackend,
-		canvasSize,
+		graphFingerprint,
+		fps,
 	}: {
 		renderGraph: RenderGraph;
-		exportBackend: RenderBackend;
-		canvasSize: { width: number; height: number };
-	}): Promise<void> {
+		graphFingerprint: string;
+		fps: number;
+	}): Promise<PreviewFidelityReport | null> {
+		const canvasSize = renderGraph.canvas;
+		const exportBackend = this.createExportBackend();
 		const previewCanvas = document.createElement("canvas");
 		previewCanvas.width = canvasSize.width;
 		previewCanvas.height = canvasSize.height;
 		const exportCanvas = document.createElement("canvas");
 		exportCanvas.width = canvasSize.width;
 		exportCanvas.height = canvasSize.height;
+		const sampleTimes = buildPreviewParitySampleTimes({
+			graph: renderGraph,
+			fps,
+		});
+		const samples = [];
 
 		try {
-			const previewFrame = await this.previewBackend.renderFrame({
-				graph: renderGraph,
-				time: 0,
-				targetSize: canvasSize,
-			});
-			await drawRenderedFrameToCanvas({
-				frame: previewFrame,
-				targetCanvas: previewCanvas,
-			});
+			for (const time of sampleTimes) {
+				const previewFrame = await this.previewBackend.renderFrame({
+					graph: renderGraph,
+					time,
+					targetSize: canvasSize,
+				});
+				await drawRenderedFrameToCanvas({
+					frame: previewFrame,
+					targetCanvas: previewCanvas,
+				});
 
-			const exportFrame = await exportBackend.renderFrame({
-				graph: renderGraph,
-				time: 0,
-				targetSize: canvasSize,
-			});
-			await drawRenderedFrameToCanvas({
-				frame: exportFrame,
-				targetCanvas: exportCanvas,
-			});
+				const exportFrame = await exportBackend.backend.renderFrame({
+					graph: renderGraph,
+					time,
+					targetSize: canvasSize,
+				});
+				await drawRenderedFrameToCanvas({
+					frame: exportFrame,
+					targetCanvas: exportCanvas,
+				});
 
-			const parity = await compareCanvasFrameParity({
-				previewCanvas,
-				exportCanvas,
-				time: 0,
-			});
-			if (!parity.match) {
-				console.warn(
-					`[RendererManager] Preview/export first-frame parity mismatch at ${parity.time}s (${parity.previewHash} vs ${parity.exportHash})`,
-				);
+				const parity = await compareCanvasFrameParity({
+					previewCanvas,
+					exportCanvas,
+					time,
+				});
+				samples.push(parity);
 			}
-		} catch {
-			// Parity logging is dev-only and best-effort.
+			const report = buildPreviewFidelityReport({
+				graphFingerprint,
+				previewDiagnostics:
+					this.previewBackend.getDiagnostics?.() ?? {
+						backendKind: ENABLE_BINARY_PREVIEW_RENDERER
+							? "binary-preview"
+							: "legacy-canvas",
+						usedBinaryFallback: false,
+						usedLegacyFallback: false,
+						unsupportedFeatures: [],
+					},
+				exportDiagnostics: exportBackend.getDiagnostics(),
+				samples,
+				checkedAt: new Date().toISOString(),
+			});
+			this.previewFidelityReport = report;
+			this.notifyFidelity();
+			return report;
+		} catch (error) {
+			const report = buildPreviewFidelityReport({
+				graphFingerprint,
+				previewDiagnostics:
+					this.previewBackend.getDiagnostics?.() ?? {
+						backendKind: ENABLE_BINARY_PREVIEW_RENDERER
+							? "binary-preview"
+							: "legacy-canvas",
+						usedBinaryFallback: false,
+						usedLegacyFallback: false,
+						unsupportedFeatures: [],
+					},
+				exportDiagnostics: exportBackend.getDiagnostics(),
+				samples,
+				checkedAt: new Date().toISOString(),
+				parityError:
+					error instanceof Error
+						? `Preview fidelity check failed: ${error.message}`
+						: "Preview fidelity check failed.",
+			});
+			this.previewFidelityReport = report;
+			this.notifyFidelity();
+			return report;
+		} finally {
+			exportBackend.backend.dispose();
 		}
 	}
 
 	private notify(): void {
 		this.listeners.forEach((fn) => fn());
+	}
+
+	private notifyFidelity(): void {
+		this.fidelityListeners.forEach((fn) => fn());
 	}
 }
 

@@ -44,7 +44,14 @@ import {
 } from "@/components/editor/panels/properties/section";
 import { useEditor } from "@/hooks/use-editor";
 import { useExportPreflight } from "@/hooks/use-export-preflight";
+import { usePreviewFidelity } from "@/hooks/use-preview-fidelity";
 import { DEFAULT_EXPORT_OPTIONS } from "@/constants/export-constants";
+import type { PreviewFidelityReport } from "@/services/renderer/types";
+import {
+	formatPreviewFidelityStatusLabel,
+	getPreviewFidelityDetailLine,
+	getPreviewFidelityStatus,
+} from "@/components/editor/panels/preview/toolbar";
 
 export function ExportButton() {
 	const [isExportPopoverOpen, setIsExportPopoverOpen] = useState(false);
@@ -133,6 +140,11 @@ function ExportPopover({
 		quality,
 		includeAudio,
 	});
+	const {
+		report: previewFidelityReport,
+		isChecking: isPreviewFidelityChecking,
+		refresh: refreshPreviewFidelity,
+	} = usePreviewFidelity();
 
 	useEffect(() => {
 		if (isOpen) return;
@@ -159,6 +171,10 @@ function ExportPopover({
 	});
 	const isAnyPreflightRunning =
 		isPreflightRunning || isRelinking || isScanningCompatibility;
+	const previewFidelityStatus = getPreviewFidelityStatus({
+		report: previewFidelityReport,
+		isChecking: isPreviewFidelityChecking,
+	});
 
 	const applyPreflightActions = async ({
 		actions,
@@ -849,6 +865,61 @@ function ExportPopover({
 											</div>
 										</SectionContent>
 									</Section>
+
+									<Section>
+										<SectionHeader title="Preview fidelity" />
+										<SectionContent>
+											<div className="space-y-2">
+												<div className="flex items-center justify-between">
+													<p className="text-muted-foreground text-xs">Status</p>
+													<span
+														className={cn(
+															"rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+															previewFidelityStatus === "exact"
+																? "bg-green-500/10 text-green-600"
+																: previewFidelityStatus === "unsupported"
+																	? "bg-red-500/10 text-red-600"
+																	: previewFidelityStatus === "approximate"
+																		? "bg-yellow-500/10 text-yellow-600"
+																		: "bg-muted text-muted-foreground",
+														)}
+													>
+														{formatPreviewFidelityStatusLabel({
+															status: previewFidelityStatus,
+														})}
+													</span>
+												</div>
+												<p className="text-muted-foreground text-[10px]">
+													{getPreviewFidelitySummary({
+														report: previewFidelityReport,
+														status: previewFidelityStatus,
+													})}
+												</p>
+												{previewFidelityReport?.issues.length ? (
+													<div className="space-y-1">
+														{previewFidelityReport.issues.map((issue, index) => (
+															<p
+																key={`${issue.code}-${issue.time ?? "none"}-${index}`}
+																className="text-xs leading-4"
+															>
+																{issue.message}
+															</p>
+														))}
+													</div>
+												) : null}
+												<div className="flex justify-end">
+													<Button
+														variant="outline"
+														size="sm"
+														className="h-6 px-2 text-[10px]"
+														onClick={refreshPreviewFidelity}
+													>
+														Check parity
+													</Button>
+												</div>
+											</div>
+										</SectionContent>
+									</Section>
 								</div>
 
 								<div className="p-3 pt-0">
@@ -943,6 +1014,29 @@ export function getSafeRetryProfile({
 	recommendation: ExportRecoveryRecommendation | null;
 }): ExportRetryProfile | null {
 	return recommendation?.recommendedProfile ?? null;
+}
+
+export function getPreviewFidelitySummary({
+	report,
+	status,
+}: {
+	report: PreviewFidelityReport | null;
+	status: ReturnType<typeof getPreviewFidelityStatus>;
+}): string {
+	if (status === "checking") {
+		return "Running deterministic sampled parity checks for the current preview graph.";
+	}
+	if (!report) {
+		return "No preview fidelity report is available yet.";
+	}
+	return `${getPreviewFidelityDetailLine({
+		report,
+		status,
+	})}${
+		report.checkedAt
+			? ` • Checked ${new Date(report.checkedAt).toLocaleTimeString()}`
+			: ""
+	}`;
 }
 
 function isExportFormat(value: string): value is ExportFormat {

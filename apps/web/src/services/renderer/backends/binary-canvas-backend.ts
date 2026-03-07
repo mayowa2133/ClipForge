@@ -5,11 +5,22 @@ import {
 	renderGraphToContext,
 	type ResolvedRenderGraph,
 } from "./helpers/render-graph-to-context";
-import type { RenderBackend, RenderFrameRequest, RenderedFrame } from "./types";
+import type {
+	RenderBackend,
+	RenderBackendDiagnostics,
+	RenderFrameRequest,
+	RenderedFrame,
+} from "./types";
 
 export class BinaryCanvasBackend implements RenderBackend {
 	private surface: OffscreenCanvas | HTMLCanvasElement | null = null;
 	private readonly videoFrameProvider: MainThreadVideoFrameProvider;
+	private readonly diagnostics: RenderBackendDiagnostics = {
+		backendKind: "binary-canvas",
+		usedBinaryFallback: false,
+		usedLegacyFallback: false,
+		unsupportedFeatures: [],
+	};
 
 	constructor(private readonly assetRegistry: RenderAssetRegistry) {
 		this.videoFrameProvider = new MainThreadVideoFrameProvider(assetRegistry);
@@ -43,6 +54,19 @@ export class BinaryCanvasBackend implements RenderBackend {
 
 	dispose(): void {
 		this.videoFrameProvider.dispose();
+	}
+
+	getDiagnostics(): RenderBackendDiagnostics {
+		return {
+			...this.diagnostics,
+			unsupportedFeatures: [...this.diagnostics.unsupportedFeatures],
+		};
+	}
+
+	resetDiagnostics(): void {
+		this.diagnostics.usedBinaryFallback = false;
+		this.diagnostics.usedLegacyFallback = false;
+		this.diagnostics.unsupportedFeatures = [];
 	}
 
 	private ensureSurface({

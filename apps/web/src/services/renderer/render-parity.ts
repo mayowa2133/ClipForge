@@ -3,12 +3,13 @@ export async function computeCanvasFrameHash({
 }: {
 	canvas: HTMLCanvasElement;
 }): Promise<string> {
-	const ctx = canvas.getContext("2d", { willReadFrequently: true });
+	const sourceCanvas = getReadbackCanvas({ canvas });
+	const ctx = sourceCanvas.getContext("2d", { willReadFrequently: true });
 	if (!ctx) {
 		throw new Error("Failed to read canvas frame");
 	}
 
-	const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+	const { data } = ctx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
 	let hash = 2166136261;
 	for (let i = 0; i < data.length; i += 16) {
 		hash ^= data[i] ?? 0;
@@ -21,7 +22,7 @@ export async function computeCanvasFrameHash({
 		hash = Math.imul(hash, 16777619);
 	}
 
-	return `${canvas.width}x${canvas.height}:${(hash >>> 0).toString(16)}`;
+	return `${sourceCanvas.width}x${sourceCanvas.height}:${(hash >>> 0).toString(16)}`;
 }
 
 export interface ParityCheckResult {
@@ -51,4 +52,29 @@ export async function compareCanvasFrameParity({
 		exportHash,
 		time,
 	};
+}
+
+function getReadbackCanvas({
+	canvas,
+}: {
+	canvas: HTMLCanvasElement;
+}): HTMLCanvasElement {
+	if (
+		typeof document === "undefined" ||
+		typeof HTMLCanvasElement === "undefined" ||
+		!(canvas instanceof HTMLCanvasElement)
+	) {
+		return canvas;
+	}
+
+	const readbackCanvas = document.createElement("canvas");
+	readbackCanvas.width = canvas.width;
+	readbackCanvas.height = canvas.height;
+	const drawCtx = readbackCanvas.getContext("2d");
+	if (!drawCtx) {
+		return canvas;
+	}
+
+	drawCtx.drawImage(canvas, 0, 0);
+	return readbackCanvas;
 }

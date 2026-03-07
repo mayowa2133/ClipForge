@@ -133,6 +133,7 @@ NEXT_PUBLIC_ENABLE_BINARY_PREVIEW_RENDERER=true
 ```
 
 The editor preview keeps the same DOM interaction overlays, but frame generation moves behind the shared render backend contract when this flag is enabled. If binary preview cannot safely render a frame yet, it falls back to the legacy canvas backend.
+The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Approximate`, `Unsupported`, or `Checking`) based on sampled frame parity against export plus actual backend fallback usage.
 
 ### MVP workflow
 
@@ -145,6 +146,8 @@ The editor preview keeps the same DOM interaction overlays, but frame generation
 7. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `trim this clip by 0.5s at the start`, `add text here that says "watch this"`, `replace "teh" with "the" in this caption`, or `trim the first clip by 0.5s and move it to 5s`), review JSON ops, confirm which planner was used, then click `Apply`.
 8. Use normal OpenCut `Undo/Redo` shortcuts.
 9. Click the top-right `Export` button:
+   - The preview toolbar shows sampled preview/export fidelity before you export.
+   - `Exact` means sampled frames matched export without fallback; `Approximate` means fallback was needed; `Unsupported` means sampled export parity is not trustworthy for the current graph.
    - Export now runs a deterministic preflight readiness check in the popover.
    - Preflight is now reactive while the popover is open and refreshes automatically as project/media/timeline state changes.
    - Blocking issues (for example missing media refs or invalid ranges) must be fixed before export starts.
@@ -155,6 +158,7 @@ The editor preview keeps the same DOM interaction overlays, but frame generation
    - One-click fixes are available for supported repair actions and preflight re-runs immediately after each fix.
    - Audio-only decode incompatibilities can be cleared deterministically by disabling export audio; visual decode incompatibilities remain relink/remove blockers.
    - Warning-only states (for example low quality, audio off, WebM compatibility) do not block export.
+   - The export popover now also shows the same preview fidelity report as a non-blocking trust signal before render starts.
    - Runtime export still uses the existing binary pipeline and diagnostics once encoding begins.
    - If runtime export fails, ClipForge now shows explicit deterministic retry options (`Retry same settings` and a recommended safe profile when available).
    - Safe retries are user-clicked only, always re-run preflight before retry start, and never run hidden retry loops.

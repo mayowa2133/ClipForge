@@ -25,6 +25,11 @@
    - silence-removal op pass applied using available silence metadata
 6. Timeline + preview update in the same OpenCut editor surface.
 7. Use normal OpenCut undo/redo to revert or refine.
+8. The preview toolbar shows a fidelity status for the current render graph:
+   - `Checking`: sampled parity is still running
+   - `Exact`: sampled preview and export frames match without fallback
+   - `Approximate`: fallback rendering was needed but no mismatch is known
+   - `Unsupported`: parity mismatch or legacy fallback means preview should not be trusted as exact export output
 
 ## Flow B: Chat-driven Edits
 
@@ -71,11 +76,12 @@ Example chat prompts:
 8. If relink is not possible, use explicit destructive fallback (`Remove Affected Segments`) for that media reference.
 9. Use per-issue `Fix` or `Fix all` for other deterministic repairs (for example invalid ranges or duration metadata mismatch).
 10. Warning-only issues do not block export.
-11. ClipForge attempts OpenCut binary export once preflight is ready.
-12. If export succeeds, a downloadable media file is produced.
-13. If runtime export fails, the same popover shows deterministic recovery actions:
+11. The export popover also shows the current preview fidelity report as a non-blocking trust signal.
+12. ClipForge attempts OpenCut binary export once preflight is ready.
+13. If export succeeds, a downloadable media file is produced.
+14. If runtime export fails, the same popover shows deterministic recovery actions:
    - `Retry same settings`
    - `Retry safe profile` (for recommended deterministic fallback profile when available)
    - `Download diagnostics` incident bundle JSON
-14. Every retry re-runs preflight before encoding starts.
-15. If export is unavailable or fails in an unsupported case, ClipForge can still generate a preview artifact JSON snapshot as a last-resort fallback with diagnostics (including preflight snapshot metadata when available).
+15. Every retry re-runs preflight before encoding starts.
+16. If export is unavailable or fails in an unsupported case, ClipForge can still generate a preview artifact JSON snapshot as a last-resort fallback with diagnostics (including preflight snapshot metadata when available).

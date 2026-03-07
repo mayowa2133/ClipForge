@@ -35,7 +35,8 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M27: Runtime export recovery with safe retry profiles and incident diagnostics bundle.
 - [x] M28: Missing media relink and non-destructive broken-reference recovery.
 - [x] M29: Reactive project health snapshots and export preflight consistency across Assets/Export surfaces.
-- [ ] M30: Export media compatibility guard with guided non-destructive recovery.
+- [x] M30: Export media compatibility guard with guided non-destructive recovery.
+- [x] M31: Preview fidelity status, sampled frame parity checks, and unsupported-feature trust layer.
 
 ## Working Rules
 

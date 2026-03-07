@@ -2,7 +2,12 @@ import type { RenderAssetRegistry } from "@/services/renderer/render-asset-regis
 import type { RenderGraph } from "@/services/renderer/types";
 import { BinaryCanvasBackend } from "./binary-canvas-backend";
 import { LegacyCanvasBackend } from "./legacy-canvas-backend";
-import type { RenderBackend, RenderFrameRequest, RenderedFrame } from "./types";
+import type {
+	RenderBackend,
+	RenderBackendDiagnostics,
+	RenderFrameRequest,
+	RenderedFrame,
+} from "./types";
 import type {
 	RendererWorkerRequest,
 	RendererWorkerResponse,
@@ -15,6 +20,12 @@ export class BinaryPreviewBackend implements RenderBackend {
 	private worker: Worker | null = null;
 	private initPromise: Promise<void> | null = null;
 	private lastSyncedAssetVersion: number | null = null;
+	private readonly diagnostics: RenderBackendDiagnostics = {
+		backendKind: "binary-preview",
+		usedBinaryFallback: false,
+		usedLegacyFallback: false,
+		unsupportedFeatures: [],
+	};
 
 	constructor(private readonly assetRegistry: RenderAssetRegistry) {
 		this.binaryFallback = new BinaryCanvasBackend(assetRegistry);
@@ -23,6 +34,7 @@ export class BinaryPreviewBackend implements RenderBackend {
 
 	async renderFrame(request: RenderFrameRequest): Promise<RenderedFrame> {
 		if (!this.canUseWorker()) {
+			this.recordUnsupportedFeature({ feature: "worker-unavailable" });
 			return this.renderWithFallbacks(request);
 		}
 
@@ -86,6 +98,21 @@ export class BinaryPreviewBackend implements RenderBackend {
 		this.disposeWorker();
 		this.binaryFallback.dispose();
 		this.legacyFallback.dispose();
+	}
+
+	getDiagnostics(): RenderBackendDiagnostics {
+		return {
+			...this.diagnostics,
+			unsupportedFeatures: [...this.diagnostics.unsupportedFeatures],
+		};
+	}
+
+	resetDiagnostics(): void {
+		this.diagnostics.usedBinaryFallback = false;
+		this.diagnostics.usedLegacyFallback = false;
+		this.diagnostics.unsupportedFeatures = [];
+		this.binaryFallback.resetDiagnostics?.();
+		this.legacyFallback.resetDiagnostics?.();
 	}
 
 	private canUseWorker(): boolean {
@@ -190,11 +217,15 @@ export class BinaryPreviewBackend implements RenderBackend {
 		request: RenderFrameRequest,
 	): Promise<RenderedFrame> {
 		try {
-			return await this.binaryFallback.renderFrame(request);
+			const frame = await this.binaryFallback.renderFrame(request);
+			this.diagnostics.usedBinaryFallback = true;
+			return frame;
 		} catch (error) {
 			this.logFallback({
 				message: `Graph-native binary fallback failed: ${error instanceof Error ? error.message : "unknown error"}`,
 			});
+			this.recordUnsupportedFeature({ feature: "binary-fallback-render-failed" });
+			this.diagnostics.usedLegacyFallback = true;
 			return this.legacyFallback.renderFrame(request);
 		}
 	}
@@ -212,6 +243,12 @@ export class BinaryPreviewBackend implements RenderBackend {
 	private logFallback({ message }: { message: string }) {
 		if (process.env.NODE_ENV !== "production") {
 			console.warn(`[BinaryPreviewBackend] ${message}`);
+		}
+	}
+
+	private recordUnsupportedFeature({ feature }: { feature: string }) {
+		if (!this.diagnostics.unsupportedFeatures.includes(feature)) {
+			this.diagnostics.unsupportedFeatures.push(feature);
 		}
 	}
 }

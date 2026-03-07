@@ -68,3 +68,42 @@ export interface RenderGraph {
 	background: RenderBackground;
 	layers: RenderLayer[];
 }
+
+export type PreviewFidelityStatus =
+	| "checking"
+	| "exact"
+	| "approximate"
+	| "unsupported";
+
+export type PreviewFidelityIssueCode =
+	| "preview-worker-unavailable"
+	| "feature-not-supported-by-primary-preview"
+	| "preview-used-binary-fallback"
+	| "preview-used-legacy-fallback"
+	| "export-used-legacy-fallback"
+	| "preview-export-parity-mismatch"
+	| "parity-check-failed";
+
+export interface PreviewFidelityIssue {
+	code: PreviewFidelityIssueCode;
+	message: string;
+	severity: "warning" | "error";
+	time?: number | null;
+}
+
+export interface PreviewParitySample {
+	time: number;
+	previewHash: string;
+	exportHash: string;
+	match: boolean;
+}
+
+export interface PreviewFidelityReport {
+	status: PreviewFidelityStatus;
+	checkedAt: string;
+	graphFingerprint: string;
+	previewBackend: "binary-preview" | "binary-canvas" | "legacy-canvas";
+	exportBackend: "binary-canvas" | "legacy-canvas" | null;
+	issues: PreviewFidelityIssue[];
+	samples: PreviewParitySample[];
+}
