@@ -5,7 +5,10 @@ import type {
 	TimelineTrack,
 } from "@/types/timeline";
 import type { MediaAsset } from "@/types/assets";
-import { canElementHaveAudio } from "@/lib/timeline/element-utils";
+import {
+	canElementHaveAudio,
+	getElementPlaybackRate,
+} from "@/lib/timeline/element-utils";
 import { canTracktHaveAudio } from "@/lib/timeline";
 import { mediaSupportsAudio } from "@/lib/media/media-utils";
 import { Input, ALL_FORMATS, BlobSource, AudioBufferSink } from "mediabunny";
@@ -15,7 +18,7 @@ const EXPORT_SAMPLE_RATE = 44100;
 
 export type CollectedAudioElement = Omit<
 	AudioElement,
-	"type" | "mediaId" | "volume" | "id" | "name" | "sourceType" | "sourceUrl"
+	"type" | "mediaId" | "id" | "name" | "sourceType" | "sourceUrl"
 > & { buffer: AudioBuffer };
 
 export function createAudioContext({ sampleRate }: { sampleRate?: number } = {}): AudioContext {
@@ -123,7 +126,11 @@ export async function collectAudioElements({
 							duration: element.duration,
 							trimStart: element.trimStart,
 							trimEnd: element.trimEnd,
+							playbackRate: getElementPlaybackRate({ element }),
+							volume: element.volume,
 							muted: element.muted || isTrackMuted,
+							fadeInDuration: element.fadeInDuration ?? 0,
+							fadeOutDuration: element.fadeOutDuration ?? 0,
 						};
 					}),
 				);
@@ -147,7 +154,11 @@ export async function collectAudioElements({
 							duration: element.duration,
 							trimStart: element.trimStart,
 							trimEnd: element.trimEnd,
+							playbackRate: getElementPlaybackRate({ element }),
+							volume: 1,
 							muted: elementMuted || isTrackMuted,
+							fadeInDuration: 0,
+							fadeOutDuration: 0,
 						};
 					}),
 				);
@@ -290,6 +301,11 @@ interface AudioMixSource {
 	duration: number;
 	trimStart: number;
 	trimEnd: number;
+	playbackRate: number;
+	volume: number;
+	muted: boolean;
+	fadeInDuration: number;
+	fadeOutDuration: number;
 }
 
 export interface AudioClipSource {
@@ -300,7 +316,11 @@ export interface AudioClipSource {
 	duration: number;
 	trimStart: number;
 	trimEnd: number;
+	playbackRate: number;
+	volume: number;
 	muted: boolean;
+	fadeInDuration: number;
+	fadeOutDuration: number;
 }
 
 async function fetchLibraryAudioSource({
@@ -325,6 +345,11 @@ async function fetchLibraryAudioSource({
 			duration: element.duration,
 			trimStart: element.trimStart,
 			trimEnd: element.trimEnd,
+			playbackRate: getElementPlaybackRate({ element }),
+			volume: element.volume,
+			muted: element.muted ?? false,
+			fadeInDuration: element.fadeInDuration ?? 0,
+			fadeOutDuration: element.fadeOutDuration ?? 0,
 		};
 	} catch (error) {
 		console.warn("Failed to fetch library audio:", error);
@@ -358,7 +383,11 @@ async function fetchLibraryAudioClip({
 			duration: element.duration,
 			trimStart: element.trimStart,
 			trimEnd: element.trimEnd,
+			playbackRate: getElementPlaybackRate({ element }),
+			volume: element.volume,
 			muted,
+			fadeInDuration: element.fadeInDuration ?? 0,
+			fadeOutDuration: element.fadeOutDuration ?? 0,
 		};
 	} catch (error) {
 		console.warn("Failed to fetch library audio:", error);
@@ -373,12 +402,21 @@ function collectMediaAudioSource({
 	element: TimelineElement;
 	mediaAsset: MediaAsset;
 }): AudioMixSource {
+	const volume = element.type === "audio" ? element.volume : 1;
+	const fadeInDuration = element.type === "audio" ? element.fadeInDuration ?? 0 : 0;
+	const fadeOutDuration = element.type === "audio" ? element.fadeOutDuration ?? 0 : 0;
+	const muted = "muted" in element ? (element.muted ?? false) : false;
 	return {
 		file: mediaAsset.file,
 		startTime: element.startTime,
 		duration: element.duration,
 		trimStart: element.trimStart,
 		trimEnd: element.trimEnd,
+		playbackRate: getElementPlaybackRate({ element }),
+		volume,
+		muted,
+		fadeInDuration,
+		fadeOutDuration,
 	};
 }
 
@@ -391,6 +429,9 @@ function collectMediaAudioClip({
 	mediaAsset: MediaAsset;
 	muted: boolean;
 }): AudioClipSource {
+	const volume = element.type === "audio" ? element.volume : 1;
+	const fadeInDuration = element.type === "audio" ? element.fadeInDuration ?? 0 : 0;
+	const fadeOutDuration = element.type === "audio" ? element.fadeOutDuration ?? 0 : 0;
 	return {
 		id: element.id,
 		sourceKey: mediaAsset.id,
@@ -399,7 +440,11 @@ function collectMediaAudioClip({
 		duration: element.duration,
 		trimStart: element.trimStart,
 		trimEnd: element.trimEnd,
+		playbackRate: getElementPlaybackRate({ element }),
+		volume,
 		muted,
+		fadeInDuration,
+		fadeOutDuration,
 	};
 }
 
@@ -421,6 +466,7 @@ export async function collectAudioMixSources({
 
 		for (const element of track.elements) {
 			if (!canElementHaveAudio(element)) continue;
+			if ("muted" in element && element.muted) continue;
 
 			if (element.type === "audio") {
 				if (element.sourceType === "upload") {
@@ -451,7 +497,7 @@ export async function collectAudioMixSources({
 
 	const resolvedLibrarySources = await Promise.all(pendingLibrarySources);
 	for (const source of resolvedLibrarySources) {
-		if (source) audioMixSources.push(source);
+		if (source && !source.muted) audioMixSources.push(source);
 	}
 
 	return audioMixSources;
@@ -580,13 +626,10 @@ function mixAudioChannels({
 	sampleRate: number;
 }): void {
 	const { buffer, startTime, trimStart, duration: elementDuration } = element;
-
+	const playbackRate = Math.max(0.25, element.playbackRate ?? 1);
 	const sourceStartSample = Math.floor(trimStart * buffer.sampleRate);
-	const sourceLengthSamples = Math.floor(elementDuration * buffer.sampleRate);
 	const outputStartSample = Math.floor(startTime * sampleRate);
-
-	const resampleRatio = sampleRate / buffer.sampleRate;
-	const resampledLength = Math.floor(sourceLengthSamples * resampleRatio);
+	const outputSampleCount = Math.floor(elementDuration * sampleRate);
 
 	const outputChannels = 2;
 	for (let channel = 0; channel < outputChannels; channel++) {
@@ -594,14 +637,50 @@ function mixAudioChannels({
 		const sourceChannel = Math.min(channel, buffer.numberOfChannels - 1);
 		const sourceData = buffer.getChannelData(sourceChannel);
 
-		for (let i = 0; i < resampledLength; i++) {
+		for (let i = 0; i < outputSampleCount; i++) {
 			const outputIndex = outputStartSample + i;
 			if (outputIndex >= outputLength) break;
 
-			const sourceIndex = sourceStartSample + Math.floor(i / resampleRatio);
+			const sourceIndex =
+				sourceStartSample + Math.floor((i * playbackRate * buffer.sampleRate) / sampleRate);
 			if (sourceIndex >= sourceData.length) break;
 
-			outputData[outputIndex] += sourceData[sourceIndex];
+			outputData[outputIndex] +=
+				sourceData[sourceIndex] *
+				(element.volume ?? 1) *
+				getAudioEnvelopeGain({
+					timelineOffset: i / sampleRate,
+					duration: elementDuration,
+					fadeInDuration: element.fadeInDuration ?? 0,
+					fadeOutDuration: element.fadeOutDuration ?? 0,
+				});
 		}
 	}
+}
+
+function getAudioEnvelopeGain({
+	timelineOffset,
+	duration,
+	fadeInDuration,
+	fadeOutDuration,
+}: {
+	timelineOffset: number;
+	duration: number;
+	fadeInDuration: number;
+	fadeOutDuration: number;
+}): number {
+	const safeFadeIn = Math.max(0, Math.min(fadeInDuration, duration));
+	const safeFadeOut = Math.max(0, Math.min(fadeOutDuration, duration));
+	let gain = 1;
+
+	if (safeFadeIn > 0 && timelineOffset < safeFadeIn) {
+		gain = Math.min(gain, timelineOffset / safeFadeIn);
+	}
+
+	const fadeOutStart = Math.max(0, duration - safeFadeOut);
+	if (safeFadeOut > 0 && timelineOffset > fadeOutStart) {
+		gain = Math.min(gain, (duration - timelineOffset) / safeFadeOut);
+	}
+
+	return Math.max(0, Math.min(1, gain));
 }

@@ -76,8 +76,14 @@ export function useElementSelection() {
 	}, [editor]);
 
 	const setElementSelection = useCallback(
-		({ elements }: { elements: ElementRef[] }) => {
-			editor.selection.setSelectedElements({ elements });
+		({
+			elements,
+			expandLinkedGroups,
+		}: {
+			elements: ElementRef[];
+			expandLinkedGroups?: boolean;
+		}) => {
+			editor.selection.setSelectedElements({ elements, expandLinkedGroups });
 		},
 		[editor],
 	);

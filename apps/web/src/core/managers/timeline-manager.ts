@@ -24,9 +24,19 @@ import {
 	UpdateElementStartTimeCommand,
 	MoveElementCommand,
 	TracksSnapshotCommand,
+	ReplaceElementMediaCommand,
+	UpdateElementPlaybackRateCommand,
+	SeparateAudioCommand,
+	InsertFreezeFrameCommand,
 } from "@/lib/commands/timeline";
 import { BatchCommand, PreviewTracker } from "@/lib/commands";
 import type { InsertElementParams } from "@/lib/commands/timeline/element/insert-element";
+import {
+	canPreserveElementSourceSpan,
+	clampPlaybackRate,
+	getElementSourceTimeAtTimelineTime,
+} from "@/lib/timeline/manual-editing";
+import { mediaSupportsAudio } from "@/lib/media/media-utils";
 
 export class TimelineManager {
 	private listeners = new Set<() => void>();
@@ -122,6 +132,143 @@ export class TimelineManager {
 			elementId,
 			newStartTime,
 			createTrack,
+		);
+		this.editor.command.execute({ command });
+	}
+
+	replaceElementMedia({
+		trackId,
+		elementId,
+		mediaId,
+	}: {
+		trackId: string;
+		elementId: string;
+		mediaId: string;
+	}): void {
+		const track = this.getTrackById({ trackId });
+		const element = track?.elements.find((candidate) => candidate.id === elementId);
+		const mediaAsset = this.editor.media.getAssets().find((asset) => asset.id === mediaId);
+
+		if (!track || !element || !mediaAsset) {
+			throw new Error("Target element or replacement media could not be found.");
+		}
+
+		if (element.type === "video" && mediaAsset.type !== "video") {
+			throw new Error("Video clips can only be replaced with video media.");
+		}
+		if (element.type === "image" && mediaAsset.type !== "image") {
+			throw new Error("Image clips can only be replaced with image media.");
+		}
+		if (element.type === "audio") {
+			const compatibleAudio =
+				mediaAsset.type === "audio" ||
+				(mediaAsset.type === "video" && mediaSupportsAudio({ media: mediaAsset }));
+			if (!compatibleAudio) {
+				throw new Error("Audio clips require replacement media with a valid audio track.");
+			}
+		}
+
+		if (
+			!canPreserveElementSourceSpan({
+				element,
+				replacementDuration: mediaAsset.duration ?? 0,
+			})
+		) {
+			throw new Error(
+				"Replacement media is too short to preserve the existing trim and duration.",
+			);
+		}
+
+		const command = new ReplaceElementMediaCommand(trackId, elementId, mediaAsset);
+		this.editor.command.execute({ command });
+	}
+
+	updateElementPlaybackRate({
+		trackId,
+		elementId,
+		playbackRate,
+		ripple,
+	}: {
+		trackId: string;
+		elementId: string;
+		playbackRate: number;
+		ripple: boolean;
+	}): void {
+		const command = new UpdateElementPlaybackRateCommand(
+			trackId,
+			elementId,
+			clampPlaybackRate({ playbackRate }),
+			ripple,
+		);
+		this.editor.command.execute({ command });
+	}
+
+	separateAudio({
+		trackId,
+		elementId,
+	}: {
+		trackId: string;
+		elementId: string;
+	}): void {
+		const track = this.getTrackById({ trackId });
+		const element = track?.elements.find((candidate) => candidate.id === elementId);
+		if (!element || element.type !== "video") {
+			throw new Error("Separate Audio requires a selected video clip.");
+		}
+
+		const mediaAsset = this.editor.media.getAssets().find((asset) => asset.id === element.mediaId);
+		if (!mediaSupportsAudio({ media: mediaAsset })) {
+			throw new Error("The selected video clip does not have a decodable audio track.");
+		}
+
+		const command = new SeparateAudioCommand(trackId, elementId);
+		this.editor.command.execute({ command });
+	}
+
+	async insertFreezeFrame({
+		trackId,
+		elementId,
+		atTime,
+		duration,
+		ripple,
+	}: {
+		trackId: string;
+		elementId: string;
+		atTime: number;
+		duration: number;
+		ripple: boolean;
+	}): Promise<void> {
+		const track = this.getTrackById({ trackId });
+		const element = track?.elements.find((candidate) => candidate.id === elementId);
+		if (!element || element.type !== "video") {
+			throw new Error("Freeze Frame requires a selected video clip.");
+		}
+
+		const clipEnd = element.startTime + element.duration;
+		if (atTime < element.startTime || atTime > clipEnd) {
+			throw new Error("Playhead must be inside the selected clip to create a freeze frame.");
+		}
+
+		const sourceTime = getElementSourceTimeAtTimelineTime({
+			element,
+			time: Math.min(clipEnd, Math.max(element.startTime, atTime)),
+		});
+		const freezeAsset = await this.editor.media.createDerivedFreezeFrameAsset({
+			sourceMediaId: element.mediaId,
+			sourceTime,
+		});
+		if (!freezeAsset) {
+			throw new Error("Failed to create a freeze-frame asset from the selected clip.");
+		}
+
+		const command = new InsertFreezeFrameCommand(
+			trackId,
+			elementId,
+			freezeAsset.id,
+			freezeAsset.name,
+			atTime,
+			duration,
+			ripple,
 		);
 		this.editor.command.execute({ command });
 	}

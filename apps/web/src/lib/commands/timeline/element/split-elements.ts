@@ -2,6 +2,7 @@ import { Command } from "@/lib/commands/base-command";
 import type { TimelineTrack } from "@/types/timeline";
 import { generateUUID } from "@/utils/id";
 import { EditorCore } from "@/core";
+import { getElementPlaybackRate } from "@/lib/timeline";
 
 export class SplitElementsCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
@@ -59,13 +60,16 @@ export class SplitElementsCommand extends Command {
 					const relativeTime = this.splitTime - element.startTime;
 					const leftVisibleDuration = relativeTime;
 					const rightVisibleDuration = element.duration - relativeTime;
+					const playbackRate = getElementPlaybackRate({ element });
+					const leftSourceDuration = leftVisibleDuration * playbackRate;
+					const rightSourceDuration = rightVisibleDuration * playbackRate;
 
 					if (this.retainSide === "left") {
 						return [
 							{
 								...element,
 								duration: leftVisibleDuration,
-								trimEnd: element.trimEnd + rightVisibleDuration,
+								trimEnd: element.trimEnd + rightSourceDuration,
 								name: `${element.name} (left)`,
 							},
 						];
@@ -83,7 +87,7 @@ export class SplitElementsCommand extends Command {
 								id: newId,
 								startTime: this.splitTime,
 								duration: rightVisibleDuration,
-								trimStart: element.trimStart + leftVisibleDuration,
+								trimStart: element.trimStart + leftSourceDuration,
 								name: `${element.name} (right)`,
 							},
 						];
@@ -100,7 +104,7 @@ export class SplitElementsCommand extends Command {
 						{
 							...element,
 							duration: leftVisibleDuration,
-							trimEnd: element.trimEnd + rightVisibleDuration,
+							trimEnd: element.trimEnd + rightSourceDuration,
 							name: `${element.name} (left)`,
 						},
 						{
@@ -108,7 +112,7 @@ export class SplitElementsCommand extends Command {
 							id: secondElementId,
 							startTime: this.splitTime,
 							duration: rightVisibleDuration,
-							trimStart: element.trimStart + leftVisibleDuration,
+							trimStart: element.trimStart + leftSourceDuration,
 							name: `${element.name} (right)`,
 						},
 					];

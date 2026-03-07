@@ -12,6 +12,7 @@ type ResolvedVideoLayer = {
 	hidden: boolean;
 	payload: {
 		mediaId: string;
+		playbackRate: number;
 		file?: File;
 		transform: {
 			scale: number;
@@ -28,10 +29,14 @@ export function getVideoSampleTime({
 	layer,
 	time,
 }: {
-	layer: Pick<ResolvedVideoLayer, "startTime" | "trimStart">;
+	layer: Pick<ResolvedVideoLayer, "startTime" | "trimStart" | "payload">;
 	time: number;
 }): number {
-	return Math.max(0, time - layer.startTime + layer.trimStart);
+	return Math.max(
+		0,
+		(time - layer.startTime) * Math.max(0.25, layer.payload.playbackRate) +
+			layer.trimStart,
+	);
 }
 
 export async function renderVideoLayer({

@@ -227,7 +227,7 @@ export class AudioManager {
 
 		const iteratorStartTime = Math.max(startTime, clipStart);
 		const sourceStartTime =
-			clip.trimStart + (iteratorStartTime - clip.startTime);
+			clip.trimStart + (iteratorStartTime - clip.startTime) * clip.playbackRate;
 
 		const iterator = sink.buffers(sourceStartTime);
 		this.clipIterators.set(clip.id, iterator);
@@ -237,14 +237,43 @@ export class AudioManager {
 			if (sessionId !== this.playbackSessionId) return;
 
 			const timelineTime = clip.startTime + (timestamp - clip.trimStart);
-			if (timelineTime >= clipEnd) break;
+			const effectiveTimelineTime =
+				clip.startTime + (timestamp - clip.trimStart) / clip.playbackRate;
+			if (effectiveTimelineTime >= clipEnd) break;
 
 			const node = audioContext.createBufferSource();
 			node.buffer = buffer;
-			node.connect(this.masterGain ?? audioContext.destination);
+			node.playbackRate.value = clip.playbackRate;
+			const clipGain = audioContext.createGain();
+			node.connect(clipGain);
+			clipGain.connect(this.masterGain ?? audioContext.destination);
 
 			const startTimestamp =
-				this.playbackStartContextTime + (timelineTime - this.playbackStartTime);
+				this.playbackStartContextTime +
+				(effectiveTimelineTime - this.playbackStartTime);
+			const chunkTimelineDuration = buffer.duration / clip.playbackRate;
+			const clipOffset = Math.max(0, effectiveTimelineTime - clip.startTime);
+			const chunkEndOffset = Math.min(
+				clip.duration,
+				clipOffset + chunkTimelineDuration,
+			);
+			const startGain = getAudioEnvelopeGain({
+				timelineOffset: clipOffset,
+				duration: clip.duration,
+				fadeInDuration: clip.fadeInDuration,
+				fadeOutDuration: clip.fadeOutDuration,
+			}) * clip.volume;
+			const endGain = getAudioEnvelopeGain({
+				timelineOffset: chunkEndOffset,
+				duration: clip.duration,
+				fadeInDuration: clip.fadeInDuration,
+				fadeOutDuration: clip.fadeOutDuration,
+			}) * clip.volume;
+			clipGain.gain.setValueAtTime(startGain, Math.max(startTimestamp, audioContext.currentTime));
+			clipGain.gain.linearRampToValueAtTime(
+				endGain,
+				Math.max(startTimestamp, audioContext.currentTime) + chunkTimelineDuration,
+			);
 
 			if (startTimestamp >= audioContext.currentTime) {
 				node.start(startTimestamp);
@@ -263,9 +292,12 @@ export class AudioManager {
 				this.queuedSources.delete(node);
 			});
 
-			const aheadTime = timelineTime - this.getPlaybackTime();
+			const aheadTime = effectiveTimelineTime - this.getPlaybackTime();
 			if (aheadTime >= 1) {
-				await this.waitUntilCaughtUp({ timelineTime, targetAhead: 1 });
+				await this.waitUntilCaughtUp({
+					timelineTime: effectiveTimelineTime,
+					targetAhead: 1,
+				});
 				if (sessionId !== this.playbackSessionId) return;
 			}
 		}
@@ -341,4 +373,31 @@ export class AudioManager {
 			return null;
 		}
 	}
+}
+
+function getAudioEnvelopeGain({
+	timelineOffset,
+	duration,
+	fadeInDuration,
+	fadeOutDuration,
+}: {
+	timelineOffset: number;
+	duration: number;
+	fadeInDuration: number;
+	fadeOutDuration: number;
+}): number {
+	const safeFadeIn = Math.max(0, Math.min(fadeInDuration, duration));
+	const safeFadeOut = Math.max(0, Math.min(fadeOutDuration, duration));
+	let gain = 1;
+
+	if (safeFadeIn > 0 && timelineOffset < safeFadeIn) {
+		gain = Math.min(gain, timelineOffset / safeFadeIn);
+	}
+
+	const fadeOutStart = Math.max(0, duration - safeFadeOut);
+	if (safeFadeOut > 0 && timelineOffset > fadeOutStart) {
+		gain = Math.min(gain, (duration - timelineOffset) / safeFadeOut);
+	}
+
+	return Math.max(0, Math.min(1, gain));
 }

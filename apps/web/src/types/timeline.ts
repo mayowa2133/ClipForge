@@ -59,6 +59,10 @@ interface BaseAudioElement extends BaseTimelineElement {
 	volume: number;
 	muted?: boolean;
 	buffer?: AudioBuffer;
+	playbackRate?: number;
+	fadeInDuration?: number;
+	fadeOutDuration?: number;
+	linkedGroupId?: string | null;
 }
 
 export interface UploadAudioElement extends BaseAudioElement {
@@ -87,6 +91,8 @@ export interface VideoElement extends BaseTimelineElement {
 	mediaId: string;
 	muted?: boolean;
 	hidden?: boolean;
+	playbackRate?: number;
+	linkedGroupId?: string | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
@@ -96,6 +102,7 @@ export interface ImageElement extends BaseTimelineElement {
 	type: "image";
 	mediaId: string;
 	hidden?: boolean;
+	linkedGroupId?: string | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
@@ -122,6 +129,7 @@ export interface TextElement extends BaseTimelineElement {
 	letterSpacing?: number;
 	lineHeight?: number;
 	hidden?: boolean;
+	linkedGroupId?: string | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
@@ -131,6 +139,7 @@ export interface StickerElement extends BaseTimelineElement {
 	type: "sticker";
 	stickerId: string;
 	hidden?: boolean;
+	linkedGroupId?: string | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;

@@ -16,6 +16,7 @@ interface BaseRenderLayer {
 
 export interface RenderVideoPayload {
 	mediaId: string;
+	playbackRate: number;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;

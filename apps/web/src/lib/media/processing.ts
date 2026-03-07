@@ -64,6 +64,46 @@ const renderToThumbnailDataUrl = ({
 	return canvas.toDataURL("image/jpeg", 0.8);
 };
 
+const renderCanvasBlob = async ({
+	width,
+	height,
+	draw,
+	type,
+	quality,
+}: {
+	width: number;
+	height: number;
+	draw: ({
+		context,
+		width,
+		height,
+	}: {
+		context: CanvasRenderingContext2D;
+		width: number;
+		height: number;
+	}) => void;
+	type: string;
+	quality?: number;
+}): Promise<Blob> => {
+	const canvas = document.createElement("canvas");
+	canvas.width = width;
+	canvas.height = height;
+	const context = canvas.getContext("2d");
+	if (!context) {
+		throw new Error("Could not get canvas context");
+	}
+
+	draw({ context, width, height });
+
+	const blob = await new Promise<Blob | null>((resolve) => {
+		canvas.toBlob((result) => resolve(result), type, quality);
+	});
+	if (!blob) {
+		throw new Error("Could not encode canvas output");
+	}
+	return blob;
+};
+
 export async function generateThumbnail({
 	videoFile,
 	timeInSeconds,
@@ -104,6 +144,64 @@ export async function generateThumbnail({
 		});
 	} finally {
 		frame.close();
+	}
+}
+
+export async function generateFreezeFrameFile({
+	videoFile,
+	timeInSeconds,
+	fileName,
+}: {
+	videoFile: File;
+	timeInSeconds: number;
+	fileName: string;
+}): Promise<{ file: File; width: number; height: number; thumbnailUrl: string }> {
+	const input = new Input({
+		source: new BlobSource(videoFile),
+		formats: ALL_FORMATS,
+	});
+
+	const videoTrack = await input.getPrimaryVideoTrack();
+	if (!videoTrack) {
+		throw new Error("No video track found in the file");
+	}
+
+	const canDecode = await videoTrack.canDecode();
+	if (!canDecode) {
+		throw new Error("Video codec not supported for decoding");
+	}
+
+	const sink = new VideoSampleSink(videoTrack);
+	const frame = await sink.getSample(timeInSeconds);
+	if (!frame) {
+		throw new Error("Could not get frame at specified time");
+	}
+
+	try {
+		const width = videoTrack.displayWidth;
+		const height = videoTrack.displayHeight;
+		const blob = await renderCanvasBlob({
+			width,
+			height,
+			type: "image/png",
+			draw: ({ context }) => {
+				frame.draw(context, 0, 0, width, height);
+			},
+		});
+
+		const file = new File([blob], fileName, { type: "image/png" });
+		const thumbnailUrl = renderToThumbnailDataUrl({
+			width,
+			height,
+			draw: ({ context, width: thumbnailWidth, height: thumbnailHeight }) => {
+				frame.draw(context, 0, 0, thumbnailWidth, thumbnailHeight);
+			},
+		});
+
+		return { file, width, height, thumbnailUrl };
+	} finally {
+		frame.close();
+		input.dispose();
 	}
 }
 

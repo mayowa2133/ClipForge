@@ -11,8 +11,15 @@ export interface MediaCompatibilitySnapshot {
 	version: 1;
 }
 
+export interface DerivedMediaOrigin {
+	kind: "freeze-frame";
+	sourceMediaId: string;
+	sourceTime: number;
+}
+
 export interface MediaAsset
 	extends Omit<MediaAssetData, "size" | "lastModified"> {
 	file: File;
 	url?: string;
+	derived?: DerivedMediaOrigin;
 }

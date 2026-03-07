@@ -45,6 +45,7 @@ describe("preview fidelity", () => {
 					hidden: false,
 					payload: {
 						mediaId: "asset-1",
+						playbackRate: 1,
 						transform: {
 							scale: 1,
 							position: { x: 0, y: 0 },
@@ -68,6 +69,7 @@ describe("preview fidelity", () => {
 					hidden: false,
 					payload: {
 						mediaId: "asset-1",
+						playbackRate: 1,
 						transform: {
 							scale: 1,
 							position: { x: 0, y: 0 },

@@ -2,7 +2,7 @@ import type { TimelineTrack } from "@/types/timeline";
 import type { MediaAsset } from "@/types/assets";
 import type { TBackground, TCanvasSize } from "@/types/project";
 import { DEFAULT_BLUR_INTENSITY } from "@/constants/project-constants";
-import { isMainTrack } from "@/lib/timeline";
+import { getElementPlaybackRate, isMainTrack } from "@/lib/timeline";
 import { resolveStickerId } from "@/lib/stickers";
 import type { RenderGraph, RenderLayer } from "./types";
 
@@ -54,6 +54,7 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 					hidden: false,
 					payload: {
 						mediaId: element.mediaId,
+						playbackRate: getElementPlaybackRate({ element }),
 						transform: element.transform,
 						opacity: element.opacity,
 						blendMode: element.blendMode,

@@ -17,7 +17,12 @@ export function useEditorActions() {
 	const editor = useEditor();
 	const activeProject = editor.project.getActive();
 	const { selectedElements, setElementSelection } = useElementSelection();
-	const { clipboard, setClipboard, toggleSnapping } = useTimelineStore();
+	const {
+		clipboard,
+		setClipboard,
+		toggleSnapping,
+		rippleEditingEnabled,
+	} = useTimelineStore();
 	const toggleChatPanel = useChatPanelStore((state) => state.toggle);
 	const closeChatPanel = useChatPanelStore((state) => state.close);
 
@@ -249,6 +254,58 @@ export function useEditorActions() {
 		"toggle-elements-visibility-selected",
 		() => {
 			editor.timeline.toggleElementsVisibility({ elements: selectedElements });
+		},
+		undefined,
+	);
+
+	useActionHandler(
+		"separate-audio-selected",
+		() => {
+			if (selectedElements.length !== 1) {
+				toast.error("Select a single video clip to separate audio.");
+				return;
+			}
+
+			const [{ trackId, elementId }] = selectedElements;
+			try {
+				editor.timeline.separateAudio({ trackId, elementId });
+				toast.success("Audio separated.");
+			} catch (error) {
+				toast.error("Separate Audio failed.", {
+					description:
+						error instanceof Error ? error.message : "Please try again.",
+				});
+			}
+		},
+		undefined,
+	);
+
+	useActionHandler(
+		"insert-freeze-frame",
+		() => {
+			if (selectedElements.length !== 1) {
+				toast.error("Select a single video clip to create a freeze frame.");
+				return;
+			}
+
+			const [{ trackId, elementId }] = selectedElements;
+			void editor.timeline
+				.insertFreezeFrame({
+					trackId,
+					elementId,
+					atTime: editor.playback.getCurrentTime(),
+					duration: 1,
+					ripple: rippleEditingEnabled,
+				})
+				.then(() => {
+					toast.success("Freeze frame inserted.");
+				})
+				.catch((error) => {
+					toast.error("Freeze Frame failed.", {
+						description:
+							error instanceof Error ? error.message : "Please try again.",
+					});
+				});
 		},
 		undefined,
 	);

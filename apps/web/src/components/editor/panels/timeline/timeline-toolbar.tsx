@@ -116,9 +116,10 @@ function ToolbarLeftSection() {
 
 				<ToolbarButton
 					icon={<SplitSquareHorizontal />}
-					tooltip="Coming soon" /* separate audio */
-					disabled={true}
-					onClick={({ event: _event }) => {}}
+					tooltip="Separate audio"
+					onClick={({ event }) =>
+						handleAction({ action: "separate-audio-selected", event })
+					}
 				/>
 
 				<ToolbarButton
@@ -131,9 +132,10 @@ function ToolbarLeftSection() {
 
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={SnowIcon} />}
-					tooltip="Coming soon" /* freeze frame */
-					disabled={true}
-					onClick={({ event: _event }) => {}}
+					tooltip="Insert freeze frame"
+					onClick={({ event }) =>
+						handleAction({ action: "insert-freeze-frame", event })
+					}
 				/>
 
 				<ToolbarButton

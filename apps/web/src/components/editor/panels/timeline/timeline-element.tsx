@@ -1,6 +1,7 @@
 "use client";
 
 import { useEditor } from "@/hooks/use-editor";
+import { useReplaceMedia } from "@/hooks/use-replace-media";
 import { useAssetsPanelStore } from "@/stores/assets-panel-store";
 import AudioWaveform from "./audio-waveform";
 import { useTimelineElementResize } from "@/hooks/timeline/element/use-element-resize";
@@ -31,6 +32,7 @@ import { getActionDefinition, type TAction, invokeAction } from "@/lib/actions";
 import { useElementSelection } from "@/hooks/timeline/element/use-element-selection";
 import { resolveStickerId } from "@/lib/stickers";
 import Image from "next/image";
+import { SplitSquareHorizontal } from "lucide-react";
 import {
 	ScissorIcon,
 	Delete02Icon,
@@ -42,6 +44,7 @@ import {
 	VolumeMute02Icon,
 	Search01Icon,
 	Exchange01Icon,
+	SnowIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { uppercase } from "@/utils/string";
@@ -201,14 +204,27 @@ export function TimelineElement({
 						>
 							Reveal media
 						</ContextMenuItem>
-						<ContextMenuItem
-							icon={<HugeiconsIcon icon={Exchange01Icon} />}
-							disabled
-						>
-							Replace media
-						</ContextMenuItem>
+						<ReplaceMediaMenuItem trackId={track.id} element={element} />
 					</>
 				)}
+				{selectedElements.length === 1 &&
+				element.type === "video" &&
+				hasAudio ? (
+					<ActionMenuItem
+						action="separate-audio-selected"
+						icon={<SplitSquareHorizontal />}
+					>
+						Separate audio
+					</ActionMenuItem>
+				) : null}
+				{selectedElements.length === 1 && element.type === "video" ? (
+					<ActionMenuItem
+						action="insert-freeze-frame"
+						icon={<HugeiconsIcon icon={SnowIcon} />}
+					>
+						Freeze frame
+					</ActionMenuItem>
+				) : null}
 				<ContextMenuSeparator />
 				<DeleteMenuItem
 					isMultipleSelected={selectedElements.length > 1}
@@ -561,5 +577,42 @@ function ActionMenuItem({
 		>
 			{children}
 		</ContextMenuItem>
+	);
+}
+
+function ReplaceMediaMenuItem({
+	trackId,
+	element,
+}: {
+	trackId: string;
+	element: TimelineElementType;
+}) {
+	if (
+		element.type !== "video" &&
+		element.type !== "image" &&
+		element.type !== "audio"
+	) {
+		return null;
+	}
+
+	const { fileInputProps, openReplaceMediaPicker, isReplacing } = useReplaceMedia({
+		trackId,
+		element,
+	});
+
+	return (
+		<>
+			<ContextMenuItem
+				icon={<HugeiconsIcon icon={Exchange01Icon} />}
+				onClick={(event) => {
+					event.stopPropagation();
+					openReplaceMediaPicker();
+				}}
+				disabled={isReplacing}
+			>
+				{isReplacing ? "Replacing..." : "Replace media"}
+			</ContextMenuItem>
+			<input {...fileInputProps} />
+		</>
 	);
 }

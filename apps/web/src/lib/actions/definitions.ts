@@ -136,6 +136,14 @@ export const ACTIONS = {
 		description: "Show/hide selected elements",
 		category: "selection",
 	},
+	"separate-audio-selected": {
+		description: "Separate audio from selected video clip",
+		category: "editing",
+	},
+	"insert-freeze-frame": {
+		description: "Insert freeze frame at playhead",
+		category: "editing",
+	},
 	"toggle-bookmark": {
 		description: "Toggle bookmark at playhead",
 		category: "timeline",

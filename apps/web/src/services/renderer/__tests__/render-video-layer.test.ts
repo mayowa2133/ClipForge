@@ -9,7 +9,20 @@ describe("renderVideoLayer", () => {
 	test("computes media sample time from timeline time and trim", () => {
 		expect(
 			getVideoSampleTime({
-				layer: { startTime: 2.5, trimStart: 0.75 },
+				layer: {
+					startTime: 2.5,
+					trimStart: 0.75,
+					payload: {
+						mediaId: "media-1",
+						playbackRate: 1,
+						transform: {
+							scale: 1,
+							position: { x: 0, y: 0 },
+							rotate: 0,
+						},
+						opacity: 1,
+					},
+				},
 				time: 4,
 			}),
 		).toBeCloseTo(2.25);
@@ -62,6 +75,7 @@ describe("renderVideoLayer", () => {
 				hidden: false,
 				payload: {
 					mediaId: "media-1",
+					playbackRate: 1,
 					transform: {
 						scale: 1,
 						position: { x: 0, y: 0 },

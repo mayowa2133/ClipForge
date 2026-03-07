@@ -11,6 +11,7 @@ import {
 	buildUnknownMediaCompatibilitySnapshot,
 	probeAssetCompatibility,
 } from "@/lib/media/media-compatibility";
+import { generateFreezeFrameFile } from "@/lib/media/processing";
 
 export class MediaManager {
 	private assets: MediaAsset[] = [];
@@ -149,6 +150,50 @@ export class MediaManager {
 			this.notify();
 			return null;
 		}
+	}
+
+	async createDerivedFreezeFrameAsset({
+		sourceMediaId,
+		sourceTime,
+	}: {
+		sourceMediaId: string;
+		sourceTime: number;
+	}): Promise<MediaAsset | null> {
+		const activeProject = this.editor.project.getActive();
+		const sourceAsset = this.assets.find((asset) => asset.id === sourceMediaId);
+		if (!activeProject || !sourceAsset || sourceAsset.type !== "video") {
+			return null;
+		}
+
+		const freezeFrame = await generateFreezeFrameFile({
+			videoFile: sourceAsset.file,
+			timeInSeconds: sourceTime,
+			fileName: `${sourceAsset.name.replace(/\.[^.]+$/, "")}-freeze-${Math.round(
+				sourceTime * 1000,
+			)}.png`,
+		});
+
+		return this.addMediaAsset({
+			projectId: activeProject.metadata.id,
+			asset: {
+				name: freezeFrame.file.name,
+				type: "image",
+				file: freezeFrame.file,
+				url: URL.createObjectURL(freezeFrame.file),
+				thumbnailUrl: freezeFrame.thumbnailUrl,
+				width: freezeFrame.width,
+				height: freezeFrame.height,
+				duration: undefined,
+				fps: undefined,
+				mimeType: freezeFrame.file.type,
+				compatibility: buildUnknownMediaCompatibilitySnapshot(),
+				derived: {
+					kind: "freeze-frame",
+					sourceMediaId,
+					sourceTime,
+				},
+			},
+		});
 	}
 
 	async loadProjectMedia({ projectId }: { projectId: string }): Promise<void> {
@@ -314,6 +359,7 @@ export class MediaManager {
 					ephemeral: nextAsset.ephemeral,
 					mimeType: nextAsset.mimeType ?? nextAsset.file.type ?? "",
 					compatibility: nextAsset.compatibility,
+					derived: nextAsset.derived,
 				};
 				await storageService.saveMediaAssetMetadata({
 					projectId,

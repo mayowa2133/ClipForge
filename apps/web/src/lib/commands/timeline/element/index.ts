@@ -9,3 +9,7 @@ export { UpdateElementCommand } from "./update-element";
 export { ToggleElementsVisibilityCommand } from "./toggle-elements-visibility";
 export { ToggleElementsMutedCommand } from "./toggle-elements-muted";
 export { MoveElementCommand } from "./move-elements";
+export { ReplaceElementMediaCommand } from "./replace-element-media";
+export { UpdateElementPlaybackRateCommand } from "./update-element-playback-rate";
+export { SeparateAudioCommand } from "./separate-audio";
+export { InsertFreezeFrameCommand } from "./insert-freeze-frame";

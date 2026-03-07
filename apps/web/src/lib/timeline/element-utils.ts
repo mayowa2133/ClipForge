@@ -29,6 +29,34 @@ export function canElementHaveAudio(
 	return element.type === "audio" || element.type === "video";
 }
 
+export function getElementPlaybackRate({
+	element,
+}: {
+	element: TimelineElement;
+}): number {
+	return "playbackRate" in element && typeof element.playbackRate === "number"
+		? Math.max(0.25, element.playbackRate)
+		: 1;
+}
+
+export function getElementLinkedGroupId({
+	element,
+}: {
+	element: TimelineElement;
+}): string | null {
+	return "linkedGroupId" in element && typeof element.linkedGroupId === "string"
+		? element.linkedGroupId
+		: null;
+}
+
+export function getElementSourceSpan({
+	element,
+}: {
+	element: TimelineElement;
+}): number {
+	return element.duration * getElementPlaybackRate({ element });
+}
+
 export function isVisualElement(
 	element: TimelineElement,
 ): element is VideoElement | ImageElement | TextElement | StickerElement {
@@ -219,6 +247,8 @@ export function buildVideoElement({
 		trimStart: 0,
 		trimEnd: 0,
 		muted: false,
+		playbackRate: 1,
+		linkedGroupId: null,
 		hidden: false,
 		transform: { ...DEFAULT_TRANSFORM },
 		opacity: DEFAULT_OPACITY,
@@ -245,6 +275,7 @@ export function buildImageElement({
 		startTime,
 		trimStart: 0,
 		trimEnd: 0,
+		linkedGroupId: null,
 		hidden: false,
 		transform: { ...DEFAULT_TRANSFORM },
 		opacity: DEFAULT_OPACITY,
@@ -276,6 +307,10 @@ export function buildUploadAudioElement({
 		trimEnd: 0,
 		volume: 1,
 		muted: false,
+		playbackRate: 1,
+		fadeInDuration: 0,
+		fadeOutDuration: 0,
+		linkedGroupId: null,
 	};
 	if (buffer) {
 		element.buffer = buffer;
@@ -338,6 +373,10 @@ export function buildLibraryAudioElement({
 		trimEnd: 0,
 		volume: 1,
 		muted: false,
+		playbackRate: 1,
+		fadeInDuration: 0,
+		fadeOutDuration: 0,
+		linkedGroupId: null,
 	};
 	if (buffer) {
 		element.buffer = buffer;

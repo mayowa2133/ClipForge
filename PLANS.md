@@ -37,6 +37,7 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M29: Reactive project health snapshots and export preflight consistency across Assets/Export surfaces.
 - [x] M30: Export media compatibility guard with guided non-destructive recovery.
 - [x] M31: Preview fidelity status, sampled frame parity checks, and unsupported-feature trust layer.
+- [x] M32: Manual editing core with replace media, clip speed, separate audio, freeze frame, and audio properties.
 
 ## Working Rules
 
