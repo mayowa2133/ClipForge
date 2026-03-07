@@ -17,6 +17,7 @@ type DragSensitivity = "default" | "slow";
 interface NumberFieldProps
 	extends Omit<ComponentProps<"input">, "size" | "type"> {
 	icon?: React.ReactNode;
+	endAdornment?: React.ReactNode;
 	dragSensitivity?: DragSensitivity;
 	onScrub?: (value: number) => void;
 	onScrubEnd?: () => void;
@@ -28,6 +29,7 @@ interface NumberFieldProps
 function NumberField({
 	className,
 	icon,
+	endAdornment,
 	disabled,
 	dragSensitivity = "default",
 	onScrub,
@@ -123,7 +125,7 @@ function NumberField({
 				className={cn(
 					"min-w-0 flex-1 text-sm leading-none bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
 					icon ? "px-1.5" : "pl-2.5",
-					onReset ? "pr-0" : "pr-2.5",
+					onReset || endAdornment ? "pr-0" : "pr-2.5",
 				)}
 				onMouseDown={(event) => {
 					const inputElement = event.currentTarget;
@@ -153,6 +155,7 @@ function NumberField({
 				}}
 				{...props}
 			/>
+			{endAdornment ? <div className="shrink-0 pr-1">{endAdornment}</div> : null}
 			{onReset && !isDefault && (
 				<div className="shrink-0 pr-2 flex items-center">
 					<Button

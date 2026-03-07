@@ -1,13 +1,10 @@
-import { BlurBackgroundNode } from "@/services/renderer/nodes/blur-background-node";
-import { ColorNode } from "@/services/renderer/nodes/color-node";
-import { ImageNode } from "@/services/renderer/nodes/image-node";
-import { RootNode } from "@/services/renderer/nodes/root-node";
-import { StickerNode } from "@/services/renderer/nodes/sticker-node";
-import { TextNode } from "@/services/renderer/nodes/text-node";
-import { VideoNode } from "@/services/renderer/nodes/video-node";
-import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
 import type { RenderAssetRegistry } from "@/services/renderer/render-asset-registry";
 import type { RenderGraph } from "@/services/renderer/types";
+import { MainThreadVideoFrameProvider } from "@/services/renderer/video-frame-provider";
+import {
+	renderGraphToContext,
+	type ResolvedRenderGraph,
+} from "./helpers/render-graph-to-context";
 import type {
 	RenderBackend,
 	RenderBackendDiagnostics,
@@ -16,7 +13,8 @@ import type {
 } from "./types";
 
 export class LegacyCanvasBackend implements RenderBackend {
-	private renderer: CanvasRenderer | null = null;
+	private surface: HTMLCanvasElement | null = null;
+	private readonly videoFrameProvider: MainThreadVideoFrameProvider;
 	private readonly diagnostics: RenderBackendDiagnostics = {
 		backendKind: "legacy-canvas",
 		usedBinaryFallback: false,
@@ -24,37 +22,39 @@ export class LegacyCanvasBackend implements RenderBackend {
 		unsupportedFeatures: [],
 	};
 
-	constructor(private readonly assetRegistry: RenderAssetRegistry) {}
+	constructor(private readonly assetRegistry: RenderAssetRegistry) {
+		this.videoFrameProvider = new MainThreadVideoFrameProvider(assetRegistry);
+	}
 
 	async renderFrame(request: RenderFrameRequest): Promise<RenderedFrame> {
 		const { graph, time } = request;
-		if (
-			!this.renderer ||
-			this.renderer.width !== graph.canvas.width ||
-			this.renderer.height !== graph.canvas.height
-		) {
-			this.renderer = new CanvasRenderer({
-				width: graph.canvas.width,
-				height: graph.canvas.height,
-				fps: 30,
-			});
+		const surface = this.ensureSurface({
+			width: graph.canvas.width,
+			height: graph.canvas.height,
+		});
+		const ctx = surface.getContext("2d");
+		if (!ctx) {
+			throw new Error("Failed to get legacy render context");
 		}
 
-		const rootNode = buildRootNodeFromGraph({
-			graph,
-			assetRegistry: this.assetRegistry,
+		await renderGraphToContext({
+			graph: this.toResolvedGraph({ graph }),
+			time,
+			ctx,
+			videoFrameProvider: this.videoFrameProvider,
 		});
-		await this.renderer.render({ node: rootNode, time });
 
 		return {
 			kind: "canvas",
-			canvas: this.renderer.canvas,
+			canvas: surface,
 			width: graph.canvas.width,
 			height: graph.canvas.height,
 		};
 	}
 
-	dispose(): void {}
+	dispose(): void {
+		this.videoFrameProvider.dispose();
+	}
 
 	getDiagnostics(): RenderBackendDiagnostics {
 		return {
@@ -68,98 +68,77 @@ export class LegacyCanvasBackend implements RenderBackend {
 		this.diagnostics.usedLegacyFallback = false;
 		this.diagnostics.unsupportedFeatures = [];
 	}
-}
 
-function buildRootNodeFromGraph({
-	graph,
-	assetRegistry,
-}: {
-	graph: RenderGraph;
-	assetRegistry: RenderAssetRegistry;
-}): RootNode {
-	const rootNode = new RootNode({ duration: graph.duration });
-	const contentNodes: Array<
-		VideoNode | ImageNode | TextNode | StickerNode
-	> = [];
-
-	for (const layer of graph.layers.slice().sort((a, b) => a.zIndex - b.zIndex)) {
-		if (layer.hidden) continue;
-		if (layer.kind === "video") {
-			const asset = assetRegistry.getAsset(layer.payload.mediaId);
-			if (!asset?.url || asset.type !== "video") continue;
-			contentNodes.push(
-				new VideoNode({
-					mediaId: asset.id,
-					url: asset.url,
-					file: asset.file,
-					duration: layer.duration,
-					timeOffset: layer.startTime,
-					trimStart: layer.trimStart,
-					trimEnd: layer.trimEnd,
-					transform: layer.payload.transform,
-					opacity: layer.payload.opacity,
-					blendMode: layer.payload.blendMode,
-				}),
-			);
-			continue;
+	private ensureSurface({
+		width,
+		height,
+	}: {
+		width: number;
+		height: number;
+	}): HTMLCanvasElement {
+		if (
+			!this.surface ||
+			this.surface.width !== width ||
+			this.surface.height !== height
+		) {
+			if (typeof document === "undefined") {
+				throw new Error("No canvas implementation is available");
+			}
+			this.surface = document.createElement("canvas");
+			this.surface.width = width;
+			this.surface.height = height;
 		}
 
-		if (layer.kind === "image") {
-			const asset = assetRegistry.getAsset(layer.payload.mediaId);
-			if (!asset?.url || asset.type !== "image") continue;
-			contentNodes.push(
-				new ImageNode({
-					url: asset.url,
-					duration: layer.duration,
-					timeOffset: layer.startTime,
-					trimStart: layer.trimStart,
-					trimEnd: layer.trimEnd,
-					transform: layer.payload.transform,
-					opacity: layer.payload.opacity,
-					blendMode: layer.payload.blendMode,
-					maxSourceSize: layer.payload.maxSourceSize,
-				}),
-			);
-			continue;
-		}
+		return this.surface;
+	}
 
-		if (layer.kind === "text") {
-			contentNodes.push(new TextNode(layer.payload));
-			continue;
-		}
+	private toResolvedGraph({ graph }: { graph: RenderGraph }): ResolvedRenderGraph {
+		return {
+			...graph,
+			layers: graph.layers.map((layer) => {
+				if (layer.kind === "image") {
+					const asset = this.assetRegistry.getAsset(layer.payload.mediaId);
+					return {
+						...layer,
+						payload: {
+							sourceUrl: asset?.url ?? "",
+							keyframes: layer.payload.keyframes,
+							transitionIn: layer.payload.transitionIn,
+							transform: layer.payload.transform,
+							opacity: layer.payload.opacity,
+							blendMode: layer.payload.blendMode,
+							maxSourceSize: layer.payload.maxSourceSize,
+						},
+					};
+				}
 
-		contentNodes.push(
-			new StickerNode({
-				stickerId: layer.payload.stickerId,
-				duration: layer.duration,
-				timeOffset: layer.startTime,
-				trimStart: layer.trimStart,
-				trimEnd: layer.trimEnd,
-				transform: layer.payload.transform,
-				opacity: layer.payload.opacity,
-				blendMode: layer.payload.blendMode,
+				if (layer.kind === "video") {
+					const asset = this.assetRegistry.getAsset(layer.payload.mediaId);
+					return {
+						...layer,
+						payload: {
+							...layer.payload,
+							file: asset?.file,
+						},
+					};
+				}
+
+				if (layer.kind === "sticker") {
+					return {
+						...layer,
+						payload: {
+							sourceUrl: layer.payload.sourceUrl,
+							keyframes: layer.payload.keyframes,
+							transitionIn: layer.payload.transitionIn,
+							transform: layer.payload.transform,
+							opacity: layer.payload.opacity,
+							blendMode: layer.payload.blendMode,
+						},
+					};
+				}
+
+				return layer;
 			}),
-		);
+		};
 	}
-
-	if (graph.background.type === "blur") {
-		rootNode.add(
-			new BlurBackgroundNode({
-				blurIntensity: graph.background.blurIntensity,
-				contentNodes,
-			}),
-		);
-		for (const node of contentNodes) {
-			rootNode.add(node);
-		}
-		return rootNode;
-	}
-
-	if (graph.background.type === "color" && graph.background.color !== "transparent") {
-		rootNode.add(new ColorNode({ color: graph.background.color }));
-	}
-	for (const node of contentNodes) {
-		rootNode.add(node);
-	}
-	return rootNode;
 }

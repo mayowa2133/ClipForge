@@ -1,14 +1,10 @@
-import { useEditor } from "@/hooks/use-editor";
-import { usePropertyDraft } from "../hooks/use-property-draft";
-import { clamp } from "@/utils/math";
-import { NumberField } from "@/components/ui/number-field";
-import {
-	DEFAULT_BLEND_MODE,
-	DEFAULT_OPACITY,
-} from "@/constants/timeline-constants";
-import { OcCheckerboardIcon } from "@opencut/ui/icons";
+"use client";
+
 import { Fragment, useRef } from "react";
-import { Section, SectionContent, SectionField, SectionHeader } from "../section";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { RainDropIcon } from "@hugeicons/core-free-icons";
+import { OcCheckerboardIcon } from "@opencut/ui/icons";
+import { NumberField } from "@/components/ui/number-field";
 import {
 	Select,
 	SelectContent,
@@ -17,17 +13,39 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import {
+	DEFAULT_BLEND_MODE,
+	DEFAULT_OPACITY,
+} from "@/constants/timeline-constants";
+import { useEditor } from "@/hooks/use-editor";
+import {
+	getEffectiveVisualStateAtTime,
+	getElementLocalTime,
+	getKeyframesForProperty,
+	hasPropertyKeyframes,
+	type VisualElement,
+} from "@/lib/timeline";
 import type { BlendMode } from "@/types/rendering";
 import type { ElementType } from "@/types/timeline";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { RainDropIcon } from "@hugeicons/core-free-icons";
+import { clamp } from "@/utils/math";
+import { usePropertyDraft } from "../hooks/use-property-draft";
+import {
+	Section,
+	SectionContent,
+	SectionField,
+	SectionHeader,
+} from "../section";
+import { KeyframeButton } from "./keyframe-controls";
 
-type BlendingElement = {
-	id: string;
-	opacity: number;
+type BlendingElement = Pick<
+	VisualElement,
+	"id" | "type" | "startTime" | "duration" | "transform" | "opacity" | "keyframes"
+> & {
 	type: ElementType;
 	blendMode?: BlendMode;
 };
+
+const KEYFRAME_EPSILON = 1 / 1000;
 
 const BLEND_MODE_GROUPS = [
 	[{ value: "normal", label: "Normal" }],
@@ -59,6 +77,21 @@ const BLEND_MODE_GROUPS = [
 	],
 ];
 
+function hasCurrentOpacityKeyframe({
+	element,
+	localTime,
+}: {
+	element: BlendingElement;
+	localTime: number;
+}): boolean {
+	return getKeyframesForProperty({
+		element: element as unknown as VisualElement,
+		property: "opacity",
+	}).some(
+		(keyframe) => Math.abs(keyframe.time - localTime) <= KEYFRAME_EPSILON,
+	);
+}
+
 export function BlendingSection({
 	element,
 	trackId,
@@ -67,7 +100,18 @@ export function BlendingSection({
 	trackId: string;
 }) {
 	const editor = useEditor();
+	const currentTime = editor.playback.getCurrentTime();
+	const currentLocalTime = getElementLocalTime({ element, time: currentTime });
+	const effectiveState = getEffectiveVisualStateAtTime({
+		element: element as unknown as VisualElement,
+		time: currentTime,
+	});
 	const blendMode = element.blendMode ?? DEFAULT_BLEND_MODE;
+	const opacityValue = effectiveState.opacity;
+	const opacityAnimated = hasPropertyKeyframes({
+		element: element as unknown as VisualElement,
+		property: "opacity",
+	});
 	const didSelectRef = useRef(false);
 	const committedBlendModeRef = useRef(blendMode);
 	if (!editor.timeline.isPreviewActive()) {
@@ -76,9 +120,7 @@ export function BlendingSection({
 
 	const previewBlendMode = (value: BlendMode) =>
 		editor.timeline.previewElements({
-			updates: [
-				{ trackId, elementId: element.id, updates: { blendMode: value } },
-			],
+			updates: [{ trackId, elementId: element.id, updates: { blendMode: value } }],
 		});
 
 	const commitBlendMode = (value: string) => {
@@ -106,7 +148,7 @@ export function BlendingSection({
 	};
 
 	const opacity = usePropertyDraft({
-		displayValue: Math.round(element.opacity * 100).toString(),
+		displayValue: Math.round(opacityValue * 100).toString(),
 		parse: (input) => {
 			const parsed = parseFloat(input);
 			if (Number.isNaN(parsed)) return null;
@@ -114,9 +156,7 @@ export function BlendingSection({
 		},
 		onPreview: (value) =>
 			editor.timeline.previewElements({
-				updates: [
-					{ trackId, elementId: element.id, updates: { opacity: value } },
-				],
+				updates: [{ trackId, elementId: element.id, updates: { opacity: value } }],
 			}),
 		onCommit: () => editor.timeline.commitPreview(),
 	});
@@ -124,73 +164,137 @@ export function BlendingSection({
 	return (
 		<Section collapsible sectionKey={`${element.type}:blending`}>
 			<SectionHeader title="Blending" />
-		<SectionContent>
-			<div className="flex items-start gap-2">
-				<SectionField label="Opacity" className="w-1/2">
-					<NumberField
-						className="w-full"
-						icon={
-							<OcCheckerboardIcon className="size-3.5 text-muted-foreground" />
-						}
-						value={opacity.displayValue}
-						min={0}
-						max={100}
-						onFocus={opacity.onFocus}
-						onChange={opacity.onChange}
-						onBlur={opacity.onBlur}
-						onScrub={opacity.scrubTo}
-						onScrubEnd={opacity.commitScrub}
-						onReset={() =>
-							editor.timeline.updateElements({
-								updates: [
-									{
+			<SectionContent>
+				<div className="flex items-start gap-2">
+					<SectionField label="Opacity" className="w-1/2">
+						<NumberField
+							className="w-full"
+							icon={<OcCheckerboardIcon className="size-3.5 text-muted-foreground" />}
+							value={opacity.displayValue}
+							min={0}
+							max={100}
+							onFocus={opacity.onFocus}
+							onChange={opacity.onChange}
+							onBlur={() => {
+								const parsed = parseFloat(opacity.currentValue);
+								opacity.onBlur();
+								if (Number.isNaN(parsed)) return;
+								const nextValue = clamp({ value: parsed, min: 0, max: 100 }) / 100;
+								if (opacityAnimated) {
+									editor.timeline.setElementKeyframe({
 										trackId,
 										elementId: element.id,
-										updates: { opacity: DEFAULT_OPACITY },
-									},
-								],
-							})
-						}
-						isDefault={element.opacity === DEFAULT_OPACITY}
-						dragSensitivity="slow"
-					/>
-				</SectionField>
-				<SectionField label="Blend mode" className="w-1/2">
-					<Select
-						value={committedBlendModeRef.current}
-						onOpenChange={handleBlendModeOpenChange}
-						onValueChange={commitBlendMode}
-					>
-						<SelectTrigger
-							icon={<HugeiconsIcon icon={RainDropIcon} />}
-							className="w-full"
+										property: "opacity",
+										time: currentTime,
+										value: nextValue,
+									});
+									return;
+								}
+								editor.timeline.updateElements({
+									updates: [
+										{
+											trackId,
+											elementId: element.id,
+											updates: { opacity: nextValue },
+										},
+									],
+								});
+							}}
+							onScrub={opacityAnimated ? undefined : opacity.scrubTo}
+							onScrubEnd={opacityAnimated ? undefined : opacity.commitScrub}
+							onReset={() => {
+								if (opacityAnimated) {
+									editor.timeline.setElementKeyframe({
+										trackId,
+										elementId: element.id,
+										property: "opacity",
+										time: currentTime,
+										value: DEFAULT_OPACITY,
+									});
+									return;
+								}
+								editor.timeline.updateElements({
+									updates: [
+										{
+											trackId,
+											elementId: element.id,
+											updates: { opacity: DEFAULT_OPACITY },
+										},
+									],
+								});
+							}}
+							isDefault={opacityValue === DEFAULT_OPACITY}
+							dragSensitivity="slow"
+							endAdornment={
+								<KeyframeButton
+									isActive={hasCurrentOpacityKeyframe({
+										element,
+										localTime: currentLocalTime,
+									})}
+									onClick={() => {
+										if (
+											hasCurrentOpacityKeyframe({
+												element,
+												localTime: currentLocalTime,
+											})
+										) {
+											editor.timeline.removeElementKeyframe({
+												trackId,
+												elementId: element.id,
+												property: "opacity",
+												time: currentTime,
+											});
+											return;
+										}
+										editor.timeline.setElementKeyframe({
+											trackId,
+											elementId: element.id,
+											property: "opacity",
+											time: currentTime,
+											value: opacityValue,
+										});
+									}}
+									label="Toggle opacity keyframe"
+								/>
+							}
+						/>
+					</SectionField>
+					<SectionField label="Blend mode" className="w-1/2">
+						<Select
+							value={committedBlendModeRef.current}
+							onOpenChange={handleBlendModeOpenChange}
+							onValueChange={commitBlendMode}
 						>
-							<SelectValue placeholder="Select blend mode" />
-						</SelectTrigger>
-						<SelectContent className="w-36">
-							{BLEND_MODE_GROUPS.map((group, groupIndex) => (
-								<Fragment key={group[0]?.value ?? `group-${groupIndex}`}>
-									{group.map((option) => (
-										<SelectItem
-											key={option.value}
-											value={option.value}
-											onPointerEnter={() =>
-												previewBlendMode(option.value as BlendMode)
-											}
-										>
-											{option.label}
-										</SelectItem>
-									))}
-									{groupIndex < BLEND_MODE_GROUPS.length - 1 ? (
-										<SelectSeparator />
-									) : null}
-								</Fragment>
-							))}
-						</SelectContent>
-					</Select>
-				</SectionField>
-			</div>
-		</SectionContent>
+							<SelectTrigger
+								icon={<HugeiconsIcon icon={RainDropIcon} />}
+								className="w-full"
+							>
+								<SelectValue placeholder="Select blend mode" />
+							</SelectTrigger>
+							<SelectContent className="w-36">
+								{BLEND_MODE_GROUPS.map((group, groupIndex) => (
+									<Fragment key={group[0]?.value ?? `group-${groupIndex}`}>
+										{group.map((option) => (
+											<SelectItem
+												key={option.value}
+												value={option.value}
+												onPointerEnter={() =>
+													previewBlendMode(option.value as BlendMode)
+												}
+											>
+												{option.label}
+											</SelectItem>
+										))}
+										{groupIndex < BLEND_MODE_GROUPS.length - 1 ? (
+											<SelectSeparator />
+										) : null}
+									</Fragment>
+								))}
+							</SelectContent>
+						</Select>
+					</SectionField>
+				</div>
+			</SectionContent>
 		</Section>
 	);
 }

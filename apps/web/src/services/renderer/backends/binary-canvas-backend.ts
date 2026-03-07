@@ -106,6 +106,8 @@ export class BinaryCanvasBackend implements RenderBackend {
 						...layer,
 						payload: {
 							sourceUrl: asset?.url ?? "",
+							keyframes: layer.payload.keyframes,
+							transitionIn: layer.payload.transitionIn,
 							transform: layer.payload.transform,
 							opacity: layer.payload.opacity,
 							blendMode: layer.payload.blendMode,
@@ -130,6 +132,8 @@ export class BinaryCanvasBackend implements RenderBackend {
 						...layer,
 						payload: {
 							sourceUrl: layer.payload.sourceUrl,
+							keyframes: layer.payload.keyframes,
+							transitionIn: layer.payload.transitionIn,
 							transform: layer.payload.transform,
 							opacity: layer.payload.opacity,
 							blendMode: layer.payload.blendMode,

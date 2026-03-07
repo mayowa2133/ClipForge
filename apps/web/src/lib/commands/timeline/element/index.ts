@@ -13,3 +13,8 @@ export { ReplaceElementMediaCommand } from "./replace-element-media";
 export { UpdateElementPlaybackRateCommand } from "./update-element-playback-rate";
 export { SeparateAudioCommand } from "./separate-audio";
 export { InsertFreezeFrameCommand } from "./insert-freeze-frame";
+export { SetElementTransitionInCommand } from "./set-element-transition-in";
+export { ClearElementTransitionInCommand } from "./clear-element-transition-in";
+export { SetElementKeyframeCommand } from "./set-element-keyframe";
+export { RemoveElementKeyframeCommand } from "./remove-element-keyframe";
+export { ClearElementKeyframesCommand } from "./clear-element-keyframes";

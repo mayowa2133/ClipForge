@@ -82,8 +82,51 @@ export function SectionHeader({
 
 	const handleClick = isCollapsible ? ctx?.toggle : onClick;
 
-	const content = (
-		<>
+	const baseClassName = cn(
+		"flex w-full items-center justify-between h-11 px-3.5",
+		className,
+	);
+
+	if (isInteractive) {
+		return (
+			<div className={baseClassName}>
+				<button
+					type="button"
+					className="flex min-w-0 flex-1 items-center text-left"
+					onClick={(event) => {
+						handleClick?.();
+						event.currentTarget.blur();
+					}}
+				>
+					<span
+						className={cn(
+							"text-sm font-medium",
+							isOpen ? "text-foreground" : "text-muted-foreground",
+						)}
+					>
+						{title}
+					</span>
+				</button>
+				<div className="flex items-center gap-1">
+					{children}
+					{isCollapsible && (
+						<HugeiconsIcon
+							icon={ArrowDownIcon}
+							className={cn(
+								"size-3 shrink-0 transition-transform duration-200 ease-out",
+								isOpen
+									? "rotate-0 text-foreground"
+									: "-rotate-90 text-muted-foreground",
+							)}
+						/>
+					)}
+				</div>
+			</div>
+		);
+	}
+
+	return (
+		<div className={cn(baseClassName, "pointer-events-none")}>
 			<span
 				className={cn(
 					"text-sm font-medium",
@@ -106,30 +149,8 @@ export function SectionHeader({
 					/>
 				)}
 			</div>
-		</>
+		</div>
 	);
-
-	const baseClassName = cn(
-		"flex w-full items-center justify-between h-11 px-3.5",
-		className,
-	);
-
-	if (isInteractive) {
-		return (
-			<button
-				type="button"
-				className={cn(baseClassName, "cursor-pointer text-left")}
-				onClick={(event) => {
-					handleClick?.();
-					event.currentTarget.blur();
-				}}
-			>
-				{content}
-			</button>
-		);
-	}
-
-	return <div className={cn(baseClassName, "pointer-events-none")}>{content}</div>;
 }
 
 export function SectionFields({

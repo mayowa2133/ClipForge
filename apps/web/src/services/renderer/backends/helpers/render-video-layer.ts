@@ -46,6 +46,9 @@ export async function renderVideoLayer({
 	canvasWidth,
 	canvasHeight,
 	videoFrameProvider,
+	transformOverride,
+	opacityOverride,
+	sampleTimeOverride,
 }: {
 	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 	layer: ResolvedVideoLayer;
@@ -53,12 +56,16 @@ export async function renderVideoLayer({
 	canvasWidth: number;
 	canvasHeight: number;
 	videoFrameProvider: RenderVideoFrameProvider;
+	transformOverride?: ResolvedVideoLayer["payload"]["transform"];
+	opacityOverride?: number;
+	sampleTimeOverride?: number;
 }): Promise<void> {
 	if (time < layer.startTime || time >= layer.startTime + layer.duration) {
 		return;
 	}
 
-	const sourceTime = getVideoSampleTime({ layer, time });
+	const sourceTime =
+		sampleTimeOverride ?? getVideoSampleTime({ layer, time });
 	const source = await videoFrameProvider.getFrameAt({
 		mediaId: layer.payload.mediaId,
 		file: layer.payload.file,
@@ -90,8 +97,8 @@ export async function renderVideoLayer({
 		source,
 		sourceWidth,
 		sourceHeight,
-		transform: layer.payload.transform,
-		opacity: layer.payload.opacity,
+		transform: transformOverride ?? layer.payload.transform,
+		opacity: opacityOverride ?? layer.payload.opacity,
 		blendMode: (layer.payload.blendMode as never) ?? undefined,
 	});
 }

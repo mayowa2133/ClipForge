@@ -1,5 +1,12 @@
 import type { RenderGraph } from "@/services/renderer/types";
 import type { RenderVideoFrameProvider } from "@/services/renderer/video-frame-provider";
+import {
+	getEffectiveVisualStateAtTime,
+	getPreviousTransitionSampleTime,
+	getTransitionProgress,
+	transitionIsActiveAtTime,
+	type VisualElement,
+} from "@/lib/timeline";
 import { clearRenderSurface, drawBlurBackground } from "./render-background";
 import { renderTextLayer } from "./render-text-layer";
 import { drawVisualToContext } from "./render-visual";
@@ -7,6 +14,7 @@ import { renderVideoLayer } from "./render-video-layer";
 
 type ResolvedImageLayer = {
 	id: string;
+	trackId: string;
 	zIndex: number;
 	kind: "image" | "sticker";
 	startTime: number;
@@ -20,13 +28,16 @@ type ResolvedImageLayer = {
 		opacity: number;
 		blendMode?: string;
 		maxSourceSize?: number;
+		keyframes?: unknown;
+		transitionIn?: { preset: "cross-dissolve" | "fade-black" | "fade-white" | "slide"; duration: number } | null;
 	};
+	previousVisualLayerId?: string | null;
 };
 
 type ResolvedTextLayer = Extract<RenderGraph["layers"][number], { kind: "text" }>;
 
 type ResolvedVideoLayer = Extract<RenderGraph["layers"][number], { kind: "video" }> & {
-	payload: Extract<RenderGraph["layers"][number], { kind: "video" }>["payload"] & {
+	payload: Extract<RenderGraph["layers"][number], { kind: "video" }>['payload'] & {
 		file?: File;
 	};
 };
@@ -110,18 +121,51 @@ async function renderLayers({
 	height: number;
 	videoFrameProvider: RenderVideoFrameProvider;
 }): Promise<void> {
+	const layersById = new Map(layers.map((layer) => [layer.id, layer]));
+
 	for (const layer of layers) {
-		if (time < layer.startTime || time >= layer.startTime + layer.duration) {
+		if (layer.kind === "text") {
+			if (!isLayerVisibleAtTime({ layer, time })) continue;
+			const animatedState = sampleTextAnimatedState({ layer, time });
+			renderTextLayer({
+				ctx,
+				payload: {
+					...layer.payload,
+					transform: animatedState.transform,
+					opacity: animatedState.opacity,
+				},
+				time,
+			});
 			continue;
 		}
 
-		if (layer.kind === "text") {
-			renderTextLayer({ ctx, payload: layer.payload, time });
+		const previousLayer = layer.previousVisualLayerId
+			? layersById.get(layer.previousVisualLayerId)
+			: null;
+		if (
+			(layer.kind === "video" || layer.kind === "image") &&
+			previousLayer &&
+			(previousLayer.kind === "video" || previousLayer.kind === "image") &&
+			isTransitionRenderable({ current: layer, previous: previousLayer, time })
+		) {
+			await renderTransitionPair({
+				ctx,
+				current: layer,
+				previous: previousLayer,
+				time,
+				canvasWidth: width,
+				canvasHeight: height,
+				videoFrameProvider,
+			});
+			continue;
+		}
+
+		if (!isLayerVisibleAtTime({ layer, time })) {
 			continue;
 		}
 
 		if (layer.kind === "video") {
-			await renderVideoLayer({
+			await renderVideoVisualLayer({
 				ctx,
 				layer,
 				time,
@@ -132,22 +176,417 @@ async function renderLayers({
 			continue;
 		}
 
-		const source = await loadResolvedSource({
-			url: layer.payload.sourceUrl,
-			maxSourceSize: layer.payload.maxSourceSize,
-		});
-		drawVisualToContext({
+		await renderImageLikeLayer({
 			ctx,
+			layer,
+			time,
 			canvasWidth: width,
 			canvasHeight: height,
-			source: source.source,
-			sourceWidth: source.width,
-			sourceHeight: source.height,
-			transform: layer.payload.transform,
-			opacity: layer.payload.opacity,
-			blendMode: (layer.payload.blendMode as never) ?? undefined,
 		});
 	}
+}
+
+function isLayerVisibleAtTime({
+	layer,
+	time,
+}: {
+	layer: Pick<ResolvedRenderGraph["layers"][number], "startTime" | "duration">;
+	time: number;
+}): boolean {
+	return time >= layer.startTime && time < layer.startTime + layer.duration;
+}
+
+function sampleAnimatedVisualState({
+	layer,
+	time,
+}: {
+	layer: Pick<VisualElement, "type" | "startTime" | "duration" | "transform" | "opacity" | "keyframes">;
+	time: number;
+}) {
+	return getEffectiveVisualStateAtTime({
+		element: layer as VisualElement,
+		time,
+	});
+}
+
+function toVisualMotionElement({
+	layer,
+}: {
+	layer: ResolvedVideoLayer | ResolvedImageLayer;
+}): VisualElement {
+	if (layer.kind === "video") {
+		return {
+			id: layer.id,
+			type: "video",
+			name: layer.id,
+			mediaId: layer.payload.mediaId,
+			startTime: layer.startTime,
+			duration: layer.duration,
+			trimStart: layer.trimStart,
+			trimEnd: layer.trimEnd,
+			muted: layer.payload.muted,
+			hidden: layer.hidden,
+			playbackRate: layer.payload.playbackRate,
+			linkedGroupId: null,
+			transitionIn: layer.payload.transitionIn ?? null,
+			keyframes: layer.payload.keyframes ?? null,
+			transform: layer.payload.transform,
+			opacity: layer.payload.opacity,
+			blendMode: layer.payload.blendMode,
+		};
+	}
+
+	if (layer.kind === "image") {
+		return {
+			id: layer.id,
+			type: "image",
+			name: layer.id,
+			mediaId: layer.payload.sourceUrl,
+			startTime: layer.startTime,
+			duration: layer.duration,
+			trimStart: layer.trimStart,
+			trimEnd: layer.trimEnd,
+			hidden: layer.hidden,
+			linkedGroupId: null,
+			transitionIn: layer.payload.transitionIn ?? null,
+			keyframes: (layer.payload.keyframes as VisualElement["keyframes"]) ?? null,
+			transform: layer.payload.transform,
+			opacity: layer.payload.opacity,
+			blendMode: layer.payload.blendMode as VisualElement["blendMode"],
+		};
+	}
+
+	return {
+		id: layer.id,
+		type: "sticker",
+		name: layer.id,
+		stickerId: layer.id,
+		startTime: layer.startTime,
+		duration: layer.duration,
+		trimStart: layer.trimStart,
+		trimEnd: layer.trimEnd,
+		hidden: layer.hidden,
+		linkedGroupId: null,
+		transitionIn: layer.payload.transitionIn ?? null,
+		keyframes: (layer.payload.keyframes as VisualElement["keyframes"]) ?? null,
+		transform: layer.payload.transform,
+		opacity: layer.payload.opacity,
+		blendMode: layer.payload.blendMode as VisualElement["blendMode"],
+	};
+}
+
+function sampleTextAnimatedState({
+	layer,
+	time,
+}: {
+	layer: ResolvedTextLayer;
+	time: number;
+}) {
+	return sampleAnimatedVisualState({
+		layer: {
+			type: "text",
+			startTime: layer.startTime,
+			duration: layer.duration,
+			transform: layer.payload.transform,
+			opacity: layer.payload.opacity,
+			keyframes: layer.payload.keyframes ?? null,
+		},
+		time,
+	});
+}
+
+function isTransitionRenderable({
+	current,
+	previous,
+	time,
+}: {
+	current: ResolvedVideoLayer | ResolvedImageLayer;
+	previous: ResolvedVideoLayer | ResolvedImageLayer;
+	time: number;
+}): boolean {
+	if (!current.payload.transitionIn) return false;
+	const previousEnd = previous.startTime + previous.duration;
+	if (Math.abs(previousEnd - current.startTime) > 0.001) {
+		return false;
+	}
+	return transitionIsActiveAtTime({
+		element: {
+			startTime: current.startTime,
+			transitionIn: current.payload.transitionIn,
+		},
+		time,
+	});
+}
+
+async function renderTransitionPair({
+	ctx,
+	current,
+	previous,
+	time,
+	canvasWidth,
+	canvasHeight,
+	videoFrameProvider,
+}: {
+	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+	current: ResolvedVideoLayer | ResolvedImageLayer;
+	previous: ResolvedVideoLayer | ResolvedImageLayer;
+	time: number;
+	canvasWidth: number;
+	canvasHeight: number;
+	videoFrameProvider: RenderVideoFrameProvider;
+}): Promise<void> {
+	const transition = current.payload.transitionIn;
+	if (!transition) return;
+
+	const progress = getTransitionProgress({
+		element: { startTime: current.startTime, transitionIn: transition },
+		time,
+	});
+	const previousSampleTime = getPreviousTransitionSampleTime({
+		previous,
+		current: { startTime: current.startTime, transitionIn: transition },
+		time,
+	});
+	const currentState = sampleAnimatedVisualState({
+		layer: toVisualMotionElement({ layer: current }),
+		time,
+	});
+	const previousState = sampleAnimatedVisualState({
+		layer: toVisualMotionElement({ layer: previous }),
+		time: previousSampleTime,
+	});
+
+	if (transition.preset === "cross-dissolve") {
+		await renderTransitionLayerWithState({
+			ctx,
+			layer: previous,
+			time: previousSampleTime,
+			canvasWidth,
+			canvasHeight,
+			videoFrameProvider,
+			transform: previousState.transform,
+			opacity: previousState.opacity * (1 - progress),
+		});
+		await renderTransitionLayerWithState({
+			ctx,
+			layer: current,
+			time,
+			canvasWidth,
+			canvasHeight,
+			videoFrameProvider,
+			transform: currentState.transform,
+			opacity: currentState.opacity * progress,
+		});
+		return;
+	}
+
+	if (transition.preset === "slide") {
+		const offset = canvasWidth * 0.18;
+		await renderTransitionLayerWithState({
+			ctx,
+			layer: previous,
+			time: previousSampleTime,
+			canvasWidth,
+			canvasHeight,
+			videoFrameProvider,
+			transform: {
+				...previousState.transform,
+				position: {
+					x: previousState.transform.position.x - offset * progress,
+					y: previousState.transform.position.y,
+				},
+			},
+			opacity: previousState.opacity * (1 - progress),
+		});
+		await renderTransitionLayerWithState({
+			ctx,
+			layer: current,
+			time,
+			canvasWidth,
+			canvasHeight,
+			videoFrameProvider,
+			transform: {
+				...currentState.transform,
+				position: {
+					x: currentState.transform.position.x + offset * (1 - progress),
+					y: currentState.transform.position.y,
+				},
+			},
+			opacity: currentState.opacity * progress,
+		});
+		return;
+	}
+
+	const midpoint = progress < 0.5;
+	if (midpoint) {
+		await renderTransitionLayerWithState({
+			ctx,
+			layer: previous,
+			time: previousSampleTime,
+			canvasWidth,
+			canvasHeight,
+			videoFrameProvider,
+			transform: previousState.transform,
+			opacity: previousState.opacity,
+		});
+	} else {
+		await renderTransitionLayerWithState({
+			ctx,
+			layer: current,
+			time,
+			canvasWidth,
+			canvasHeight,
+			videoFrameProvider,
+			transform: currentState.transform,
+			opacity: currentState.opacity,
+		});
+	}
+
+	const overlayAlpha = progress < 0.5 ? progress * 2 : (1 - progress) * 2;
+	ctx.save();
+	ctx.globalAlpha = overlayAlpha;
+	ctx.fillStyle = transition.preset === "fade-white" ? "#FFFFFF" : "#000000";
+	ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+	ctx.restore();
+}
+
+async function renderTransitionLayerWithState({
+	ctx,
+	layer,
+	time,
+	canvasWidth,
+	canvasHeight,
+	videoFrameProvider,
+	transform,
+	opacity,
+}: {
+	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+	layer: ResolvedVideoLayer | ResolvedImageLayer;
+	time: number;
+	canvasWidth: number;
+	canvasHeight: number;
+	videoFrameProvider: RenderVideoFrameProvider;
+	transform: { scale: number; position: { x: number; y: number }; rotate: number };
+	opacity: number;
+}): Promise<void> {
+	if (layer.kind === "video") {
+		await renderVideoVisualLayer({
+			ctx,
+			layer,
+			time,
+			canvasWidth,
+			canvasHeight,
+			videoFrameProvider,
+			transformOverride: transform,
+			opacityOverride: opacity,
+			sampleTimeOverride: time,
+		});
+		return;
+	}
+
+	await renderImageLikeLayer({
+		ctx,
+		layer,
+		time,
+		canvasWidth,
+		canvasHeight,
+		transformOverride: transform,
+		opacityOverride: opacity,
+	});
+}
+
+async function renderVideoVisualLayer({
+	ctx,
+	layer,
+	time,
+	canvasWidth,
+	canvasHeight,
+	videoFrameProvider,
+	transformOverride,
+	opacityOverride,
+	sampleTimeOverride,
+}: {
+	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+	layer: ResolvedVideoLayer;
+	time: number;
+	canvasWidth: number;
+	canvasHeight: number;
+	videoFrameProvider: RenderVideoFrameProvider;
+	transformOverride?: { scale: number; position: { x: number; y: number }; rotate: number };
+	opacityOverride?: number;
+	sampleTimeOverride?: number;
+}): Promise<void> {
+	const state = sampleAnimatedVisualState({
+		layer: toVisualMotionElement({ layer }),
+		time,
+	});
+	await renderVideoLayer({
+		ctx,
+		layer,
+		time,
+		canvasWidth,
+		canvasHeight,
+		videoFrameProvider,
+		transformOverride: transformOverride ?? state.transform,
+		opacityOverride: opacityOverride ?? state.opacity,
+		sampleTimeOverride,
+	});
+}
+
+async function renderImageLikeLayer({
+	ctx,
+	layer,
+	time,
+	canvasWidth,
+	canvasHeight,
+	transformOverride,
+	opacityOverride,
+}: {
+	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+	layer: ResolvedImageLayer;
+	time: number;
+	canvasWidth: number;
+	canvasHeight: number;
+	transformOverride?: { scale: number; position: { x: number; y: number }; rotate: number };
+	opacityOverride?: number;
+}): Promise<void> {
+	const source = await loadResolvedSource({
+		url: layer.payload.sourceUrl,
+		maxSourceSize: layer.payload.maxSourceSize,
+	});
+	const state = sampleAnimatedVisualState({
+		layer: {
+			type: layer.kind === "image" ? "image" : "sticker",
+			startTime: layer.startTime,
+			duration: layer.duration,
+			transform: layer.payload.transform,
+			opacity: layer.payload.opacity,
+			keyframes: (layer.payload.keyframes as VisualElement["keyframes"]) ?? null,
+		} as VisualElement,
+		time,
+	});
+	const transform = transformOverride ?? state.transform;
+	const opacity = opacityOverride ?? state.opacity;
+	if (opacity <= 0) return;
+	const sourceWidth =
+		("width" in source.source && typeof source.source.width === "number"
+			? source.source.width
+			: source.width) || source.width;
+	const sourceHeight =
+		("height" in source.source && typeof source.source.height === "number"
+			? source.source.height
+			: source.height) || source.height;
+	drawVisualToContext({
+		ctx,
+		canvasWidth,
+		canvasHeight,
+		source: source.source,
+		sourceWidth,
+		sourceHeight,
+		transform,
+		opacity,
+		blendMode: (layer.payload.blendMode as never) ?? undefined,
+	});
 }
 
 async function loadResolvedSource({

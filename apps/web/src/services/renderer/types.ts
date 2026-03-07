@@ -1,11 +1,16 @@
 import type { TBackground } from "@/types/project";
 import type { BlendMode, Transform } from "@/types/rendering";
-import type { TextElement } from "@/types/timeline";
+import type {
+	ElementTransitionIn,
+	TextElement,
+	VisualKeyframeMap,
+} from "@/types/timeline";
 
 export type RenderBackground = TBackground;
 
 interface BaseRenderLayer {
 	id: string;
+	trackId: string;
 	zIndex: number;
 	startTime: number;
 	duration: number;
@@ -17,6 +22,8 @@ interface BaseRenderLayer {
 export interface RenderVideoPayload {
 	mediaId: string;
 	playbackRate: number;
+	keyframes?: VisualKeyframeMap | null;
+	transitionIn?: ElementTransitionIn | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
@@ -25,6 +32,8 @@ export interface RenderVideoPayload {
 
 export interface RenderImagePayload {
 	mediaId: string;
+	keyframes?: VisualKeyframeMap | null;
+	transitionIn?: ElementTransitionIn | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
@@ -40,6 +49,8 @@ export interface RenderTextPayload extends TextElement {
 export interface RenderStickerPayload {
 	stickerId: string;
 	sourceUrl: string;
+	keyframes?: VisualKeyframeMap | null;
+	transitionIn?: ElementTransitionIn | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
@@ -48,10 +59,12 @@ export interface RenderStickerPayload {
 export type RenderLayer =
 	| (BaseRenderLayer & {
 			kind: "video";
+			previousVisualLayerId?: string | null;
 			payload: RenderVideoPayload;
 	  })
 	| (BaseRenderLayer & {
 			kind: "image";
+			previousVisualLayerId?: string | null;
 			payload: RenderImagePayload;
 	  })
 	| (BaseRenderLayer & {

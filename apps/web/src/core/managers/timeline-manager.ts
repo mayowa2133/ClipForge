@@ -28,6 +28,11 @@ import {
 	UpdateElementPlaybackRateCommand,
 	SeparateAudioCommand,
 	InsertFreezeFrameCommand,
+	SetElementTransitionInCommand,
+	ClearElementTransitionInCommand,
+	SetElementKeyframeCommand,
+	RemoveElementKeyframeCommand,
+	ClearElementKeyframesCommand,
 } from "@/lib/commands/timeline";
 import { BatchCommand, PreviewTracker } from "@/lib/commands";
 import type { InsertElementParams } from "@/lib/commands/timeline/element/insert-element";
@@ -36,6 +41,16 @@ import {
 	clampPlaybackRate,
 	getElementSourceTimeAtTimelineTime,
 } from "@/lib/timeline/manual-editing";
+import {
+	clampTransitionDuration,
+	findAdjacentVisualIncomingTransitionTarget,
+	getBasePropertyValue,
+	getElementLocalTime,
+	isVisualElementWithMotion,
+	isTransitionPreset,
+	removePropertyKeyframeValue,
+	type AnimatableVisualProperty,
+} from "@/lib/timeline";
 import { mediaSupportsAudio } from "@/lib/media/media-utils";
 
 export class TimelineManager {
@@ -270,6 +285,144 @@ export class TimelineManager {
 			duration,
 			ripple,
 		);
+		this.editor.command.execute({ command });
+	}
+
+	setElementTransitionIn({
+		trackId,
+		elementId,
+		preset,
+		duration,
+	}: {
+		trackId: string;
+		elementId: string;
+		preset: string;
+		duration: number;
+	}): void {
+		if (!isTransitionPreset(preset)) {
+			throw new Error("Unsupported transition preset.");
+		}
+
+		const track = this.getTrackById({ trackId });
+		const fps = this.editor.project.getActive()?.settings.fps ?? 30;
+		const adjacency = track
+			? findAdjacentVisualIncomingTransitionTarget({
+					track,
+					elementId,
+					fps,
+			  })
+			: null;
+		if (!adjacency) {
+			throw new Error(
+				"Transitions require an adjacent visual clip immediately before the selected clip.",
+			);
+		}
+
+		const transitionDuration = clampTransitionDuration({
+			duration,
+			currentDuration: adjacency.current.duration,
+			previousDuration: adjacency.previous.duration,
+		});
+
+		const command = new SetElementTransitionInCommand(trackId, elementId, {
+			preset,
+			duration: transitionDuration,
+		});
+		this.editor.command.execute({ command });
+	}
+
+	clearElementTransitionIn({
+		trackId,
+		elementId,
+	}: {
+		trackId: string;
+		elementId: string;
+	}): void {
+		const command = new ClearElementTransitionInCommand(trackId, elementId);
+		this.editor.command.execute({ command });
+	}
+
+	setElementKeyframe({
+		trackId,
+		elementId,
+		property,
+		time,
+		value,
+	}: {
+		trackId: string;
+		elementId: string;
+		property: AnimatableVisualProperty;
+		time: number;
+		value: number;
+	}): void {
+		const track = this.getTrackById({ trackId });
+		const element = track?.elements.find((candidate) => candidate.id === elementId);
+		if (!element || !isVisualElementWithMotion(element)) {
+			throw new Error("Only visual elements support keyframes.");
+		}
+		if (!Number.isFinite(time) || !Number.isFinite(value)) {
+			throw new Error("Keyframe time and value must be finite numbers.");
+		}
+		const localTime = getElementLocalTime({ element, time });
+		const command = new SetElementKeyframeCommand(
+			trackId,
+			elementId,
+			property,
+			localTime,
+			value,
+		);
+		this.editor.command.execute({ command });
+	}
+
+	removeElementKeyframe({
+		trackId,
+		elementId,
+		property,
+		time,
+	}: {
+		trackId: string;
+		elementId: string;
+		property: AnimatableVisualProperty;
+		time: number;
+	}): void {
+		const track = this.getTrackById({ trackId });
+		const element = track?.elements.find((candidate) => candidate.id === elementId);
+		if (!element || !isVisualElementWithMotion(element)) {
+			throw new Error("Only visual elements support keyframes.");
+		}
+		const localTime = getElementLocalTime({ element, time });
+		const nextKeyframes = removePropertyKeyframeValue({
+			element,
+			property,
+			localTime,
+		});
+		if (nextKeyframes === element.keyframes) {
+			return;
+		}
+		const command = new RemoveElementKeyframeCommand(
+			trackId,
+			elementId,
+			property,
+			localTime,
+		);
+		this.editor.command.execute({ command });
+	}
+
+	clearElementKeyframes({
+		trackId,
+		elementId,
+		property,
+	}: {
+		trackId: string;
+		elementId: string;
+		property?: AnimatableVisualProperty;
+	}): void {
+		const track = this.getTrackById({ trackId });
+		const element = track?.elements.find((candidate) => candidate.id === elementId);
+		if (!element || !isVisualElementWithMotion(element)) {
+			throw new Error("Only visual elements support keyframes.");
+		}
+		const command = new ClearElementKeyframesCommand(trackId, elementId, property);
 		this.editor.command.execute({ command });
 	}
 

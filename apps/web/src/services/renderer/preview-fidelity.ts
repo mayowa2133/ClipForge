@@ -212,18 +212,19 @@ function serializeRenderLayer({ layer }: { layer: RenderLayer }): string {
 	const payloadIdentity = (() => {
 		switch (layer.kind) {
 			case "video":
-				return `video:${layer.payload.mediaId}`;
+				return `video:${layer.payload.mediaId}:${JSON.stringify(layer.payload.keyframes ?? null)}:${JSON.stringify(layer.payload.transitionIn ?? null)}`;
 			case "image":
-				return `image:${layer.payload.mediaId}`;
+				return `image:${layer.payload.mediaId}:${JSON.stringify(layer.payload.keyframes ?? null)}:${JSON.stringify(layer.payload.transitionIn ?? null)}`;
 			case "text":
-				return `text:${layer.payload.content}`;
+				return `text:${layer.payload.content}:${JSON.stringify(layer.payload.keyframes ?? null)}:${JSON.stringify(layer.payload.transitionIn ?? null)}`;
 			case "sticker":
-				return `sticker:${layer.payload.stickerId}:${layer.payload.sourceUrl}`;
+				return `sticker:${layer.payload.stickerId}:${layer.payload.sourceUrl}:${JSON.stringify(layer.payload.keyframes ?? null)}:${JSON.stringify(layer.payload.transitionIn ?? null)}`;
 		}
 	})();
 
 	return [
 		layer.id,
+		layer.trackId,
 		layer.kind,
 		layer.zIndex,
 		layer.startTime,
@@ -231,6 +232,7 @@ function serializeRenderLayer({ layer }: { layer: RenderLayer }): string {
 		layer.trimStart,
 		layer.trimEnd,
 		layer.hidden ? 1 : 0,
+		"previousVisualLayerId" in layer ? (layer.previousVisualLayerId ?? "none") : "none",
 		payloadIdentity,
 	].join(":");
 }

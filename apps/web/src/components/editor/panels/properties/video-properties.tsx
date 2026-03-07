@@ -2,6 +2,13 @@
 
 import { Button } from "@/components/ui/button";
 import { NumberField } from "@/components/ui/number-field";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { useEditor } from "@/hooks/use-editor";
 import { useReplaceMedia } from "@/hooks/use-replace-media";
 import { useTimelineStore } from "@/stores/timeline-store";
@@ -15,6 +22,43 @@ import {
 	getPlaybackDurationForSourceSpan,
 } from "@/lib/timeline/manual-editing";
 import { formatTimeCode } from "@/lib/time";
+import type { TransitionPreset } from "@/types/timeline";
+import {
+	clampTransitionDuration,
+	findAdjacentVisualIncomingTransitionTarget,
+} from "@/lib/timeline";
+
+const TRANSITION_PRESETS: Array<{
+	value: TransitionPreset;
+	label: string;
+	description: string;
+	defaultDuration: number;
+}> = [
+	{
+		value: "cross-dissolve",
+		label: "Cross dissolve",
+		description: "Blend the outgoing and incoming clips.",
+		defaultDuration: 0.5,
+	},
+	{
+		value: "fade-black",
+		label: "Fade through black",
+		description: "Fade out to black, then bring in the next clip.",
+		defaultDuration: 0.5,
+	},
+	{
+		value: "fade-white",
+		label: "Fade through white",
+		description: "Fade out to white, then bring in the next clip.",
+		defaultDuration: 0.5,
+	},
+	{
+		value: "slide",
+		label: "Slide",
+		description: "Slide the new clip in from the right.",
+		defaultDuration: 0.4,
+	},
+];
 
 const SPEED_PRESETS = [0.5, 1, 1.5, 2];
 
@@ -30,6 +74,9 @@ export function VideoProperties({
 			<SourceSection element={element} trackId={trackId} />
 			{element.type === "video" ? (
 				<SpeedSection element={element} trackId={trackId} />
+			) : null}
+			{element.type !== "sticker" ? (
+				<TransitionSection element={element} trackId={trackId} />
 			) : null}
 			<TransformSection element={element} trackId={trackId} />
 			<BlendingSection element={element} trackId={trackId} />
@@ -161,6 +208,157 @@ function SpeedSection({
 						Result duration {formatTimeCode({ timeInSeconds: nextDuration })}
 						{rippleEditingEnabled ? " with ripple." : " without ripple."}
 					</p>
+				</SectionFields>
+			</SectionContent>
+		</Section>
+	);
+}
+
+function TransitionSection({
+	element,
+	trackId,
+}: {
+	element: VideoElement | ImageElement;
+	trackId: string;
+}) {
+	const editor = useEditor();
+	const track = editor.timeline.getTrackById({ trackId });
+	const fps = editor.project.getActive()?.settings.fps ?? 30;
+	const adjacency =
+		track?.type === "video"
+			? findAdjacentVisualIncomingTransitionTarget({
+					track,
+					elementId: element.id,
+					fps,
+			  })
+			: null;
+	const transition = element.transitionIn ?? null;
+	const selectedPreset = transition?.preset ?? TRANSITION_PRESETS[0].value;
+	const currentDuration = transition?.duration ?? TRANSITION_PRESETS[0].defaultDuration;
+	const durationDraft = usePropertyDraft({
+		displayValue: currentDuration.toFixed(2),
+		parse: (input) => {
+			const parsed = parseFloat(input);
+			if (Number.isNaN(parsed)) return null;
+			return clampTransitionDuration({
+				duration: parsed,
+				currentDuration: adjacency?.current.duration ?? element.duration,
+				previousDuration: adjacency?.previous.duration ?? element.duration,
+			});
+		},
+		onPreview: () => {},
+		onCommit: () => {},
+	});
+	const helperText = adjacency
+		? `Transition from "${adjacency.previous.name}" into "${adjacency.current.name}".`
+		: "Transitions require a touching visual clip immediately before this clip on the same video track.";
+
+	return (
+		<Section collapsible sectionKey={`${element.type}:transition`}>
+			<SectionHeader title="Transition" />
+			<SectionContent>
+				<SectionFields>
+					<SectionField label="Preset">
+						<Select
+							value={selectedPreset}
+							onValueChange={(value: TransitionPreset) => {
+								const presetConfig =
+									TRANSITION_PRESETS.find((preset) => preset.value === value) ??
+									TRANSITION_PRESETS[0];
+								editor.timeline.setElementTransitionIn({
+									trackId,
+									elementId: element.id,
+									preset: value,
+									duration: transition?.duration ?? presetConfig.defaultDuration,
+								});
+							}}
+							disabled={!adjacency}
+						>
+							<SelectTrigger className="w-full">
+								<SelectValue placeholder="Select transition" />
+							</SelectTrigger>
+							<SelectContent>
+								{TRANSITION_PRESETS.map((preset) => (
+									<SelectItem key={preset.value} value={preset.value}>
+										{preset.label}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</SectionField>
+
+					<SectionField label="Duration">
+						<NumberField
+							value={durationDraft.displayValue}
+							onFocus={durationDraft.onFocus}
+							onChange={durationDraft.onChange}
+							onBlur={() => {
+								const parsed = parseFloat(durationDraft.currentValue);
+								durationDraft.onBlur();
+								if (Number.isNaN(parsed) || !adjacency) return;
+								editor.timeline.setElementTransitionIn({
+									trackId,
+									elementId: element.id,
+									preset: selectedPreset,
+									duration: parsed,
+								});
+							}}
+							onReset={() => {
+								const presetConfig =
+									TRANSITION_PRESETS.find((preset) => preset.value === selectedPreset) ??
+									TRANSITION_PRESETS[0];
+								editor.timeline.setElementTransitionIn({
+									trackId,
+									elementId: element.id,
+									preset: selectedPreset,
+									duration: presetConfig.defaultDuration,
+								});
+							}}
+							isDefault={
+								currentDuration ===
+								(TRANSITION_PRESETS.find((preset) => preset.value === selectedPreset)
+									?.defaultDuration ?? TRANSITION_PRESETS[0].defaultDuration)
+							}
+							disabled={!adjacency}
+							icon="s"
+						/>
+					</SectionField>
+
+					<p className="text-muted-foreground text-xs">{helperText}</p>
+
+					<div className="flex gap-2">
+						<Button
+							variant="outline"
+							size="sm"
+							disabled={!adjacency}
+							onClick={() => {
+								const presetConfig =
+									TRANSITION_PRESETS.find((preset) => preset.value === selectedPreset) ??
+									TRANSITION_PRESETS[0];
+								editor.timeline.setElementTransitionIn({
+									trackId,
+									elementId: element.id,
+									preset: selectedPreset,
+									duration: transition?.duration ?? presetConfig.defaultDuration,
+								});
+							}}
+						>
+							{transition ? "Update Transition" : "Apply Transition"}
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							disabled={!transition}
+							onClick={() =>
+								editor.timeline.clearElementTransitionIn({
+									trackId,
+									elementId: element.id,
+								})
+							}
+						>
+							Remove
+						</Button>
+					</div>
 				</SectionFields>
 			</SectionContent>
 		</Section>

@@ -11,6 +11,7 @@ import {
 
 type WorkerImageLayer = {
 	id: string;
+	trackId: string;
 	zIndex: number;
 	kind: "image" | "sticker";
 	startTime: number;
@@ -24,7 +25,10 @@ type WorkerImageLayer = {
 		opacity: number;
 		blendMode?: string;
 		maxSourceSize?: number;
+		keyframes?: unknown;
+		transitionIn?: { preset: "cross-dissolve" | "fade-black" | "fade-white" | "slide"; duration: number } | null;
 	};
+	previousVisualLayerId?: string | null;
 };
 
 type WorkerTextLayer = Extract<RenderGraph["layers"][number], { kind: "text" }>;

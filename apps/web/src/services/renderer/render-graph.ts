@@ -41,10 +41,25 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 				return a.id.localeCompare(b.id);
 			});
 
+		const previousVisualLayerIdByElementId = new Map<string, string | null>();
+		if (track.type === "video") {
+			let previousVisualElement: (typeof elements)[number] | null = null;
+			for (const element of elements) {
+				if (element.type === "video" || element.type === "image") {
+					previousVisualLayerIdByElementId.set(
+						element.id,
+						previousVisualElement?.id ?? null,
+					);
+					previousVisualElement = element;
+				}
+			}
+		}
+
 		for (const element of elements) {
 			if (element.type === "video") {
 				layers.push({
 					id: element.id,
+					trackId: track.id,
 					zIndex: zIndex++,
 					kind: "video",
 					startTime: element.startTime,
@@ -52,9 +67,13 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 					trimStart: element.trimStart,
 					trimEnd: element.trimEnd,
 					hidden: false,
+					previousVisualLayerId:
+						previousVisualLayerIdByElementId.get(element.id) ?? null,
 					payload: {
 						mediaId: element.mediaId,
 						playbackRate: getElementPlaybackRate({ element }),
+						keyframes: element.keyframes ?? null,
+						transitionIn: element.transitionIn ?? null,
 						transform: element.transform,
 						opacity: element.opacity,
 						blendMode: element.blendMode,
@@ -67,6 +86,7 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 			if (element.type === "image") {
 				layers.push({
 					id: element.id,
+					trackId: track.id,
 					zIndex: zIndex++,
 					kind: "image",
 					startTime: element.startTime,
@@ -74,8 +94,12 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 					trimStart: element.trimStart,
 					trimEnd: element.trimEnd,
 					hidden: false,
+					previousVisualLayerId:
+						previousVisualLayerIdByElementId.get(element.id) ?? null,
 					payload: {
 						mediaId: element.mediaId,
+						keyframes: element.keyframes ?? null,
+						transitionIn: element.transitionIn ?? null,
 						transform: element.transform,
 						opacity: element.opacity,
 						blendMode: element.blendMode,
@@ -88,6 +112,7 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 			if (element.type === "text") {
 				layers.push({
 					id: element.id,
+					trackId: track.id,
 					zIndex: zIndex++,
 					kind: "text",
 					startTime: element.startTime,
@@ -111,6 +136,7 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 			if (element.type === "sticker") {
 				layers.push({
 					id: element.id,
+					trackId: track.id,
 					zIndex: zIndex++,
 					kind: "sticker",
 					startTime: element.startTime,
@@ -124,6 +150,8 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 							stickerId: element.stickerId,
 							options: { width: 200, height: 200 },
 						}),
+						keyframes: element.keyframes ?? null,
+						transitionIn: element.transitionIn ?? null,
 						transform: element.transform,
 						opacity: element.opacity,
 						blendMode: element.blendMode,

@@ -87,7 +87,7 @@ function createProjectFixture(): TProject {
 			canvasSize: { width: 1080, height: 1920 },
 			background: { type: "color", color: "#000000" },
 		},
-		version: 9,
+		version: 10,
 	};
 }
 

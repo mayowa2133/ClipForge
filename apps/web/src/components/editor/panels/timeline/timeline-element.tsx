@@ -13,6 +13,8 @@ import {
 	canElementHaveAudio,
 	canElementBeHidden,
 	hasMediaId,
+	hasAnyVisualKeyframes,
+	isVisualElementWithMotion,
 } from "@/lib/timeline";
 import {
 	ContextMenu,
@@ -273,6 +275,16 @@ function ElementInner({
 				},
 			)} ${canElementBeHidden(element) && element.hidden ? "opacity-50" : ""}`}
 		>
+			{isVisualElementWithMotion(element) && element.transitionIn ? (
+				<div className="absolute top-1 left-1 z-10 rounded bg-black/65 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-white">
+					Trans
+				</div>
+			) : null}
+			{isVisualElementWithMotion(element) && hasAnyVisualKeyframes({ element }) ? (
+				<div className="absolute top-1 right-1 z-10 rounded-full bg-primary/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary-foreground">
+					Anim
+				</div>
+			) : null}
 			<button
 				type="button"
 				className="absolute inset-0 size-full cursor-pointer"

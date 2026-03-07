@@ -36,6 +36,7 @@ describe("preview fidelity", () => {
 			layers: [
 				{
 					id: "video-1",
+					trackId: "track-video-1",
 					kind: "video",
 					zIndex: 0,
 					startTime: 0,
@@ -60,6 +61,7 @@ describe("preview fidelity", () => {
 			layers: [
 				{
 					id: "video-1",
+					trackId: "track-video-1",
 					kind: "video",
 					zIndex: 0,
 					startTime: 0,
@@ -101,6 +103,7 @@ describe("preview fidelity", () => {
 				layers: [
 					{
 						id: "text-1",
+						trackId: "track-text-1",
 						kind: "text",
 						zIndex: 0,
 						startTime: 1.5,

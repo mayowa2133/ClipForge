@@ -19,6 +19,30 @@ export interface TScene {
 
 export type TrackType = "video" | "text" | "audio" | "sticker";
 
+export type TransitionPreset =
+	| "cross-dissolve"
+	| "fade-black"
+	| "fade-white"
+	| "slide";
+
+export interface ElementTransitionIn {
+	preset: TransitionPreset;
+	duration: number;
+}
+
+export interface AnimatedPropertyKeyframe {
+	time: number;
+	value: number;
+}
+
+export interface VisualKeyframeMap {
+	positionX?: AnimatedPropertyKeyframe[];
+	positionY?: AnimatedPropertyKeyframe[];
+	scale?: AnimatedPropertyKeyframe[];
+	rotate?: AnimatedPropertyKeyframe[];
+	opacity?: AnimatedPropertyKeyframe[];
+}
+
 interface BaseTrack {
 	id: string;
 	name: string;
@@ -93,6 +117,8 @@ export interface VideoElement extends BaseTimelineElement {
 	hidden?: boolean;
 	playbackRate?: number;
 	linkedGroupId?: string | null;
+	transitionIn?: ElementTransitionIn | null;
+	keyframes?: VisualKeyframeMap | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
@@ -103,6 +129,8 @@ export interface ImageElement extends BaseTimelineElement {
 	mediaId: string;
 	hidden?: boolean;
 	linkedGroupId?: string | null;
+	transitionIn?: ElementTransitionIn | null;
+	keyframes?: VisualKeyframeMap | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
@@ -130,6 +158,8 @@ export interface TextElement extends BaseTimelineElement {
 	lineHeight?: number;
 	hidden?: boolean;
 	linkedGroupId?: string | null;
+	transitionIn?: ElementTransitionIn | null;
+	keyframes?: VisualKeyframeMap | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
@@ -140,6 +170,8 @@ export interface StickerElement extends BaseTimelineElement {
 	stickerId: string;
 	hidden?: boolean;
 	linkedGroupId?: string | null;
+	transitionIn?: ElementTransitionIn | null;
+	keyframes?: VisualKeyframeMap | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;

@@ -31,6 +31,7 @@ export function usePropertyDraft<T>({
 
 	return {
 		displayValue: isEditing.current ? draft.current : sourceDisplay,
+		currentValue: isEditing.current ? draft.current : sourceDisplay,
 		scrubTo: (value: number) => {
 			const parsed = parse(String(value));
 			if (parsed !== null) onPreview(parsed);
