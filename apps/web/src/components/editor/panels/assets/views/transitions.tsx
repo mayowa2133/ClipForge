@@ -5,12 +5,8 @@ import { PanelView } from "@/components/editor/panels/assets/views/base-view";
 import { useEditor } from "@/hooks/use-editor";
 import { useElementSelection } from "@/hooks/timeline/element/use-element-selection";
 import { findAdjacentVisualIncomingTransitionTarget } from "@/lib/timeline";
-import type {
-	ImageElement,
-	TimelineTrack,
-	TransitionPreset,
-	VideoElement,
-} from "@/types/timeline";
+import type { TimelineTrack, TransitionPreset } from "@/types/timeline";
+import { resolveSelectedVisualTarget } from "./finishable-selection";
 
 const BUILT_IN_TRANSITIONS: Array<{
 	value: TransitionPreset;
@@ -44,27 +40,6 @@ const BUILT_IN_TRANSITIONS: Array<{
 	},
 ];
 
-type SelectedVisualTarget = {
-	track: TimelineTrack;
-	element: VideoElement | ImageElement;
-};
-
-function resolveSelectedVisualTarget({
-	editor,
-}: {
-	editor: ReturnType<typeof useEditor>;
-}): SelectedVisualTarget | null {
-	const selectedElements = editor.selection.getSelectedElements();
-	if (selectedElements.length !== 1) return null;
-	const selected = selectedElements[0];
-	if (!selected) return null;
-	const track = editor.timeline.getTrackById({ trackId: selected.trackId });
-	if (!track || track.type !== "video") return null;
-	const element = track.elements.find((candidate) => candidate.id === selected.elementId);
-	if (!element || (element.type !== "video" && element.type !== "image")) return null;
-	return { track, element };
-}
-
 export function TransitionsView() {
 	const editor = useEditor();
 	useElementSelection();
@@ -84,13 +59,13 @@ export function TransitionsView() {
 			<div className="flex flex-col gap-3 p-2">
 				{selectedTarget && adjacency ? (
 					<p className="text-muted-foreground text-sm">
-						Apply a transition into <span className="text-foreground">{selectedTarget.element.name}</span>.
+						Apply a transition to <span className="text-foreground">{selectedTarget.element.name}</span>. Tune duration in the inspector.
 					</p>
 				) : (
 					<div className="rounded-md border p-4">
-						<p className="font-medium">Select an eligible clip</p>
+						<p className="font-medium">Select a visual clip</p>
 						<p className="text-muted-foreground mt-1 text-sm">
-							Transitions apply to a selected video or image clip that touches another visual clip immediately before it on the same video track.
+							Browse transitions for a visual clip with a touching cut before it. Linked audio can stay selected.
 						</p>
 					</div>
 				)}

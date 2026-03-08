@@ -36,13 +36,13 @@ export function EffectsView() {
 			<div className="flex flex-col gap-3 p-2">
 				{target ? (
 					<p className="text-muted-foreground text-sm">
-						Add finishing effects to <span className="text-foreground">{target.element.name}</span>.
+						Add effects to <span className="text-foreground">{target.element.name}</span>.
 					</p>
 				) : (
 					<div className="rounded-md border p-4">
-						<p className="font-medium">Select a single video or image clip</p>
+						<p className="font-medium">Select a visual clip</p>
 						<p className="text-muted-foreground mt-1 text-sm">
-							Effects apply to one visual clip at a time. Linked audio can stay selected.
+							Browse effects for one visual clip. Linked audio can stay selected.
 						</p>
 					</div>
 				)}
@@ -80,7 +80,7 @@ export function EffectsView() {
 				</div>
 				{effects.length > 0 ? (
 					<div className="rounded-md border p-3">
-						<p className="mb-2 font-medium">Current stack</p>
+						<p className="mb-2 font-medium">Stack</p>
 						<div className="flex flex-col gap-2">
 							{effects.map((effect, index) => (
 								<div key={effect.id} className="flex items-center justify-between gap-2 text-sm">

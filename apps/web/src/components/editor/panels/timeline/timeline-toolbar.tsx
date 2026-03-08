@@ -114,6 +114,8 @@ function ToolbarLeftSection() {
 					}
 				/>
 
+				<div className="bg-border mx-1 h-6 w-px" />
+
 				<ToolbarButton
 					icon={<SplitSquareHorizontal />}
 					tooltip="Separate audio"
@@ -206,14 +208,14 @@ function ToolbarRightSection({
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={MagnetIcon} />}
 					isActive={snappingEnabled}
-					tooltip="Auto snapping"
+					tooltip="Snapping"
 					onClick={() => toggleSnapping()}
 				/>
 
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={Link04Icon} className="scale-110" />}
 					isActive={rippleEditingEnabled}
-					tooltip="Ripple editing"
+					tooltip="Ripple"
 					onClick={() => toggleRippleEditing()}
 				/>
 			</TooltipProvider>

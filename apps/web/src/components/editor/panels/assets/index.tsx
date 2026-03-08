@@ -4,7 +4,6 @@ import { Separator } from "@/components/ui/separator";
 import { type Tab, useAssetsPanelStore } from "@/stores/assets-panel-store";
 import { TabBar } from "./tabbar";
 import { Captions } from "./views/captions";
-import { AdjustmentView } from "./views/adjustment";
 import { MediaView } from "./views/assets";
 import { EffectsView } from "./views/effects";
 import { FiltersView } from "./views/filters";
@@ -26,7 +25,6 @@ export function AssetsPanel() {
 		transitions: <TransitionsView />,
 		captions: <Captions />,
 		filters: <FiltersView />,
-		adjustment: <AdjustmentView />,
 		settings: <SettingsView />,
 	};
 

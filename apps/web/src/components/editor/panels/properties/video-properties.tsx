@@ -2,15 +2,9 @@
 
 import { Button } from "@/components/ui/button";
 import { NumberField } from "@/components/ui/number-field";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import { useEditor } from "@/hooks/use-editor";
 import { useReplaceMedia } from "@/hooks/use-replace-media";
+import { useAssetsPanelStore } from "@/stores/assets-panel-store";
 import { useTimelineStore } from "@/stores/timeline-store";
 import type { ImageElement, StickerElement, VideoElement } from "@/types/timeline";
 import { BlendingSection, TransformSection } from "./sections";
@@ -124,7 +118,7 @@ function SourceSection({
 						onClick={openReplaceMediaPicker}
 						disabled={isReplacing}
 					>
-						{isReplacing ? "Replacing..." : "Replace Media"}
+						{isReplacing ? "Replacing..." : "Replace"}
 					</Button>
 					<input {...fileInputProps} />
 				</SectionFields>
@@ -165,7 +159,7 @@ function SpeedSection({
 			<SectionHeader title="Speed" />
 			<SectionContent>
 				<SectionFields>
-					<SectionField label="Playback rate">
+					<SectionField label="Rate">
 						<NumberField
 							value={draft.displayValue}
 							onFocus={draft.onFocus}
@@ -213,8 +207,8 @@ function SpeedSection({
 						))}
 					</div>
 					<p className="text-muted-foreground text-xs">
-						Result duration {formatTimeCode({ timeInSeconds: nextDuration })}
-						{rippleEditingEnabled ? " with ripple." : " without ripple."}
+						Length {formatTimeCode({ timeInSeconds: nextDuration })}
+						{rippleEditingEnabled ? " · Ripple on" : " · Ripple off"}
 					</p>
 				</SectionFields>
 			</SectionContent>
@@ -230,6 +224,7 @@ function TransitionSection({
 	trackId: string;
 }) {
 	const editor = useEditor();
+	const setActiveTab = useAssetsPanelStore((state) => state.setActiveTab);
 	const track = editor.timeline.getTrackById({ trackId });
 	const fps = editor.project.getActive()?.settings.fps ?? 30;
 	const adjacency =
@@ -258,41 +253,20 @@ function TransitionSection({
 		onCommit: () => {},
 	});
 	const helperText = adjacency
-		? `Transition from "${adjacency.previous.name}" into "${adjacency.current.name}".`
-		: "Transitions require a touching visual clip immediately before this clip on the same video track.";
+		? `From "${adjacency.previous.name}" into "${adjacency.current.name}".`
+		: "Pick a clip with a touching visual cut before it.";
+	const selectedPresetLabel =
+		TRANSITION_PRESETS.find((preset) => preset.value === selectedPreset)?.label ?? "None";
 
 	return (
 		<Section collapsible sectionKey={`${element.type}:transition`}>
 			<SectionHeader title="Transition" />
 			<SectionContent>
 				<SectionFields>
-					<SectionField label="Preset">
-						<Select
-							value={selectedPreset}
-							onValueChange={(value: TransitionPreset) => {
-								const presetConfig =
-									TRANSITION_PRESETS.find((preset) => preset.value === value) ??
-									TRANSITION_PRESETS[0];
-								editor.timeline.setElementTransitionIn({
-									trackId,
-									elementId: element.id,
-									preset: value,
-									duration: transition?.duration ?? presetConfig.defaultDuration,
-								});
-							}}
-							disabled={!adjacency}
-						>
-							<SelectTrigger className="w-full">
-								<SelectValue placeholder="Select transition" />
-							</SelectTrigger>
-							<SelectContent>
-								{TRANSITION_PRESETS.map((preset) => (
-									<SelectItem key={preset.value} value={preset.value}>
-										{preset.label}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
+					<SectionField label="Transition">
+						<div className="rounded-md border px-3 py-2 text-sm">
+							{transition ? selectedPresetLabel : "None"}
+						</div>
 					</SectionField>
 
 					<SectionField label="Duration">
@@ -303,7 +277,7 @@ function TransitionSection({
 							onBlur={() => {
 								const parsed = parseFloat(durationDraft.currentValue);
 								durationDraft.onBlur();
-								if (Number.isNaN(parsed) || !adjacency) return;
+								if (Number.isNaN(parsed) || !adjacency || !transition) return;
 								editor.timeline.setElementTransitionIn({
 									trackId,
 									elementId: element.id,
@@ -312,6 +286,7 @@ function TransitionSection({
 								});
 							}}
 							onReset={() => {
+								if (!transition) return;
 								const presetConfig =
 									TRANSITION_PRESETS.find((preset) => preset.value === selectedPreset) ??
 									TRANSITION_PRESETS[0];
@@ -327,7 +302,7 @@ function TransitionSection({
 								(TRANSITION_PRESETS.find((preset) => preset.value === selectedPreset)
 									?.defaultDuration ?? TRANSITION_PRESETS[0].defaultDuration)
 							}
-							disabled={!adjacency}
+							disabled={!adjacency || !transition}
 							icon="s"
 						/>
 					</SectionField>
@@ -338,20 +313,9 @@ function TransitionSection({
 						<Button
 							variant="outline"
 							size="sm"
-							disabled={!adjacency}
-							onClick={() => {
-								const presetConfig =
-									TRANSITION_PRESETS.find((preset) => preset.value === selectedPreset) ??
-									TRANSITION_PRESETS[0];
-								editor.timeline.setElementTransitionIn({
-									trackId,
-									elementId: element.id,
-									preset: selectedPreset,
-									duration: transition?.duration ?? presetConfig.defaultDuration,
-								});
-							}}
+							onClick={() => setActiveTab("transitions")}
 						>
-							{transition ? "Update Transition" : "Apply Transition"}
+							Browse
 						</Button>
 						<Button
 							variant="ghost"
@@ -364,7 +328,7 @@ function TransitionSection({
 								})
 							}
 						>
-							Remove
+							Clear
 						</Button>
 					</div>
 				</SectionFields>

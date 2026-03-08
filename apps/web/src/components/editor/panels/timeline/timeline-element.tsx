@@ -25,6 +25,12 @@ import {
 	ContextMenuSeparator,
 	ContextMenuTrigger,
 } from "../../../ui/context-menu";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "../../../ui/tooltip";
 import type {
 	TimelineElement as TimelineElementType,
 	TimelineTrack,
@@ -36,7 +42,13 @@ import { getActionDefinition, type TAction, invokeAction } from "@/lib/actions";
 import { useElementSelection } from "@/hooks/timeline/element/use-element-selection";
 import { resolveStickerId } from "@/lib/stickers";
 import Image from "next/image";
-import { SplitSquareHorizontal } from "lucide-react";
+import {
+	Blend,
+	Diamond,
+	SlidersHorizontal,
+	Sparkles,
+	SplitSquareHorizontal,
+} from "lucide-react";
 import {
 	ScissorIcon,
 	Delete02Icon,
@@ -52,7 +64,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { uppercase } from "@/utils/string";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 function getDisplayShortcut(action: TAction) {
 	const { defaultShortcuts } = getActionDefinition(action);
@@ -63,6 +75,23 @@ function getDisplayShortcut(action: TAction) {
 	return uppercase({
 		string: defaultShortcuts[0].replace("+", " "),
 	});
+}
+
+function StateBadge({
+	icon,
+	label,
+}: {
+	icon: ReactNode;
+	label: string;
+}) {
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<div className="rounded-md bg-black/65 p-1 text-white shadow-sm">{icon}</div>
+			</TooltipTrigger>
+			<TooltipContent>{label}</TooltipContent>
+		</Tooltip>
+	);
 }
 
 interface TimelineElementProps {
@@ -269,6 +298,16 @@ function ElementInner({
 		side: "left" | "right";
 	}) => void;
 }) {
+	const hasTransition = isVisualElementWithMotion(element) && Boolean(element.transitionIn);
+	const hasAnimation = isVisualElementWithMotion(element) && hasAnyVisualKeyframes({ element });
+	const hasAdjustments =
+		(element.type === "video" || element.type === "image") &&
+		hasVisualAdjustments({ element });
+	const hasEffects =
+		(element.type === "video" || element.type === "image") &&
+		hasVisualFinishing({ element }) &&
+		(element.effects?.length ?? 0) > 0;
+
 	return (
 		<div
 			className={`relative h-full cursor-pointer overflow-hidden rounded-[0.5rem] ${getTrackClasses(
@@ -277,29 +316,28 @@ function ElementInner({
 				},
 			)} ${canElementBeHidden(element) && element.hidden ? "opacity-50" : ""}`}
 		>
-			{isVisualElementWithMotion(element) && element.transitionIn ? (
-				<div className="absolute top-1 left-1 z-10 rounded bg-black/65 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-white">
-					Trans
+			<TooltipProvider delayDuration={200}>
+				<div className="absolute top-1 left-1 z-10 flex items-center gap-1">
+					{hasTransition ? (
+						<StateBadge icon={<Blend className="size-3" />} label="Transition" />
+					) : null}
 				</div>
-			) : null}
-			{isVisualElementWithMotion(element) && hasAnyVisualKeyframes({ element }) ? (
-				<div className="absolute top-1 right-1 z-10 rounded-full bg-primary/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary-foreground">
-					Anim
+				<div className="absolute top-1 right-1 z-10 flex items-center gap-1">
+					{hasAnimation ? (
+						<StateBadge icon={<Diamond className="size-3" />} label="Animation" />
+					) : null}
 				</div>
-			) : null}
-			{(element.type === "video" || element.type === "image") &&
-			hasVisualAdjustments({ element }) ? (
-				<div className="absolute bottom-1 left-1 z-10 rounded bg-black/65 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-white">
-					Adj
+				<div className="absolute bottom-1 left-1 z-10 flex items-center gap-1">
+					{hasAdjustments ? (
+						<StateBadge icon={<SlidersHorizontal className="size-3" />} label="Adjustments" />
+					) : null}
 				</div>
-			) : null}
-			{(element.type === "video" || element.type === "image") &&
-			hasVisualFinishing({ element }) &&
-			(element.effects?.length ?? 0) > 0 ? (
-				<div className="absolute bottom-1 right-1 z-10 rounded bg-primary/85 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary-foreground">
-					Fx
+				<div className="absolute bottom-1 right-1 z-10 flex items-center gap-1">
+					{hasEffects ? (
+						<StateBadge icon={<Sparkles className="size-3" />} label="Effects" />
+					) : null}
 				</div>
-			) : null}
+			</TooltipProvider>
 			<button
 				type="button"
 				className="absolute inset-0 size-full cursor-pointer"

@@ -2,18 +2,16 @@
 
 import { Button } from "@/components/ui/button";
 import { NumberField } from "@/components/ui/number-field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { useEditor } from "@/hooks/use-editor";
+import { useAssetsPanelStore } from "@/stores/assets-panel-store";
 import {
-	FILTER_PRESETS,
 	DEFAULT_VISUAL_ADJUSTMENTS,
 	clampVisualAdjustments,
 	findMatchingFilterPreset,
 	getFilterPresetById,
 	normalizeVisualEffects,
-	type FilterPresetId,
 	type FinishableVisualElement,
 } from "@/lib/timeline";
 import type { VisualAdjustments, VisualEffect, VisualEffectKind } from "@/types/timeline";
@@ -53,53 +51,41 @@ export function FilterSection({
 	trackId: string;
 }) {
 	const editor = useEditor();
+	const setActiveTab = useAssetsPanelStore((state) => state.setActiveTab);
 	const matchingPreset = findMatchingFilterPreset({
 		adjustments: element.adjustments ?? null,
 		effects: element.effects ?? null,
 	});
+	const presetLabel = matchingPreset
+		? getFilterPresetById({ presetId: matchingPreset })?.label ?? "Custom"
+		: "Custom";
+	const presetDescription = matchingPreset
+		? getFilterPresetById({ presetId: matchingPreset })?.description
+		: "Custom look. Browse presets in Filters.";
 
 	return (
 		<Section collapsible sectionKey={`${element.type}:filter`}>
 			<SectionHeader title="Filter" />
 			<SectionContent>
 				<SectionFields>
-					<SectionField label="Preset">
-						<Select
-							value={matchingPreset ?? "custom"}
-							onValueChange={(value) => {
-								if (value === "custom") return;
-								editor.timeline.applyElementFilterPreset({
-									trackId,
-									elementId: element.id,
-									presetId: value as FilterPresetId,
-								});
-							}}
-						>
-							<SelectTrigger>
-								<SelectValue placeholder="Choose a filter preset" />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="custom">Custom</SelectItem>
-								{FILTER_PRESETS.map((preset) => (
-									<SelectItem key={preset.id} value={preset.id}>
-										{preset.label}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
+					<SectionField label="Look">
+						<div className="rounded-md border px-3 py-2 text-sm">{presetLabel}</div>
 					</SectionField>
-					<p className="text-muted-foreground text-xs">
-						{matchingPreset
-							? getFilterPresetById({ presetId: matchingPreset })?.description
-							: "This clip no longer matches an exact built-in preset."}
-					</p>
+					<p className="text-muted-foreground text-xs">{presetDescription}</p>
 					<div className="flex gap-2">
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => setActiveTab("filters")}
+						>
+							Browse
+						</Button>
 						<Button
 							variant="outline"
 							size="sm"
 							onClick={() => editor.timeline.clearElementFinishing({ trackId, elementId: element.id })}
 						>
-							Clear filter
+							Clear
 						</Button>
 					</div>
 				</SectionFields>
@@ -117,8 +103,8 @@ export function AdjustmentsSection({
 }) {
 	const editor = useEditor();
 	return (
-		<Section collapsible sectionKey={`${element.type}:adjustments`}>
-			<SectionHeader title="Adjustments" />
+		<Section collapsible sectionKey={`${element.type}:adjust`}>
+			<SectionHeader title="Adjust" />
 			<SectionContent>
 				<SectionFields>
 					{ADJUSTMENT_FIELDS.map((field) => (
@@ -140,7 +126,7 @@ export function AdjustmentsSection({
 							})
 						}
 					>
-						Reset all adjustments
+						Reset all
 					</Button>
 				</SectionFields>
 			</SectionContent>
@@ -257,6 +243,7 @@ export function EffectsSection({
 	trackId: string;
 }) {
 	const editor = useEditor();
+	const setActiveTab = useAssetsPanelStore((state) => state.setActiveTab);
 	const effects = normalizeVisualEffects({ effects: element.effects }) ?? [];
 	const availableEffects = EFFECT_CARDS.filter(
 		(card) => !effects.some((effect) => effect.kind === card.kind),
@@ -267,8 +254,13 @@ export function EffectsSection({
 			<SectionHeader title="Effects" />
 			<SectionContent>
 				<SectionFields>
+					<div className="flex gap-2">
+						<Button variant="outline" size="sm" onClick={() => setActiveTab("effects")}>
+							Browse
+						</Button>
+					</div>
 					{effects.length === 0 ? (
-						<p className="text-muted-foreground text-sm">No effects applied yet.</p>
+						<p className="text-muted-foreground text-sm">No effects.</p>
 					) : (
 						effects.map((effect, index) => (
 							<EffectEditor

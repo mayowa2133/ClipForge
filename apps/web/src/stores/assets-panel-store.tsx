@@ -9,7 +9,6 @@ import {
 	MagicWand05Icon,
 	TextIcon,
 	Settings01Icon,
-	SlidersHorizontalIcon,
 	ColorsIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
@@ -23,7 +22,6 @@ export const TAB_KEYS = [
 	"transitions",
 	"captions",
 	"filters",
-	"adjustment",
 	"settings",
 ] as const;
 
@@ -42,7 +40,7 @@ export const tabs = {
 	},
 	sounds: {
 		icon: createHugeiconsIcon({ icon: HeadphonesIcon }),
-		label: "Sounds",
+		label: "Audio",
 	},
 	text: {
 		icon: createHugeiconsIcon({ icon: TextIcon }),
@@ -67,10 +65,6 @@ export const tabs = {
 	filters: {
 		icon: createHugeiconsIcon({ icon: ColorsIcon }),
 		label: "Filters",
-	},
-	adjustment: {
-		icon: createHugeiconsIcon({ icon: SlidersHorizontalIcon }),
-		label: "Adjustment",
 	},
 	settings: {
 		icon: createHugeiconsIcon({ icon: Settings01Icon }),

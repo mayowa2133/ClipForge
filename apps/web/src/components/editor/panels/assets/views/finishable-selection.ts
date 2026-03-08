@@ -6,6 +6,8 @@ export type SelectedFinishableTarget = {
 	element: VideoElement | ImageElement;
 };
 
+export type SelectedVisualTarget = SelectedFinishableTarget;
+
 export function resolveSelectedFinishableTarget({
 	editor,
 }: {
@@ -25,3 +27,5 @@ export function resolveSelectedFinishableTarget({
 	if (finishableTargets.size !== 1) return null;
 	return [...finishableTargets.values()][0] ?? null;
 }
+
+export const resolveSelectedVisualTarget = resolveSelectedFinishableTarget;

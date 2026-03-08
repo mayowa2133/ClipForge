@@ -23,13 +23,13 @@ export function FiltersView() {
 			<div className="flex flex-col gap-3 p-2">
 				{target ? (
 					<p className="text-muted-foreground text-sm">
-						Apply a finishing preset to <span className="text-foreground">{target.element.name}</span>.
+						Apply a look to <span className="text-foreground">{target.element.name}</span>.
 					</p>
 				) : (
 					<div className="rounded-md border p-4">
-						<p className="font-medium">Select a single video or image clip</p>
+						<p className="font-medium">Select a visual clip</p>
 						<p className="text-muted-foreground mt-1 text-sm">
-							Filters apply to one visual clip at a time. Linked audio can stay selected.
+							Browse looks for one visual clip. Linked audio can stay selected.
 						</p>
 					</div>
 				)}

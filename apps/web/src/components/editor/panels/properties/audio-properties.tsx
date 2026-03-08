@@ -88,7 +88,7 @@ function SourceSection({
 						onClick={openReplaceMediaPicker}
 						disabled={isReplacing}
 					>
-						{isReplacing ? "Replacing..." : "Replace Media"}
+						{isReplacing ? "Replacing..." : "Replace"}
 					</Button>
 					<input {...fileInputProps} />
 				</SectionFields>
@@ -315,7 +315,7 @@ function SpeedSection({
 			<SectionHeader title="Speed" />
 			<SectionContent>
 				<SectionFields>
-					<SectionField label="Playback rate">
+					<SectionField label="Rate">
 						<NumberField
 							value={draft.displayValue}
 							onFocus={draft.onFocus}
@@ -363,8 +363,8 @@ function SpeedSection({
 						))}
 					</div>
 					<p className="text-muted-foreground text-xs">
-						Result duration {formatTimeCode({ timeInSeconds: nextDuration })}
-						{rippleEditingEnabled ? " with ripple." : " without ripple."}
+						Length {formatTimeCode({ timeInSeconds: nextDuration })}
+						{rippleEditingEnabled ? " · Ripple on" : " · Ripple off"}
 					</p>
 				</SectionFields>
 			</SectionContent>

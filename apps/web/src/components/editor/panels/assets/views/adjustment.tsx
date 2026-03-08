@@ -72,7 +72,7 @@ export function AdjustmentView() {
 					</>
 				) : (
 					<div className="rounded-md border p-4">
-						<p className="font-medium">Select a single video or image clip</p>
+						<p className="font-medium">Select a visual clip</p>
 						<p className="text-muted-foreground mt-1 text-sm">
 							Adjustments apply to one visual clip at a time. Linked audio can stay selected.
 						</p>
