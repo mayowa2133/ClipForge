@@ -27,6 +27,7 @@ export function buildRenderGraphFingerprint({
 
 	return [
 		"preview-fidelity-v1",
+		`scope:${graph.scope ?? "scene"}`,
 		`duration:${graph.duration}`,
 		`canvas:${graph.canvas.width}x${graph.canvas.height}`,
 		`background:${background}`,

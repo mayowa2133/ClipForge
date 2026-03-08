@@ -10,6 +10,7 @@ export class CreateSceneCommand extends Command {
 	constructor(
 		private name: string,
 		private isMain: boolean = false,
+		private afterSceneId?: string,
 	) {
 		super();
 	}
@@ -23,7 +24,13 @@ export class CreateSceneCommand extends Command {
 			isMain: this.isMain,
 		});
 
-		const updatedScenes = [...this.savedScenes, this.createdScene];
+		const insertionIndex = this.afterSceneId
+			? this.savedScenes.findIndex((scene) => scene.id === this.afterSceneId) + 1
+			: this.savedScenes.length;
+		const safeInsertionIndex =
+			insertionIndex > 0 ? insertionIndex : this.savedScenes.length;
+		const updatedScenes = [...this.savedScenes];
+		updatedScenes.splice(safeInsertionIndex, 0, this.createdScene);
 		editor.scenes.setScenes({ scenes: updatedScenes });
 	}
 

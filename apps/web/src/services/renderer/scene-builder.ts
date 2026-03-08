@@ -12,6 +12,7 @@ import { DEFAULT_BLUR_INTENSITY } from "@/constants/project-constants";
 import { isMainTrack } from "@/lib/timeline";
 export {
 	buildRenderGraph,
+	buildProjectRenderGraph,
 	graphHasVideo,
 	type BuildRenderGraphParams,
 } from "./render-graph";

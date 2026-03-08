@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import useDeepCompareEffect from "use-deep-compare-effect";
 import { useEditor } from "@/hooks/use-editor";
 import { useRafLoop } from "@/hooks/use-raf-loop";
 import { useContainerSize } from "@/hooks/use-container-size";
 import { useFullscreen } from "@/hooks/use-fullscreen";
-import { buildRenderGraph } from "@/services/renderer/scene-builder";
+import { buildProjectRenderGraph, buildRenderGraph } from "@/services/renderer/scene-builder";
 import { getLastFrameTime } from "@/lib/time";
 import { PreviewInteractionOverlay } from "./preview-interaction-overlay";
 import { BookmarkNoteOverlay } from "./bookmark-note-overlay";
@@ -52,26 +52,56 @@ export function PreviewPanel() {
 function RenderGraphController() {
 	const editor = useEditor();
 	const tracks = editor.timeline.getTracks();
+	const scenes = editor.scenes.getScenes();
 	const mediaAssets = editor.media.getAssets();
 	const activeProject = editor.project.getActive();
+	const previewMode = usePreviewStore((state) => state.previewMode);
 
 	const { width, height } = usePreviewSize();
 
 	useDeepCompareEffect(() => {
 		if (!activeProject) return;
 
-		const duration = editor.timeline.getTotalDuration();
-		const renderGraph = buildRenderGraph({
-			tracks,
-			mediaAssets,
-			duration,
-			canvasSize: { width, height },
-			background: activeProject.settings.background,
-			isPreview: true,
-		});
+		const renderGraph =
+				previewMode === "project"
+					? buildProjectRenderGraph({
+						scenes,
+						mediaAssets,
+						canvasSize: { width, height },
+						background: activeProject.settings.background,
+						isPreview: true,
+				  })
+				: buildRenderGraph({
+						tracks,
+						mediaAssets,
+						duration: editor.timeline.getTotalDuration(),
+						canvasSize: { width, height },
+						background: activeProject.settings.background,
+						isPreview: true,
+				  });
 
 		editor.renderer.setRenderGraph({ renderGraph });
-	}, [tracks, mediaAssets, activeProject?.settings.background, width, height]);
+	}, [
+		tracks,
+		scenes,
+		mediaAssets,
+		activeProject?.settings.background,
+		width,
+		height,
+		previewMode,
+		editor,
+	]);
+
+	useEffect(() => {
+		const duration =
+			previewMode === "project"
+				? editor.scenes.getProjectDuration()
+				: editor.timeline.getTotalDuration();
+		const currentTime = editor.playback.getCurrentTime();
+		if (currentTime > duration) {
+			editor.playback.seek({ time: duration });
+		}
+	}, [editor, previewMode, tracks, scenes]);
 
 	return null;
 }

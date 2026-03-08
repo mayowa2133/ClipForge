@@ -1,5 +1,7 @@
 export { CreateSceneCommand } from "./create-scene";
 export { DeleteSceneCommand } from "./delete-scene";
+export { DuplicateSceneCommand } from "./duplicate-scene";
+export { ReorderScenesCommand } from "./reorder-scenes";
 export { RenameSceneCommand } from "./rename-scene";
 export { ToggleBookmarkCommand } from "./toggle-bookmark";
 export { RemoveBookmarkCommand } from "./remove-bookmark";

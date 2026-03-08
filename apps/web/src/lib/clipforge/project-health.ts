@@ -1,4 +1,5 @@
 import { hasMediaId } from "@/lib/timeline/element-utils";
+import { buildProjectAssembly } from "@/lib/scenes";
 import type { MediaAsset } from "@/types/assets";
 import type { TProject } from "@/types/project";
 import type { ExportPreflightCode } from "@/types/export";
@@ -17,13 +18,10 @@ export function buildProjectHealthFingerprint({
 		return `${HEALTH_SCHEMA_VERSION}|no-project`;
 	}
 
-	const activeScene =
-		project.scenes.find((scene) => scene.id === project.currentSceneId) ??
-		project.scenes[0] ??
-		null;
 	const mediaTuple = buildMediaTuple({ mediaAssets });
+	const assembly = buildProjectAssembly({ scenes: project.scenes });
 
-	if (!activeScene) {
+	if (project.scenes.length === 0) {
 		return [
 			HEALTH_SCHEMA_VERSION,
 			`project:${project.metadata.id}`,
@@ -33,25 +31,37 @@ export function buildProjectHealthFingerprint({
 		].join("|");
 	}
 
-	const elementTuple = activeScene.tracks
-		.flatMap((track) =>
-			track.elements.map((element) => ({
-				trackId: track.id,
-				segmentId: element.id,
-				type: element.type,
-				mediaId: hasMediaId(element) ? element.mediaId : null,
-				start: element.startTime,
-				duration: element.duration,
-				trimStart: element.trimStart,
-				trimEnd: element.trimEnd,
-			})),
-		)
+	const elementTuple = project.scenes
+		.flatMap((scene) => {
+			const sceneAssembly =
+				assembly.find((entry) => entry.sceneId === scene.id) ?? null;
+			const sceneOffset = sceneAssembly?.projectStartTime ?? 0;
+			const sceneIndex = project.scenes.findIndex((entry) => entry.id === scene.id);
+			return scene.tracks.flatMap((track) =>
+				track.elements.map((element) => ({
+					sceneIndex,
+					sceneId: scene.id,
+					trackId: track.id,
+					segmentId: element.id,
+					type: element.type,
+					mediaId: hasMediaId(element) ? element.mediaId : null,
+					start: element.startTime + sceneOffset,
+					duration: element.duration,
+					trimStart: element.trimStart,
+					trimEnd: element.trimEnd,
+				})),
+			);
+		})
 		.sort((a, b) => {
+			if (a.sceneIndex !== b.sceneIndex) return a.sceneIndex - b.sceneIndex;
+			if (a.start !== b.start) return a.start - b.start;
 			if (a.trackId !== b.trackId) return a.trackId.localeCompare(b.trackId);
 			return a.segmentId.localeCompare(b.segmentId);
 		})
 		.map((entry) =>
 			[
+				entry.sceneIndex,
+				entry.sceneId,
 				entry.trackId,
 				entry.segmentId,
 				entry.type,
@@ -67,7 +77,7 @@ export function buildProjectHealthFingerprint({
 	return [
 		HEALTH_SCHEMA_VERSION,
 		`project:${project.metadata.id}`,
-		`scene:${activeScene.id}`,
+		`sceneCount:${project.scenes.length}`,
 		`duration:${formatNumber(project.metadata.duration)}`,
 		`elements:${elementTuple}`,
 		`media:${mediaTuple}`,

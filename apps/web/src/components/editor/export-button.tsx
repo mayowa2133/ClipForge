@@ -45,6 +45,7 @@ import {
 import { useEditor } from "@/hooks/use-editor";
 import { useExportPreflight } from "@/hooks/use-export-preflight";
 import { usePreviewFidelity } from "@/hooks/use-preview-fidelity";
+import { usePreviewStore } from "@/stores/preview-store";
 import { DEFAULT_EXPORT_OPTIONS } from "@/constants/export-constants";
 import type { PreviewFidelityReport } from "@/services/renderer/types";
 import {
@@ -108,6 +109,7 @@ function ExportPopover({
 	onOpenChange: (open: boolean) => void;
 }) {
 	const editor = useEditor();
+	const previewMode = usePreviewStore((state) => state.previewMode);
 	const activeProject = editor.project.getActive();
 	const [format, setFormat] = useState<ExportFormat>(
 		DEFAULT_EXPORT_OPTIONS.format,
@@ -871,7 +873,14 @@ function ExportPopover({
 										<SectionContent>
 											<div className="space-y-2">
 												<div className="flex items-center justify-between">
-													<p className="text-muted-foreground text-xs">Status</p>
+													<div>
+														<p className="text-muted-foreground text-xs">Status</p>
+														<p className="text-muted-foreground text-[10px]">
+															{previewMode === "project"
+																? "Project preview"
+																: "Scene preview"}
+														</p>
+													</div>
 													<span
 														className={cn(
 															"rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",

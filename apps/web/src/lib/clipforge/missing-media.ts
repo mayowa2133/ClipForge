@@ -1,4 +1,5 @@
 import { hasMediaId } from "@/lib/timeline/element-utils";
+import { buildProjectAssemblyTracks } from "@/lib/scenes";
 import type { MediaAsset } from "@/types/assets";
 import type { TProject } from "@/types/project";
 import type { TimelineElement } from "@/types/timeline";
@@ -36,16 +37,13 @@ export function collectMissingMediaReferences({
 	mediaAssets: MediaAsset[];
 }): MissingMediaReference[] {
 	if (!project) return [];
-	const activeScene =
-		project.scenes.find((scene) => scene.id === project.currentSceneId) ??
-		project.scenes[0] ??
-		null;
-	if (!activeScene) return [];
+	if (project.scenes.length === 0) return [];
 
 	const availableMediaIds = new Set(mediaAssets.map((asset) => asset.id));
 	const byMediaId = new Map<string, MissingMediaAccumulator>();
+	const assembledTracks = buildProjectAssemblyTracks({ scenes: project.scenes });
 
-	for (const track of activeScene.tracks) {
+	for (const track of assembledTracks) {
 		for (const element of track.elements) {
 			if (!hasMediaId(element)) continue;
 			if (availableMediaIds.has(element.mediaId)) continue;

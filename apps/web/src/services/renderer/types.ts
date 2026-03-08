@@ -83,6 +83,7 @@ export type RenderLayer =
 	  });
 
 export interface RenderGraph {
+	scope?: "scene" | "project";
 	duration: number;
 	canvas: { width: number; height: number };
 	background: RenderBackground;

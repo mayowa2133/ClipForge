@@ -1,4 +1,5 @@
 import type { EditorCore } from "@/core";
+import { usePreviewStore } from "@/stores/preview-store";
 
 export class PlaybackManager {
 	private isPlaying = false;
@@ -14,7 +15,7 @@ export class PlaybackManager {
 	constructor(private editor: EditorCore) {}
 
 	play(): void {
-		const duration = this.editor.timeline.getTotalDuration();
+		const duration = this.getPlaybackDuration();
 
 		if (duration > 0) {
 			if (this.currentTime >= duration) {
@@ -42,7 +43,7 @@ export class PlaybackManager {
 	}
 
 	seek({ time }: { time: number }): void {
-		const duration = this.editor.timeline.getTotalDuration();
+		const duration = this.getPlaybackDuration();
 		this.currentTime = Math.max(0, Math.min(duration, time));
 		this.notify();
 
@@ -144,7 +145,7 @@ export class PlaybackManager {
 		this.lastUpdate = now;
 
 		const newTime = this.currentTime + delta;
-		const duration = this.editor.timeline.getTotalDuration();
+		const duration = this.getPlaybackDuration();
 
 		if (duration > 0 && newTime >= duration) {
 			this.pause();
@@ -169,4 +170,10 @@ export class PlaybackManager {
 
 		this.playbackTimer = requestAnimationFrame(this.updateTime);
 	};
+
+	private getPlaybackDuration(): number {
+		return usePreviewStore.getState().previewMode === "project"
+			? this.editor.scenes.getProjectDuration()
+			: this.editor.timeline.getTotalDuration();
+	}
 }

@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { buildRenderGraph, graphHasVideo } from "@/services/renderer/render-graph";
+import {
+	buildProjectRenderGraph,
+	buildRenderGraph,
+	graphHasVideo,
+} from "@/services/renderer/render-graph";
 import type { MediaAsset } from "@/types/assets";
-import type { TimelineTrack } from "@/types/timeline";
+import type { TimelineTrack, TScene } from "@/types/timeline";
 
 const baseTransform = {
 	scale: 1,
@@ -198,5 +202,86 @@ describe("buildRenderGraph", () => {
 			blurIntensity: 24,
 		});
 		expect(graphHasVideo({ graph })).toBe(false);
+	});
+
+	test("builds a project graph from ordered scenes", () => {
+		const scenes: TScene[] = [
+			{
+				id: "scene-1",
+				name: "Intro",
+				isMain: true,
+				bookmarks: [],
+				createdAt: new Date("2026-01-01T00:00:00.000Z"),
+				updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+				tracks: [
+					{
+						id: "track-1",
+						type: "video",
+						name: "Main",
+						isMain: true,
+						muted: false,
+						hidden: false,
+						elements: [
+							{
+								id: "video-1",
+								type: "video",
+								name: "A",
+								mediaId: "video-1",
+								startTime: 0,
+								duration: 2,
+								trimStart: 0,
+								trimEnd: 0,
+								transform: baseTransform,
+								opacity: 1,
+							},
+						],
+					},
+				],
+			},
+			{
+				id: "scene-2",
+				name: "Body",
+				isMain: false,
+				bookmarks: [],
+				createdAt: new Date("2026-01-01T00:00:00.000Z"),
+				updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+				tracks: [
+					{
+						id: "track-2",
+						type: "video",
+						name: "Main",
+						isMain: true,
+						muted: false,
+						hidden: false,
+						elements: [
+							{
+								id: "video-2",
+								type: "video",
+								name: "B",
+								mediaId: "video-1",
+								startTime: 0,
+								duration: 3,
+								trimStart: 0,
+								trimEnd: 0,
+								transform: baseTransform,
+								opacity: 1,
+							},
+						],
+					},
+				],
+			},
+		];
+
+		const graph = buildProjectRenderGraph({
+			scenes,
+			mediaAssets: [buildMediaAsset({ id: "video-1", name: "video.mp4", type: "video" })],
+			canvasSize: { width: 1080, height: 1920 },
+			background: { type: "color", color: "#000000" },
+		});
+
+		expect(graph.scope).toBe("project");
+		expect(graph.duration).toBe(5);
+		expect(graph.layers.map((layer) => layer.id).sort()).toEqual(["video-1", "video-2"]);
+		expect(graph.layers.find((layer) => layer.id === "video-2")?.startTime).toBe(2);
 	});
 });

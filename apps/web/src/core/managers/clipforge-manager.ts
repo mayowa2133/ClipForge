@@ -511,12 +511,13 @@ export class ClipForgeManager {
 			getProject: () => this.editor.project.getActive(),
 			mediaAssets: this.editor.media.getAssets(),
 			actions,
-			applyOps: ({ ops }) =>
-				this.applyOps({
-					ops,
-					source: "manual",
-				}),
-			setProject: ({ project }) => this.editor.project.setActiveProject({ project }),
+			setProject: ({ project }) => {
+				this.editor.project.setActiveProject({ project });
+				this.editor.scenes.initializeScenes({
+					scenes: project.scenes,
+					currentSceneId: project.currentSceneId,
+				});
+			},
 			markDirty: () => this.editor.save.markDirty(),
 		});
 	}

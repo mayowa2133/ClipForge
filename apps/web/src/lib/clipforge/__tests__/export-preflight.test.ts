@@ -194,7 +194,7 @@ describe("evaluateExportPreflight", () => {
 		expect(missingIssues[0]?.referenceCount).toBe(2);
 	});
 
-	test("reports invalid ranges as actionable blocker", () => {
+test("reports invalid ranges as actionable blocker", () => {
 		const project = buildProject({
 			tracks: [buildVideoTrack({ duration: 0 })],
 		});
@@ -210,6 +210,32 @@ describe("evaluateExportPreflight", () => {
 		expect(result.ready).toBe(false);
 		expect(issue?.actionable).toBe(true);
 		expect(issue?.action).toBe("remove-invalid-ranges");
+	});
+
+	test("surfaces blockers from non-active scenes in assembled project scope", () => {
+		const project = buildProject({
+			tracks: [buildVideoTrack({ duration: 4 })],
+			duration: 8,
+		});
+		project.scenes.push({
+			id: "scene-2",
+			name: "Second",
+			isMain: false,
+			bookmarks: [],
+			createdAt: new Date("2026-01-01T00:00:00.000Z"),
+			updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+			tracks: [buildVideoTrack({ trackId: "track-2", segmentId: "segment-2", mediaId: "missing-media" })],
+		});
+
+		const result = evaluateExportPreflight({
+			project,
+			mediaAssets: buildMediaAssets(),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+		});
+
+		expect(result.issues.some((issue) => issue.code === "missing-media-asset")).toBe(true);
 	});
 
 	test("reports media compatibility as blocked when unresolved", () => {
@@ -358,21 +384,16 @@ describe("evaluateExportPreflight", () => {
 });
 
 describe("applyExportPreflightActions", () => {
-	test("remove-missing-segments issues deterministic DELETE_SEGMENT ops", () => {
+	test("remove-missing-segments removes matching segments across project scenes", () => {
 		let currentProject = buildProject({
 			tracks: [buildVideoTrack({ mediaId: "missing-media" })],
 			duration: 4,
 		});
-		let receivedOps: unknown[] = [];
 		const result = applyExportPreflightActions({
 			project: currentProject,
 			getProject: () => currentProject,
 			mediaAssets: buildMediaAssets(),
 			actions: ["remove-missing-segments"],
-			applyOps: ({ ops }) => {
-				receivedOps = ops;
-				return { applied: true, errors: [] };
-			},
 			setProject: ({ project }) => {
 				currentProject = project;
 			},
@@ -381,12 +402,7 @@ describe("applyExportPreflightActions", () => {
 
 		expect(result.applied).toBe(1);
 		expect(result.failed).toBe(0);
-		expect(receivedOps).toEqual([
-			{
-				type: "DELETE_SEGMENT",
-				segment_id: "segment-video-1",
-			},
-		]);
+		expect(currentProject.scenes[0]?.tracks[0]?.elements).toEqual([]);
 	});
 
 	test("normalize-duration updates project metadata deterministically", () => {
@@ -401,7 +417,6 @@ describe("applyExportPreflightActions", () => {
 			getProject: () => currentProject,
 			mediaAssets: buildMediaAssets(),
 			actions: ["normalize-duration"],
-			applyOps: () => ({ applied: true, errors: [] }),
 			setProject: ({ project }) => {
 				currentProject = project;
 			},
@@ -426,7 +441,6 @@ describe("applyExportPreflightActions", () => {
 			getProject: () => project,
 			mediaAssets: buildMediaAssets(),
 			actions: ["switch-format-mp4"],
-			applyOps: () => ({ applied: true, errors: [] }),
 			setProject: () => {},
 			markDirty: () => {},
 		});

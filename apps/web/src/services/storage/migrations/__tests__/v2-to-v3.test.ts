@@ -157,8 +157,8 @@ describe("V2 to V3 Migration", () => {
 			const result = transformProjectV2ToV3({ project: multiSceneProject });
 
 			const metadata = result.project.metadata as Record<string, unknown>;
-			// Duration is from main scene only, not sum of all scenes
-			expect(metadata.duration).toBe(10);
+			// M36 project duration is the assembled sum of ordered scene durations.
+			expect(metadata.duration).toBe(30);
 		});
 	});
 

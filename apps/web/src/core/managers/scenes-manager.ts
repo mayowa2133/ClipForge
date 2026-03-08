@@ -6,6 +6,8 @@ import {
 	ensureMainScene,
 	canDeleteScene,
 	findCurrentScene,
+	buildProjectAssembly,
+	getProjectDurationFromScenes,
 } from "@/lib/scenes";
 import {
 	getBookmarkAtTime,
@@ -16,7 +18,9 @@ import { ensureMainTrack } from "@/lib/timeline/track-utils";
 import {
 	CreateSceneCommand,
 	DeleteSceneCommand,
+	DuplicateSceneCommand,
 	MoveBookmarkCommand,
+	ReorderScenesCommand,
 	RemoveBookmarkCommand,
 	RenameSceneCommand,
 	ToggleBookmarkCommand,
@@ -44,6 +48,50 @@ export class ScenesManager {
 		const command = new CreateSceneCommand(name, isMain);
 		this.editor.command.execute({ command });
 		return command.getSceneId();
+	}
+
+	async createSceneAfter({
+		sceneId,
+		name,
+	}: {
+		sceneId: string;
+		name?: string;
+	}): Promise<string> {
+		if (!this.editor.project.getActive()) {
+			throw new Error("No active project");
+		}
+
+		const sourceScene = this.list.find((scene) => scene.id === sceneId) ?? null;
+		if (!sourceScene) {
+			throw new Error("Scene not found");
+		}
+
+		const command = new CreateSceneCommand(
+			name ?? `${sourceScene.name} Scene`,
+			false,
+			sceneId,
+		);
+		this.editor.command.execute({ command });
+		return command.getSceneId();
+	}
+
+	async duplicateScene({ sceneId }: { sceneId: string }): Promise<string> {
+		if (!this.editor.project.getActive()) {
+			throw new Error("No active project");
+		}
+
+		const command = new DuplicateSceneCommand(sceneId);
+		this.editor.command.execute({ command });
+		return command.getSceneId();
+	}
+
+	async reorderScenes({ sceneIds }: { sceneIds: string[] }): Promise<void> {
+		if (!this.editor.project.getActive()) {
+			throw new Error("No active project");
+		}
+
+		const command = new ReorderScenesCommand(sceneIds);
+		this.editor.command.execute({ command });
 	}
 
 	async deleteScene({ sceneId }: { sceneId: string }): Promise<void> {
@@ -268,6 +316,14 @@ export class ScenesManager {
 		return this.list;
 	}
 
+	getProjectAssembly() {
+		return buildProjectAssembly({ scenes: this.list });
+	}
+
+	getProjectDuration(): number {
+		return getProjectDurationFromScenes({ scenes: this.list });
+	}
+
 	setScenes({
 		scenes,
 		activeSceneId,
@@ -287,8 +343,10 @@ export class ScenesManager {
 			const updatedProject = {
 				...activeProject,
 				scenes,
+				currentSceneId: this.active?.id ?? activeProject.currentSceneId,
 				metadata: {
 					...activeProject.metadata,
+					duration: getProjectDurationFromScenes({ scenes }),
 					updatedAt: new Date(),
 				},
 			};
@@ -325,8 +383,10 @@ export class ScenesManager {
 			const updatedProject = {
 				...activeProject,
 				scenes: this.list,
+				currentSceneId: updatedScene.id,
 				metadata: {
 					...activeProject.metadata,
+					duration: getProjectDurationFromScenes({ scenes: this.list }),
 					updatedAt: new Date(),
 				},
 			};

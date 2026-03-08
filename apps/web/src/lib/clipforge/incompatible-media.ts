@@ -1,4 +1,5 @@
 import { hasMediaId } from "@/lib/timeline/element-utils";
+import { buildProjectAssemblyTracks } from "@/lib/scenes";
 import {
 	isMediaCompatibleForReference,
 } from "@/lib/media/media-compatibility";
@@ -107,16 +108,13 @@ function collectCompatibilityReferences({
 	includeAudio: boolean;
 }): IncompatibleMediaReference[] {
 	if (!project) return [];
-	const activeScene =
-		project.scenes.find((scene) => scene.id === project.currentSceneId) ??
-		project.scenes[0] ??
-		null;
-	if (!activeScene) return [];
+	if (project.scenes.length === 0) return [];
 
 	const assetsById = new Map(mediaAssets.map((asset) => [asset.id, asset]));
 	const byMediaId = new Map<string, ReferenceAccumulator>();
+	const assembledTracks = buildProjectAssemblyTracks({ scenes: project.scenes });
 
-	for (const track of activeScene.tracks) {
+	for (const track of assembledTracks) {
 		const trackMuted = "muted" in track ? !!track.muted : false;
 		for (const element of track.elements) {
 			if (!hasMediaId(element)) continue;

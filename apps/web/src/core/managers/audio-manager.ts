@@ -1,6 +1,8 @@
 import type { EditorCore } from "@/core";
 import type { AudioClipSource } from "@/lib/media/audio";
 import { createAudioContext, collectAudioClips } from "@/lib/media/audio";
+import { buildProjectAssemblyTracks, getProjectDurationFromScenes } from "@/lib/scenes";
+import { usePreviewStore } from "@/stores/preview-store";
 import {
 	ALL_FORMATS,
 	AudioBufferSink,
@@ -137,9 +139,17 @@ export class AudioManager {
 		this.stopPlayback();
 		this.playbackSessionId++;
 
-		const tracks = this.editor.timeline.getTracks();
+		const previewMode = usePreviewStore.getState().previewMode;
+		const activeProject = this.editor.project.getActive();
+		const tracks =
+			previewMode === "project" && activeProject
+				? buildProjectAssemblyTracks({ scenes: activeProject.scenes })
+				: this.editor.timeline.getTracks();
 		const mediaAssets = this.editor.media.getAssets();
-		const duration = this.editor.timeline.getTotalDuration();
+		const duration =
+			previewMode === "project" && activeProject
+				? getProjectDurationFromScenes({ scenes: activeProject.scenes })
+				: this.editor.timeline.getTotalDuration();
 
 		if (duration <= 0) return;
 

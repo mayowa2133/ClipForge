@@ -168,11 +168,19 @@ function ToolbarLeftSection() {
 function SceneSelector() {
 	const editor = useEditor();
 	const currentScene = editor.scenes.getActiveScene();
+	const assembly = editor.scenes.getProjectAssembly();
+	const currentSceneIndex = assembly.findIndex(
+		(scene) => scene.sceneId === currentScene?.id,
+	);
+	const currentSceneLabel =
+		currentScene && currentSceneIndex >= 0
+			? `Scene ${currentSceneIndex + 1} · ${currentScene.name}`
+			: currentScene?.name || "No Scene";
 
 	return (
 		<div>
 			<SplitButton className="border-foreground/10 border">
-				<SplitButtonLeft>{currentScene?.name || "No Scene"}</SplitButtonLeft>
+				<SplitButtonLeft>{currentSceneLabel}</SplitButtonLeft>
 				<SplitButtonSeparator />
 				<ScenesView>
 					<SplitButtonRight onClick={() => {}}>

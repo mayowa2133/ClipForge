@@ -1,4 +1,5 @@
 import { calculateTotalDuration } from "@/lib/timeline";
+import { buildProjectAssemblyTracks, getProjectDurationFromScenes } from "@/lib/scenes";
 import {
 	collectIncompatibleMediaReferences,
 	collectUnverifiedMediaReferences,
@@ -9,7 +10,6 @@ import {
 	buildProjectHealthFingerprint,
 } from "@/lib/clipforge/project-health";
 import type { MediaAsset } from "@/types/assets";
-import type { TimelineDiffOp } from "@/types/clipforge";
 import type { TProject } from "@/types/project";
 import type { TimelineElement, TimelineTrack } from "@/types/timeline";
 import type {
@@ -127,7 +127,6 @@ export function applyExportPreflightActions({
 	getProject,
 	mediaAssets,
 	actions,
-	applyOps,
 	setProject,
 	markDirty,
 }: {
@@ -135,14 +134,6 @@ export function applyExportPreflightActions({
 	getProject: () => TProject | null;
 	mediaAssets: MediaAsset[];
 	actions: ExportPreflightAction[];
-	applyOps: ({
-		ops,
-	}: {
-		ops: TimelineDiffOp[];
-	}) => {
-		applied: boolean;
-		errors: Array<{ code: string; message: string }>;
-	};
 	setProject: ({ project }: { project: TProject }) => void;
 	markDirty: () => void;
 }): ExportPreflightFixResult {
@@ -168,9 +159,11 @@ export function applyExportPreflightActions({
 					messages.push("No missing-media segments were found.");
 					continue;
 				}
-				const deletionResult = applyDeletionOps({
+				const deletionResult = removeSegmentsFromProjectScenes({
+					project: snapshotProject,
 					targetIds,
-					applyOps,
+					setProject,
+					markDirty,
 				});
 				if (deletionResult.ok) {
 					applied += 1;
@@ -198,9 +191,11 @@ export function applyExportPreflightActions({
 					messages.push("No invalid-range segments were found.");
 					continue;
 				}
-				const deletionResult = applyDeletionOps({
+				const deletionResult = removeSegmentsFromProjectScenes({
+					project: snapshotProject,
 					targetIds,
-					applyOps,
+					setProject,
+					markDirty,
 				});
 				if (deletionResult.ok) {
 					applied += 1;
@@ -213,10 +208,9 @@ export function applyExportPreflightActions({
 			}
 			case "normalize-duration": {
 				const snapshotProject = getProject() ?? project;
-				const activeScene = findActiveScene({ project: snapshotProject });
-				const normalizedDuration = activeScene
-					? calculateTotalDuration({ tracks: activeScene.tracks })
-					: 0;
+				const normalizedDuration = getProjectDurationFromScenes({
+					scenes: snapshotProject.scenes,
+				});
 				setProject({
 					project: {
 						...snapshotProject,
@@ -309,13 +303,12 @@ function inspectProjectForPreflight({
 	includeAudio: boolean;
 }): PreflightInspectionResult {
 	const issues: ExportPreflightIssue[] = [];
-	const activeScene = findActiveScene({ project });
-	if (!activeScene) {
+	if (project.scenes.length === 0) {
 		issues.push(
 			createIssue({
 			code: "empty-project",
 			severity: "error",
-			message: "Active project has no scene to export.",
+			message: "Project has no scenes to export.",
 			actionable: false,
 			action: null,
 			}),
@@ -327,11 +320,12 @@ function inspectProjectForPreflight({
 		};
 	}
 
+	const assembledTracks = buildProjectAssemblyTracks({ scenes: project.scenes });
 	const timelineDuration = calculateTotalDuration({
-		tracks: activeScene.tracks,
+		tracks: assembledTracks,
 	});
 	const allSegments = collectSegments({
-		tracks: activeScene.tracks,
+		tracks: assembledTracks,
 		mediaAssets,
 	});
 	const hasTimelineElements = allSegments.length > 0;
@@ -354,12 +348,12 @@ function inspectProjectForPreflight({
 	if (supportedVideoSegments.length === 0) {
 		issues.push(
 			createIssue({
-			code: "no-supported-video-segments",
-			severity: "error",
-			message:
-				"No supported video/image segments are available for export in the active scene.",
-			actionable: false,
-			action: null,
+				code: "no-supported-video-segments",
+				severity: "error",
+				message:
+					"No supported video/image segments are available for export in the project.",
+				actionable: false,
+				action: null,
 			}),
 		);
 	}
@@ -588,34 +582,53 @@ function isCompatibleAssetType({
 	return true;
 }
 
-function findActiveScene({ project }: { project: TProject }) {
-	return (
-		project.scenes.find((scene) => scene.id === project.currentSceneId) ??
-		project.scenes[0] ??
-		null
-	);
-}
-
-function applyDeletionOps({
+function removeSegmentsFromProjectScenes({
+	project,
 	targetIds,
-	applyOps,
+	setProject,
+	markDirty,
 }: {
+	project: TProject;
 	targetIds: string[];
-	applyOps: ({
-		ops,
-	}: {
-		ops: TimelineDiffOp[];
-	}) => {
-		applied: boolean;
-		errors: Array<{ code: string; message: string }>;
-	};
+	setProject: ({ project }: { project: TProject }) => void;
+	markDirty: () => void;
 }): { ok: boolean; message: string } {
-	const ops: TimelineDiffOp[] = targetIds.map((segmentId) => ({
-		type: "DELETE_SEGMENT",
-		segment_id: segmentId,
+	const targetIdSet = new Set(targetIds);
+	const updatedScenes = project.scenes.map((scene) => ({
+		...scene,
+		tracks: scene.tracks.map(
+			(track) =>
+				({
+					...track,
+					elements: track.elements.filter((element) => !targetIdSet.has(element.id)),
+				}) as TimelineTrack,
+		),
 	}));
-	const result = applyOps({ ops });
-	if (result.applied) {
+	const removedCount =
+		project.scenes.reduce(
+			(count, scene) =>
+				count +
+				scene.tracks.reduce(
+					(trackCount, track) =>
+						trackCount +
+						track.elements.filter((element) => targetIdSet.has(element.id)).length,
+					0,
+				),
+			0,
+		);
+	if (removedCount > 0) {
+		setProject({
+			project: {
+				...project,
+				scenes: updatedScenes,
+				metadata: {
+					...project.metadata,
+					duration: getProjectDurationFromScenes({ scenes: updatedScenes }),
+					updatedAt: new Date(),
+				},
+			},
+		});
+		markDirty();
 		return {
 			ok: true,
 			message: "Segments removed.",
@@ -623,9 +636,7 @@ function applyDeletionOps({
 	}
 	return {
 		ok: false,
-		message:
-			result.errors[0]?.message ??
-			"Failed to remove blocked segments during export preflight repair.",
+		message: "Failed to remove blocked segments during export preflight repair.",
 	};
 }
 

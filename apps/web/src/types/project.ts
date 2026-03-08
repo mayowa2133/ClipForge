@@ -38,6 +38,14 @@ export interface TTimelineViewState {
 	playheadTime: number;
 }
 
+export interface ProjectAssemblyScene {
+	sceneId: string;
+	name: string;
+	projectStartTime: number;
+	duration: number;
+	projectEndTime: number;
+}
+
 export interface TProject {
 	metadata: TProjectMetadata;
 	scenes: TScene[];

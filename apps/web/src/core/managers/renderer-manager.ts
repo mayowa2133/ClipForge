@@ -1,7 +1,7 @@
 import type { EditorCore } from "@/core";
 import { ENABLE_BINARY_PREVIEW_RENDERER } from "@/constants/feature-flags";
 import { compareCanvasFrameParity } from "@/services/renderer/render-parity";
-import { buildRenderGraph } from "@/services/renderer/scene-builder";
+import { buildProjectRenderGraph, buildRenderGraph } from "@/services/renderer/scene-builder";
 import { SceneExporter, SceneExportError } from "@/services/renderer/scene-exporter";
 import { RenderAssetRegistry } from "@/services/renderer/render-asset-registry";
 import {
@@ -25,6 +25,7 @@ import type {
 import { createTimelineAudioBuffer } from "@/lib/media/audio";
 import { formatTimeCode, getLastFrameTime } from "@/lib/time";
 import { downloadBlob } from "@/utils/browser";
+import { buildProjectAssemblyTracks, getProjectDurationFromScenes } from "@/lib/scenes";
 
 export class RendererManager {
 	private renderGraph: RenderGraph | null = null;
@@ -60,6 +61,18 @@ export class RendererManager {
 
 	getRenderGraph(): RenderGraph | null {
 		return this.renderGraph;
+	}
+
+	getProjectRenderGraph(): RenderGraph | null {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) return null;
+
+		return buildProjectRenderGraph({
+			scenes: activeProject.scenes,
+			mediaAssets: this.editor.media.getAssets(),
+			canvasSize: activeProject.settings.canvasSize,
+			background: activeProject.settings.background,
+		});
 	}
 
 	getBackend(): RenderBackend {
@@ -166,9 +179,8 @@ export class RendererManager {
 		let getLastExportBackendUsed = () => lastExportBackendUsed;
 
 		try {
-			const tracks = this.editor.timeline.getTracks();
-			const mediaAssets = this.editor.media.getAssets();
 			const activeProject = this.editor.project.getActive();
+			const mediaAssets = this.editor.media.getAssets();
 			const buildDiagnostics = ({
 				failureCode,
 				failedFrameIndex = null,
@@ -196,7 +208,9 @@ export class RendererManager {
 				};
 			}
 
-			const duration = this.editor.timeline.getTotalDuration();
+			const duration = getProjectDurationFromScenes({
+				scenes: activeProject.scenes,
+			});
 			if (duration === 0) {
 				return {
 					success: false,
@@ -207,6 +221,9 @@ export class RendererManager {
 
 			const exportFps = fps || activeProject.settings.fps;
 			const canvasSize = activeProject.settings.canvasSize;
+			const tracks = buildProjectAssemblyTracks({
+				scenes: activeProject.scenes,
+			});
 			let audioBuffer: AudioBuffer | null = null;
 			if (includeAudio) {
 				onProgress?.({ progress: 0.02 });
@@ -227,10 +244,9 @@ export class RendererManager {
 				onProgress?.({ progress: 0.05 });
 			}
 
-			const renderGraph = buildRenderGraph({
-				tracks,
+			const renderGraph = buildProjectRenderGraph({
+				scenes: activeProject.scenes,
 				mediaAssets,
-				duration,
 				canvasSize,
 				background: activeProject.settings.background,
 			});

@@ -3,6 +3,8 @@ import type { MediaAsset } from "@/types/assets";
 import type { TBackground, TCanvasSize } from "@/types/project";
 import { DEFAULT_BLUR_INTENSITY } from "@/constants/project-constants";
 import { getElementPlaybackRate, isMainTrack } from "@/lib/timeline";
+import { buildProjectAssemblyTracks, getProjectDurationFromScenes } from "@/lib/scenes";
+import type { TScene } from "@/types/timeline";
 import { resolveStickerId } from "@/lib/stickers";
 import type { RenderGraph, RenderLayer } from "./types";
 
@@ -15,6 +17,7 @@ export type BuildRenderGraphParams = {
 	duration: number;
 	background: TBackground;
 	isPreview?: boolean;
+	scope?: "scene" | "project";
 };
 
 export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
@@ -166,6 +169,7 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 	}
 
 	return {
+		scope: params.scope ?? "scene",
 		duration,
 		canvas: {
 			width: canvasSize.width,
@@ -186,4 +190,28 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 export function graphHasVideo({ graph }: { graph: RenderGraph | null }): boolean {
 	if (!graph) return false;
 	return graph.layers.some((layer) => layer.kind === "video");
+}
+
+export function buildProjectRenderGraph({
+	scenes,
+	mediaAssets,
+	canvasSize,
+	background,
+	isPreview = false,
+}: {
+	scenes: TScene[];
+	mediaAssets: MediaAsset[];
+	canvasSize: TCanvasSize;
+	background: TBackground;
+	isPreview?: boolean;
+}): RenderGraph {
+	return buildRenderGraph({
+		tracks: buildProjectAssemblyTracks({ scenes }),
+		mediaAssets,
+		duration: getProjectDurationFromScenes({ scenes }),
+		canvasSize,
+		background,
+		isPreview,
+		scope: "project",
+	});
 }

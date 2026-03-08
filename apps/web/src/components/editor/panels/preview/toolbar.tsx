@@ -2,6 +2,7 @@
 
 import { useEditor } from "@/hooks/use-editor";
 import { usePreviewFidelity } from "@/hooks/use-preview-fidelity";
+import { usePreviewStore } from "@/stores/preview-store";
 import { formatTimeCode } from "@/lib/time";
 import { invokeAction } from "@/lib/actions";
 import { EditableTimecode } from "@/components/editable-timecode";
@@ -30,9 +31,14 @@ export function PreviewToolbar({
 	onToggleFullscreen: () => void;
 }) {
 	const editor = useEditor();
+	const previewMode = usePreviewStore((state) => state.previewMode);
+	const setPreviewMode = usePreviewStore((state) => state.setPreviewMode);
 	const isPlaying = editor.playback.getIsPlaying();
 	const currentTime = editor.playback.getCurrentTime();
-	const totalDuration = editor.timeline.getTotalDuration();
+	const totalDuration =
+		previewMode === "project"
+			? editor.scenes.getProjectDuration()
+			: editor.timeline.getTotalDuration();
 	const fps = editor.project.getActive().settings.fps;
 	const { report, isChecking, refresh } = usePreviewFidelity();
 	const status = getPreviewFidelityStatus({
@@ -64,6 +70,24 @@ export function PreviewToolbar({
 					status={status}
 					onRefresh={refresh}
 				/>
+				<div className="ml-1 flex items-center rounded-md border p-0.5">
+					<Button
+						variant={previewMode === "scene" ? "secondary" : "ghost"}
+						size="sm"
+						className="h-6 px-2 text-[11px]"
+						onClick={() => setPreviewMode({ mode: "scene" })}
+					>
+						Scene
+					</Button>
+					<Button
+						variant={previewMode === "project" ? "secondary" : "ghost"}
+						size="sm"
+						className="h-6 px-2 text-[11px]"
+						onClick={() => setPreviewMode({ mode: "project" })}
+					>
+						Project
+					</Button>
+				</div>
 			</div>
 
 			<Button
