@@ -4,6 +4,8 @@ import type {
 	ElementTransitionIn,
 	TextElement,
 	VisualKeyframeMap,
+	VisualAdjustments,
+	VisualEffect,
 } from "@/types/timeline";
 
 export type RenderBackground = TBackground;
@@ -24,6 +26,8 @@ export interface RenderVideoPayload {
 	playbackRate: number;
 	keyframes?: VisualKeyframeMap | null;
 	transitionIn?: ElementTransitionIn | null;
+	adjustments?: VisualAdjustments | null;
+	effects?: VisualEffect[] | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
@@ -34,6 +38,8 @@ export interface RenderImagePayload {
 	mediaId: string;
 	keyframes?: VisualKeyframeMap | null;
 	transitionIn?: ElementTransitionIn | null;
+	adjustments?: VisualAdjustments | null;
+	effects?: VisualEffect[] | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;

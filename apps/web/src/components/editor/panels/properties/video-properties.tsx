@@ -27,6 +27,7 @@ import {
 	clampTransitionDuration,
 	findAdjacentVisualIncomingTransitionTarget,
 } from "@/lib/timeline";
+import { AdjustmentsSection, EffectsSection, FilterSection } from "./sections/finishing";
 
 const TRANSITION_PRESETS: Array<{
 	value: TransitionPreset;
@@ -80,6 +81,13 @@ export function VideoProperties({
 			) : null}
 			<TransformSection element={element} trackId={trackId} />
 			<BlendingSection element={element} trackId={trackId} />
+			{element.type === "video" || element.type === "image" ? (
+				<>
+					<FilterSection element={element} trackId={trackId} />
+					<AdjustmentsSection element={element} trackId={trackId} />
+					<EffectsSection element={element} trackId={trackId} />
+				</>
+			) : null}
 		</div>
 	);
 }

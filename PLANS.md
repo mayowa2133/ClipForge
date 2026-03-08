@@ -39,6 +39,7 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M31: Preview fidelity status, sampled frame parity checks, and unsupported-feature trust layer.
 - [x] M32: Manual editing core with replace media, clip speed, separate audio, freeze frame, and audio properties.
 - [x] M33: Motion foundations with transitions, keyframes, and animated visual properties.
+- [x] M34: Visual finishing foundations with filters, effects, and color adjustment.
 
 ## Working Rules
 

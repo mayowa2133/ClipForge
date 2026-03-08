@@ -1,5 +1,5 @@
 import type { RenderVideoFrameProvider } from "@/services/renderer/video-frame-provider";
-import { drawVisualToContext } from "./render-visual";
+import { renderFinishedVisualLayer } from "@/services/renderer/visual-finishing";
 
 type ResolvedVideoLayer = {
 	id: string;
@@ -19,6 +19,8 @@ type ResolvedVideoLayer = {
 			position: { x: number; y: number };
 			rotate: number;
 		};
+		adjustments?: import("@/types/timeline").VisualAdjustments | null;
+		effects?: import("@/types/timeline").VisualEffect[] | null;
 		opacity: number;
 		blendMode?: string;
 		muted?: boolean;
@@ -90,7 +92,7 @@ export async function renderVideoLayer({
 					? source.height
 					: canvasHeight) || canvasHeight;
 
-	drawVisualToContext({
+	renderFinishedVisualLayer({
 		ctx,
 		canvasWidth,
 		canvasHeight,
@@ -100,5 +102,7 @@ export async function renderVideoLayer({
 		transform: transformOverride ?? layer.payload.transform,
 		opacity: opacityOverride ?? layer.payload.opacity,
 		blendMode: (layer.payload.blendMode as never) ?? undefined,
+		adjustments: layer.payload.adjustments ?? null,
+		effects: layer.payload.effects ?? null,
 	});
 }

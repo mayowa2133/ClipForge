@@ -212,9 +212,9 @@ function serializeRenderLayer({ layer }: { layer: RenderLayer }): string {
 	const payloadIdentity = (() => {
 		switch (layer.kind) {
 			case "video":
-				return `video:${layer.payload.mediaId}:${JSON.stringify(layer.payload.keyframes ?? null)}:${JSON.stringify(layer.payload.transitionIn ?? null)}`;
+				return `video:${layer.payload.mediaId}:${JSON.stringify(layer.payload.keyframes ?? null)}:${JSON.stringify(layer.payload.transitionIn ?? null)}:${JSON.stringify(layer.payload.adjustments ?? null)}:${JSON.stringify(layer.payload.effects ?? null)}`;
 			case "image":
-				return `image:${layer.payload.mediaId}:${JSON.stringify(layer.payload.keyframes ?? null)}:${JSON.stringify(layer.payload.transitionIn ?? null)}`;
+				return `image:${layer.payload.mediaId}:${JSON.stringify(layer.payload.keyframes ?? null)}:${JSON.stringify(layer.payload.transitionIn ?? null)}:${JSON.stringify(layer.payload.adjustments ?? null)}:${JSON.stringify(layer.payload.effects ?? null)}`;
 			case "text":
 				return `text:${layer.payload.content}:${JSON.stringify(layer.payload.keyframes ?? null)}:${JSON.stringify(layer.payload.transitionIn ?? null)}`;
 			case "sticker":

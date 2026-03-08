@@ -14,6 +14,8 @@ import {
 	canElementBeHidden,
 	hasMediaId,
 	hasAnyVisualKeyframes,
+	hasVisualAdjustments,
+	hasVisualFinishing,
 	isVisualElementWithMotion,
 } from "@/lib/timeline";
 import {
@@ -283,6 +285,19 @@ function ElementInner({
 			{isVisualElementWithMotion(element) && hasAnyVisualKeyframes({ element }) ? (
 				<div className="absolute top-1 right-1 z-10 rounded-full bg-primary/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary-foreground">
 					Anim
+				</div>
+			) : null}
+			{(element.type === "video" || element.type === "image") &&
+			hasVisualAdjustments({ element }) ? (
+				<div className="absolute bottom-1 left-1 z-10 rounded bg-black/65 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-white">
+					Adj
+				</div>
+			) : null}
+			{(element.type === "video" || element.type === "image") &&
+			hasVisualFinishing({ element }) &&
+			(element.effects?.length ?? 0) > 0 ? (
+				<div className="absolute bottom-1 right-1 z-10 rounded bg-primary/85 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary-foreground">
+					Fx
 				</div>
 			) : null}
 			<button

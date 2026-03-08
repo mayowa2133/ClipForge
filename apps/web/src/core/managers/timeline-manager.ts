@@ -28,6 +28,14 @@ import {
 	UpdateElementPlaybackRateCommand,
 	SeparateAudioCommand,
 	InsertFreezeFrameCommand,
+	SetElementAdjustmentsCommand,
+	ResetElementAdjustmentsCommand,
+	ApplyElementFilterPresetCommand,
+	AddElementEffectCommand,
+	UpdateElementEffectCommand,
+	RemoveElementEffectCommand,
+	MoveElementEffectCommand,
+	ClearElementFinishingCommand,
 	SetElementTransitionInCommand,
 	ClearElementTransitionInCommand,
 	SetElementKeyframeCommand,
@@ -49,9 +57,16 @@ import {
 	isVisualElementWithMotion,
 	isTransitionPreset,
 	removePropertyKeyframeValue,
+	clampVisualAdjustments,
+	normalizeVisualEffects,
+	createDefaultEffect,
+	applyFilterPreset,
+	type FilterPresetId,
+	type FinishableVisualElement,
 	type AnimatableVisualProperty,
 } from "@/lib/timeline";
 import { mediaSupportsAudio } from "@/lib/media/media-utils";
+import type { VisualAdjustments, VisualEffect, VisualEffectKind } from "@/types/timeline";
 
 export class TimelineManager {
 	private listeners = new Set<() => void>();
@@ -342,6 +357,178 @@ export class TimelineManager {
 		this.editor.command.execute({ command });
 	}
 
+	setElementAdjustments({
+		trackId,
+		elementId,
+		adjustments,
+	}: {
+		trackId: string;
+		elementId: string;
+		adjustments: Partial<VisualAdjustments> | null;
+	}): void {
+		const element = this.getFinishableElement({ trackId, elementId });
+		if (!element) {
+			throw new Error("Adjustments only apply to video and image clips.");
+		}
+		const nextAdjustments = clampVisualAdjustments({ adjustments });
+		const command = new SetElementAdjustmentsCommand(
+			trackId,
+			elementId,
+			Object.values(nextAdjustments).every((value) => Math.abs(value) < 1e-6)
+				? null
+				: nextAdjustments,
+		);
+		this.editor.command.execute({ command });
+	}
+
+	resetElementAdjustments({
+		trackId,
+		elementId,
+	}: {
+		trackId: string;
+		elementId: string;
+	}): void {
+		const element = this.getFinishableElement({ trackId, elementId });
+		if (!element) {
+			throw new Error("Adjustments only apply to video and image clips.");
+		}
+		const command = new ResetElementAdjustmentsCommand(trackId, elementId);
+		this.editor.command.execute({ command });
+	}
+
+	applyElementFilterPreset({
+		trackId,
+		elementId,
+		presetId,
+	}: {
+		trackId: string;
+		elementId: string;
+		presetId: FilterPresetId;
+	}): void {
+		const element = this.getFinishableElement({ trackId, elementId });
+		if (!element) {
+			throw new Error("Filters only apply to video and image clips.");
+		}
+		const preset = applyFilterPreset({ presetId });
+		const command = new ApplyElementFilterPresetCommand(
+			trackId,
+			elementId,
+			preset.adjustments,
+			preset.effects,
+		);
+		this.editor.command.execute({ command });
+	}
+
+	addElementEffect({
+		trackId,
+		elementId,
+		kind,
+	}: {
+		trackId: string;
+		elementId: string;
+		kind: VisualEffectKind;
+	}): void {
+		const element = this.getFinishableElement({ trackId, elementId });
+		if (!element) {
+			throw new Error("Effects only apply to video and image clips.");
+		}
+		if ((element.effects ?? []).some((effect) => effect.kind === kind)) {
+			throw new Error("Only one effect of each kind can be added to a clip.");
+		}
+		if ((element.effects ?? []).length >= 3) {
+			throw new Error("A clip can have at most three effects in M34.");
+		}
+		const command = new AddElementEffectCommand(
+			trackId,
+			elementId,
+			createDefaultEffect({ kind }),
+		);
+		this.editor.command.execute({ command });
+	}
+
+	updateElementEffect({
+		trackId,
+		elementId,
+		effectId,
+		updates,
+	}: {
+		trackId: string;
+		elementId: string;
+		effectId: string;
+		updates: Partial<VisualEffect>;
+	}): void {
+		const element = this.getFinishableElement({ trackId, elementId });
+		if (!element) {
+			throw new Error("Effects only apply to video and image clips.");
+		}
+		if (!(element.effects ?? []).some((effect) => effect.id === effectId)) {
+			throw new Error("The requested effect could not be found on this clip.");
+		}
+		const nextEffects =
+			normalizeVisualEffects({
+				effects: (element.effects ?? []).map((effect) =>
+					effect.id === effectId ? ({ ...effect, ...updates } as VisualEffect) : effect,
+				),
+			}) ?? [];
+		const nextEffect = nextEffects.find((effect) => effect.id === effectId);
+		if (!nextEffect) {
+			throw new Error("The requested effect could not be normalized.");
+		}
+		const command = new UpdateElementEffectCommand(trackId, elementId, effectId, nextEffect);
+		this.editor.command.execute({ command });
+	}
+
+	removeElementEffect({
+		trackId,
+		elementId,
+		effectId,
+	}: {
+		trackId: string;
+		elementId: string;
+		effectId: string;
+	}): void {
+		const element = this.getFinishableElement({ trackId, elementId });
+		if (!element) {
+			throw new Error("Effects only apply to video and image clips.");
+		}
+		const command = new RemoveElementEffectCommand(trackId, elementId, effectId);
+		this.editor.command.execute({ command });
+	}
+
+	moveElementEffect({
+		trackId,
+		elementId,
+		effectId,
+		toIndex,
+	}: {
+		trackId: string;
+		elementId: string;
+		effectId: string;
+		toIndex: number;
+	}): void {
+		const element = this.getFinishableElement({ trackId, elementId });
+		if (!element) {
+			throw new Error("Effects only apply to video and image clips.");
+		}
+		const command = new MoveElementEffectCommand(trackId, elementId, effectId, toIndex);
+		this.editor.command.execute({ command });
+	}
+
+	clearElementFinishing({
+		trackId,
+		elementId,
+	}: {
+		trackId: string;
+		elementId: string;
+	}): void {
+		const element = this.getFinishableElement({ trackId, elementId });
+		if (!element) {
+			throw new Error("Finishing only applies to video and image clips.");
+		}
+		const command = new ClearElementFinishingCommand(trackId, elementId);
+		this.editor.command.execute({ command });
+	}
+
 	setElementKeyframe({
 		trackId,
 		elementId,
@@ -610,6 +797,25 @@ export class TimelineManager {
 
 	private notify(): void {
 		this.listeners.forEach((fn) => fn());
+	}
+
+	private getFinishableElement({
+		trackId,
+		elementId,
+	}: {
+		trackId: string;
+		elementId: string;
+	}): FinishableVisualElement | null {
+		const track = this.getTrackById({ trackId });
+		const element = track?.elements.find((candidate) => candidate.id === elementId);
+		if (!element || (element.type !== "video" && element.type !== "image")) {
+			return null;
+		}
+		return {
+			...element,
+			adjustments: clampVisualAdjustments({ adjustments: element.adjustments }),
+			effects: normalizeVisualEffects({ effects: element.effects }),
+		};
 	}
 
 	updateTracks(newTracks: TimelineTrack[]): void {

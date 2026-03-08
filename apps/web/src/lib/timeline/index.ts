@@ -6,6 +6,7 @@ export * from "./zoom-utils";
 export * from "./ruler-utils";
 export * from "./manual-editing";
 export * from "./motion";
+export * from "./finishing";
 
 export function calculateTotalDuration({
 	tracks,

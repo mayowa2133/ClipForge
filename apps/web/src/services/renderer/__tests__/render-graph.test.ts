@@ -76,6 +76,16 @@ describe("buildRenderGraph", () => {
 						duration: 2,
 						trimStart: 0,
 						trimEnd: 0,
+						adjustments: {
+							exposure: 0.2,
+							contrast: 0,
+							saturation: 0,
+							temperature: 0,
+							tint: 0,
+							highlights: 0,
+							shadows: 0,
+						},
+						effects: [{ id: "fx-blur", kind: "blur", enabled: true, radius: 8 }],
 						transform: baseTransform,
 						opacity: 0.8,
 						hidden: false,
@@ -157,6 +167,10 @@ describe("buildRenderGraph", () => {
 			payload: {
 				mediaId: "image-2",
 				maxSourceSize: 2048,
+				adjustments: {
+					exposure: 0.2,
+				},
+				effects: [{ kind: "blur", radius: 8 }],
 			},
 		});
 		expect(graph.layers[2]).toMatchObject({

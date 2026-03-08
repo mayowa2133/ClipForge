@@ -25,6 +25,38 @@ export type TransitionPreset =
 	| "fade-white"
 	| "slide";
 
+export interface VisualAdjustments {
+	exposure: number;
+	contrast: number;
+	saturation: number;
+	temperature: number;
+	tint: number;
+	highlights: number;
+	shadows: number;
+}
+
+export type VisualEffectKind = "blur" | "vignette" | "sharpen";
+
+export type VisualEffect =
+	| {
+			id: string;
+			kind: "blur";
+			enabled: boolean;
+			radius: number;
+	  }
+	| {
+			id: string;
+			kind: "vignette";
+			enabled: boolean;
+			intensity: number;
+	  }
+	| {
+			id: string;
+			kind: "sharpen";
+			enabled: boolean;
+			amount: number;
+	  };
+
 export interface ElementTransitionIn {
 	preset: TransitionPreset;
 	duration: number;
@@ -119,6 +151,8 @@ export interface VideoElement extends BaseTimelineElement {
 	linkedGroupId?: string | null;
 	transitionIn?: ElementTransitionIn | null;
 	keyframes?: VisualKeyframeMap | null;
+	adjustments?: VisualAdjustments | null;
+	effects?: VisualEffect[] | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
@@ -131,6 +165,8 @@ export interface ImageElement extends BaseTimelineElement {
 	linkedGroupId?: string | null;
 	transitionIn?: ElementTransitionIn | null;
 	keyframes?: VisualKeyframeMap | null;
+	adjustments?: VisualAdjustments | null;
+	effects?: VisualEffect[] | null;
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;

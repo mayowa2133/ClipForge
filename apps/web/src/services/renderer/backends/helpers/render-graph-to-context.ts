@@ -9,8 +9,8 @@ import {
 } from "@/lib/timeline";
 import { clearRenderSurface, drawBlurBackground } from "./render-background";
 import { renderTextLayer } from "./render-text-layer";
-import { drawVisualToContext } from "./render-visual";
 import { renderVideoLayer } from "./render-video-layer";
+import { renderFinishedVisualLayer } from "@/services/renderer/visual-finishing";
 
 type ResolvedImageLayer = {
 	id: string;
@@ -25,6 +25,8 @@ type ResolvedImageLayer = {
 	payload: {
 		sourceUrl: string;
 		transform: { scale: number; position: { x: number; y: number }; rotate: number };
+		adjustments?: import("@/types/timeline").VisualAdjustments | null;
+		effects?: import("@/types/timeline").VisualEffect[] | null;
 		opacity: number;
 		blendMode?: string;
 		maxSourceSize?: number;
@@ -230,6 +232,8 @@ function toVisualMotionElement({
 			linkedGroupId: null,
 			transitionIn: layer.payload.transitionIn ?? null,
 			keyframes: layer.payload.keyframes ?? null,
+			adjustments: layer.payload.adjustments ?? null,
+			effects: layer.payload.effects ?? null,
 			transform: layer.payload.transform,
 			opacity: layer.payload.opacity,
 			blendMode: layer.payload.blendMode,
@@ -250,6 +254,8 @@ function toVisualMotionElement({
 			linkedGroupId: null,
 			transitionIn: layer.payload.transitionIn ?? null,
 			keyframes: (layer.payload.keyframes as VisualElement["keyframes"]) ?? null,
+			adjustments: layer.payload.adjustments ?? null,
+			effects: layer.payload.effects ?? null,
 			transform: layer.payload.transform,
 			opacity: layer.payload.opacity,
 			blendMode: layer.payload.blendMode as VisualElement["blendMode"],
@@ -576,7 +582,7 @@ async function renderImageLikeLayer({
 		("height" in source.source && typeof source.source.height === "number"
 			? source.source.height
 			: source.height) || source.height;
-	drawVisualToContext({
+	renderFinishedVisualLayer({
 		ctx,
 		canvasWidth,
 		canvasHeight,
@@ -586,6 +592,8 @@ async function renderImageLikeLayer({
 		transform,
 		opacity,
 		blendMode: (layer.payload.blendMode as never) ?? undefined,
+		adjustments: layer.payload.adjustments ?? null,
+		effects: layer.payload.effects ?? null,
 	});
 }
 

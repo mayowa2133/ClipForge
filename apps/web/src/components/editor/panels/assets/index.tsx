@@ -4,7 +4,10 @@ import { Separator } from "@/components/ui/separator";
 import { type Tab, useAssetsPanelStore } from "@/stores/assets-panel-store";
 import { TabBar } from "./tabbar";
 import { Captions } from "./views/captions";
+import { AdjustmentView } from "./views/adjustment";
 import { MediaView } from "./views/assets";
+import { EffectsView } from "./views/effects";
+import { FiltersView } from "./views/filters";
 import { SettingsView } from "./views/settings";
 import { SoundsView } from "./views/sounds";
 import { StickersView } from "./views/stickers";
@@ -19,23 +22,11 @@ export function AssetsPanel() {
 		sounds: <SoundsView />,
 		text: <TextView />,
 		stickers: <StickersView />,
-		effects: (
-			<div className="text-muted-foreground p-4">
-				Effects view coming soon...
-			</div>
-		),
+		effects: <EffectsView />,
 		transitions: <TransitionsView />,
 		captions: <Captions />,
-		filters: (
-			<div className="text-muted-foreground p-4">
-				Filters view coming soon...
-			</div>
-		),
-		adjustment: (
-			<div className="text-muted-foreground p-4">
-				Adjustment view coming soon...
-			</div>
-		),
+		filters: <FiltersView />,
+		adjustment: <AdjustmentView />,
 		settings: <SettingsView />,
 	};
 

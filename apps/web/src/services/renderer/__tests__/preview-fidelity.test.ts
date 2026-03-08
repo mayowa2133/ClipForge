@@ -97,6 +97,56 @@ describe("preview fidelity", () => {
 		);
 	});
 
+	test("graph fingerprint changes when finishing payload changes", () => {
+		const baseLayer: RenderGraph["layers"][number] = {
+			id: "video-1",
+			trackId: "track-video-1",
+			kind: "video",
+			zIndex: 0,
+			startTime: 0,
+			duration: 3,
+			trimStart: 0,
+			trimEnd: 0,
+			hidden: false,
+			payload: {
+				mediaId: "asset-1",
+				playbackRate: 1,
+				transform: {
+					scale: 1,
+					position: { x: 0, y: 0 },
+					rotate: 0,
+				},
+				opacity: 1,
+				adjustments: null,
+				effects: null,
+			},
+		};
+		const a = buildGraph({ layers: [baseLayer] });
+		const b = buildGraph({
+			layers: [
+				{
+					...baseLayer,
+					payload: {
+						...baseLayer.payload,
+						adjustments: {
+							exposure: 0.2,
+							contrast: 0,
+							saturation: 0,
+							temperature: 0,
+							tint: 0,
+							highlights: 0,
+							shadows: 0,
+						},
+					},
+				},
+			],
+		});
+
+		expect(buildRenderGraphFingerprint({ graph: a })).not.toBe(
+			buildRenderGraphFingerprint({ graph: b }),
+		);
+	});
+
 	test("parity sample times are deterministic and capped", () => {
 		const times = buildPreviewParitySampleTimes({
 			graph: buildGraph({
