@@ -43,6 +43,7 @@ export function buildProjectSummary({
 				trackType: track.type,
 				trackName: track.name,
 				elementType: element.type,
+				elementRole: element.type === "text" ? (element.role ?? "text") : null,
 				elementName: element.name,
 				textContent,
 				durationMs: Math.round(element.duration * 1000),
@@ -111,6 +112,7 @@ function classifySegmentKind({
 	trackType,
 	trackName,
 	elementType,
+	elementRole,
 	elementName,
 	textContent,
 	durationMs,
@@ -118,6 +120,7 @@ function classifySegmentKind({
 	trackType: string;
 	trackName: string;
 	elementType: string;
+	elementRole: "text" | "caption" | null;
 	elementName: string;
 	textContent: string;
 	durationMs: number;
@@ -133,6 +136,9 @@ function classifySegmentKind({
 	}
 	if (elementType !== "text") {
 		return "unknown";
+	}
+	if (elementRole === "caption") {
+		return "caption";
 	}
 
 	const normalizedTrackName = trackName.toLowerCase();

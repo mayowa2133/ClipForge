@@ -103,8 +103,13 @@ describe("scene assembly helpers", () => {
 		expect(duplicate.tracks[0]?.elements[0]?.id).not.toBe(
 			original.tracks[0]?.elements[0]?.id,
 		);
-		expect(duplicate.tracks[0]?.elements[0]?.mediaId).toBe(
-			original.tracks[0]?.elements[0]?.mediaId,
-		);
+		const duplicateElement = duplicate.tracks[0]?.elements[0];
+		const originalElement = original.tracks[0]?.elements[0];
+		if (
+			duplicateElement?.type === "video" &&
+			originalElement?.type === "video"
+		) {
+			expect(duplicateElement.mediaId).toBe(originalElement.mediaId);
+		}
 	});
 });

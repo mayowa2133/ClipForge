@@ -67,6 +67,12 @@ export interface AnimatedPropertyKeyframe {
 	value: number;
 }
 
+export interface CaptionWordTiming {
+	text: string;
+	startTime: number;
+	endTime: number;
+}
+
 export interface VisualKeyframeMap {
 	positionX?: AnimatedPropertyKeyframe[];
 	positionY?: AnimatedPropertyKeyframe[];
@@ -174,6 +180,8 @@ export interface ImageElement extends BaseTimelineElement {
 
 export interface TextElement extends BaseTimelineElement {
 	type: "text";
+	role?: "text" | "caption";
+	captionTiming?: { words: CaptionWordTiming[] } | null;
 	content: string;
 	fontSize: number;
 	fontFamily: string;

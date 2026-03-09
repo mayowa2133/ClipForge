@@ -57,6 +57,16 @@ export interface CaptionStyleTemplate {
 	highlight_mode: CaptionHighlightMode;
 }
 
+export interface CaptionSegmentView {
+	elementId: string;
+	trackId: string;
+	text: string;
+	startTime: number;
+	duration: number;
+	endTime: number;
+	words: Array<{ text: string; startTime: number; endTime: number }> | null;
+}
+
 export interface TimelineDiffBaseOp {
 	type:
 		| "REMOVE_SILENCE"
@@ -203,6 +213,7 @@ export interface ClipForgeProjectData {
 	mediaMetadataById: Record<string, ClipMediaMetadata>;
 	captionStylesById: Record<string, CaptionStyleTemplate>;
 	activeCaptionStyleId: string | null;
+	captionTrackIdsBySceneId: Record<string, string | null>;
 	opsAudit: TimelineDiffAuditEntry[];
 }
 

@@ -3,7 +3,6 @@ import {
 	buildDefaultClipForgeProjectData,
 	createClipForgeDemoProject,
 } from "@/lib/clipforge";
-import type { InsertElementParams } from "@/lib/commands/timeline/element/insert-element";
 import type { MediaAsset } from "@/types/assets";
 import type { ClipMediaMetadata } from "@/types/clipforge";
 import type { TProject } from "@/types/project";
@@ -44,7 +43,6 @@ describe("createClipForgeDemoProject", () => {
 		const currentProject = buildProjectFixture();
 		const importedAssets: MediaAsset[] = [];
 		const events: string[] = [];
-		let trackCounter = 0;
 
 		const editor = {
 			project: {
@@ -75,39 +73,7 @@ describe("createClipForgeDemoProject", () => {
 					return imported;
 				},
 			},
-			timeline: {
-				addTrack: () => {
-					trackCounter += 1;
-					const trackId = `text-track-${trackCounter}`;
-					currentProject.scenes[0]?.tracks.push({
-						id: trackId,
-						type: "text",
-						name: "Text",
-						hidden: false,
-						elements: [],
-					});
-					events.push(`track:${trackId}`);
-					return trackId;
-				},
-				insertElement: ({
-					element,
-					placement,
-				}: InsertElementParams) => {
-					if (placement.mode !== "explicit") {
-						return;
-					}
-					const track = currentProject.scenes[0]?.tracks.find(
-						(candidate) => candidate.id === placement.trackId,
-					);
-					if (track?.type === "text") {
-						track.elements.push({
-							id: `caption-${track.elements.length}`,
-							...(element as any),
-						});
-					}
-					events.push(`caption:${placement.trackId}`);
-				},
-			},
+			timeline: {} as any,
 			clipforge: {
 				initializeMediaMetadata: ({
 					mediaAssets,
@@ -160,13 +126,15 @@ describe("createClipForgeDemoProject", () => {
 					];
 					events.push("auto-edit");
 				},
-				applyOps: ({ ops }: { source: "manual"; ops: unknown[] }) => {
-					events.push(`ops:${Array.isArray(ops) ? ops.length : 0}`);
-					return {
-						applied: true,
-						ops: [],
-						errors: [],
-					};
+				generateSceneCaptions: ({
+					template,
+				}: {
+					language?: string;
+					template: "clean-bottom" | "bold-center";
+					overwriteExisting: boolean;
+				}) => {
+					events.push(`captions:${template}`);
+					return { generated: 3, trackId: "text-track-1" };
 				},
 			},
 		};
@@ -198,8 +166,7 @@ describe("createClipForgeDemoProject", () => {
 		expect(Object.keys(currentProject.clipforge!.mediaMetadataById)).toHaveLength(4);
 		expect(events).toContain("auto-edit");
 		expect(events).toContain("save");
-		expect(events.some((event) => event.startsWith("track:text-track-"))).toBe(true);
-		expect(events.some((event) => event.startsWith("ops:1"))).toBe(true);
+		expect(events).toContain("captions:bold-center");
 		expect(events.indexOf("auto-edit")).toBeGreaterThan(
 			events.indexOf("init:clip-1.mp4,clip-2.mp4,clip-3.mp4"),
 		);

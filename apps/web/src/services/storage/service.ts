@@ -22,6 +22,7 @@ import {
 import type { Bookmark, TimelineTrack, TScene } from "@/types/timeline";
 import {
 	buildDefaultClipForgeProjectData,
+	ensureClipForgeProjectData,
 	normalizeClipForgeProjectData,
 } from "@/lib/clipforge";
 
@@ -175,7 +176,8 @@ class StorageService {
 				updatedAt: new Date(scene.updatedAt),
 			})) ?? [];
 
-		const project: TProject = {
+		const project = ensureClipForgeProjectData({
+			project: {
 			metadata: {
 				id: serializedProject.metadata.id,
 				name: serializedProject.metadata.name,
@@ -194,7 +196,8 @@ class StorageService {
 			clipforge: deserializeClipForgeData({
 				clipforge: serializedProject.clipforge,
 			}),
-		};
+			},
+		});
 
 		return { project };
 	}

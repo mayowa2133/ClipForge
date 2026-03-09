@@ -170,6 +170,8 @@ export function buildTextElement({
 
 	return {
 		type: "text",
+		role: t.role ?? DEFAULT_TEXT_ELEMENT.role,
+		captionTiming: t.captionTiming ?? DEFAULT_TEXT_ELEMENT.captionTiming,
 		name: t.name ?? DEFAULT_TEXT_ELEMENT.name,
 		content: t.content ?? DEFAULT_TEXT_ELEMENT.content,
 		duration: t.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,

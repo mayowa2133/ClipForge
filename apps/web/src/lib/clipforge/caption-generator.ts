@@ -97,6 +97,62 @@ export function generateCaptionChunks({
 	return chunks;
 }
 
+export function generateCaptionChunksFromWords({
+	words,
+	options = {},
+}: {
+	words: Array<{ text: string; startTime: number; endTime: number }>;
+	options?: CaptionLineBreakOptions;
+}): CaptionChunk[] {
+	const maxCharsPerLine = options.maxCharsPerLine ?? 26;
+	const maxLines = options.maxLines ?? 2;
+	const minDisplaySeconds = options.minDisplaySeconds ?? 0.8;
+	const maxWordsPerChunk = options.maxWordsPerChunk ?? 10;
+
+	const chunks: CaptionChunk[] = [];
+	let index = 0;
+	let globalEnd = 0;
+	const normalizedWords = words.filter(
+		(word) => word.endTime > word.startTime && word.text.trim().length > 0,
+	);
+
+	while (index < normalizedWords.length) {
+		const endIndex = selectChunkEnd({
+			words: normalizedWords.map((word) => word.text),
+			startIndex: index,
+			maxWordsPerChunk,
+			maxCharsPerLine,
+			maxLines,
+		});
+		const chunkWords = normalizedWords.slice(index, endIndex);
+		const lines = breakIntoLines({
+			words: chunkWords.map((word) => word.text),
+			maxCharsPerLine,
+		});
+		const text = lines.slice(0, maxLines).join("\n");
+		const firstWord = chunkWords[0];
+		const lastWord = chunkWords[chunkWords.length - 1];
+		if (!firstWord || !lastWord) break;
+		const startTime = Math.max(firstWord.startTime, globalEnd);
+		const duration = Math.max(
+			minDisplaySeconds,
+			Math.max(0.01, lastWord.endTime - startTime),
+		);
+
+		chunks.push({
+			text,
+			startTime,
+			duration,
+			words: chunkWords,
+		});
+
+		globalEnd = startTime + duration;
+		index = endIndex;
+	}
+
+	return chunks;
+}
+
 function selectChunkEnd({
 	words,
 	startIndex,

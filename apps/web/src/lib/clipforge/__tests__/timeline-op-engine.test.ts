@@ -75,9 +75,10 @@ function buildProjectFixture(): TProject {
 						name: "Captions",
 						hidden: false,
 						elements: [
-							{
+						{
 								id: "caption-1",
 								type: "text",
+								role: "caption",
 								name: "Caption",
 								content: "hello world",
 								fontSize: 18,
@@ -90,6 +91,31 @@ function buildProjectFixture(): TProject {
 								textDecoration: "none",
 								duration: 4000,
 								startTime: 0,
+								trimStart: 0,
+								trimEnd: 0,
+								transform: {
+									scale: 1,
+									position: { x: 0, y: 0 },
+									rotate: 0,
+								},
+								opacity: 1,
+							},
+							{
+								id: "overlay-1",
+								type: "text",
+								role: "text",
+								name: "Overlay",
+								content: "sale now",
+								fontSize: 22,
+								fontFamily: "Arial",
+								color: "#ffffff",
+								background: { color: "transparent" },
+								textAlign: "left",
+								fontWeight: "normal",
+								fontStyle: "normal",
+								textDecoration: "none",
+								duration: 3000,
+								startTime: 5,
 								trimStart: 0,
 								trimEnd: 0,
 								transform: {
@@ -336,8 +362,8 @@ describe("timeline op engine", () => {
 
 		expect(textTrack?.type).toBe("text");
 		if (textTrack?.type === "text") {
-			expect(textTrack.elements).toHaveLength(2);
-			expect(textTrack.elements[1]).toMatchObject({
+			expect(textTrack.elements).toHaveLength(3);
+			expect(textTrack.elements.find((element) => element.content === "this")).toMatchObject({
 				content: "this",
 				startTime: 2,
 				duration: 3,
@@ -351,5 +377,45 @@ describe("timeline op engine", () => {
 		}
 
 		expect(revertTimelineDiffPatch({ patch })).toEqual(patch.before);
+	});
+
+	test("SET_CAPTION_STYLE updates caption-role text only", () => {
+		const project = buildProjectFixture();
+		const patch = buildTimelineDiffPatch({
+			project,
+			ops: [
+				{
+					type: "SET_CAPTION_STYLE",
+					style_id: "bold-center",
+					font: "Bebas Neue",
+					size: 64,
+					position: "center",
+					outline: true,
+					highlight_mode: "word",
+				},
+			],
+		});
+
+		const applied = applyTimelineDiffPatch({ patch });
+		const activeScene =
+			applied.scenes.find((scene) => scene.id === applied.currentSceneId) ??
+			applied.scenes[0];
+		const textTrack = activeScene.tracks.find((track) => track.id === "text-track-1");
+
+		expect(textTrack?.type).toBe("text");
+		if (textTrack?.type === "text") {
+			const caption = textTrack.elements.find((element) => element.id === "caption-1");
+			const overlay = textTrack.elements.find((element) => element.id === "overlay-1");
+			expect(caption).toMatchObject({
+				fontFamily: "Bebas Neue",
+				fontSize: 64,
+				textAlign: "center",
+			});
+			expect(overlay).toMatchObject({
+				fontFamily: "Arial",
+				fontSize: 22,
+				textAlign: "left",
+			});
+		}
 	});
 });

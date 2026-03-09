@@ -28,6 +28,8 @@ export const DEFAULT_TEXT_BACKGROUND = {
 
 export const DEFAULT_TEXT_ELEMENT: Omit<TextElement, "id"> = {
 	type: "text",
+	role: "text",
+	captionTiming: null,
 	name: "Text",
 	content: "Default text",
 	fontSize: 15,

@@ -1,13 +1,7 @@
 import type { EditorCore } from "@/core";
-import { DEFAULT_TEXT_ELEMENT } from "@/constants/text-constants";
 import { processMediaAssets, type ProcessedMediaAsset } from "@/lib/media/processing";
 import type { MediaAsset } from "@/types/assets";
 import type { TProject } from "@/types/project";
-import {
-	generateCaptionChunks,
-	getCaptionTemplate,
-} from "../caption-generator";
-import { buildTimelineTranscriptSegments } from "../timeline-transcript";
 import { CLIPFORGE_DEMO_MANIFEST, type ClipForgeDemoAssetSpec } from "./manifest";
 
 interface DemoProjectEditor {
@@ -19,7 +13,10 @@ interface DemoProjectEditor {
 	timeline: Pick<EditorCore["timeline"], "addTrack" | "insertElement">;
 	clipforge: Pick<
 		EditorCore["clipforge"],
-		"initializeMediaMetadata" | "seedMediaMetadata" | "autoEditTikTokDraft" | "applyOps"
+		| "initializeMediaMetadata"
+		| "seedMediaMetadata"
+		| "autoEditTikTokDraft"
+		| "generateSceneCaptions"
 	>;
 }
 
@@ -108,76 +105,9 @@ function generateDemoCaptions({
 }: {
 	editor: DemoProjectEditor;
 }): void {
-	const activeProject = editor.project.getActive();
-	const captionSegments = buildTimelineTranscriptSegments({
-		project: activeProject,
-	});
-	if (captionSegments.length === 0) {
-		return;
-	}
-
-	const styleId = CLIPFORGE_DEMO_MANIFEST.defaultCaptionStyle;
-	const template = getCaptionTemplate({ styleId });
-	const canvasHeight = activeProject.settings.canvasSize.height;
-	const positionY =
-		template.position === "bottom" ? Math.round(canvasHeight * 0.35) : 0;
-	const captionChunks = generateCaptionChunks({
-		segments: captionSegments,
-		options: {
-			maxCharsPerLine: template.style_id === "bold-center" ? 22 : 30,
-			maxLines: 2,
-			minDisplaySeconds: 0.85,
-			maxWordsPerChunk: 10,
-		},
-	});
-	const captionTrackId = editor.timeline.addTrack({
-		type: "text",
-		index: 0,
-	});
-
-	for (const [index, caption] of captionChunks.entries()) {
-		editor.timeline.insertElement({
-			placement: { mode: "explicit", trackId: captionTrackId },
-			element: {
-				...DEFAULT_TEXT_ELEMENT,
-				name: `Caption ${index + 1}`,
-				content: caption.text,
-				duration: caption.duration,
-				startTime: caption.startTime,
-				fontFamily: template.font,
-				fontSize: template.size,
-				fontWeight: template.style_id === "bold-center" ? "bold" : "normal",
-				textAlign: "center",
-				background: {
-					...DEFAULT_TEXT_ELEMENT.background,
-					color: template.outline ? "#000000" : "transparent",
-					paddingX: template.outline ? 24 : 0,
-					paddingY: template.outline ? 12 : 0,
-				},
-				transform: {
-					...DEFAULT_TEXT_ELEMENT.transform,
-					position: {
-						...DEFAULT_TEXT_ELEMENT.transform.position,
-						y: positionY,
-					},
-				},
-			},
-		});
-	}
-
-	editor.clipforge.applyOps({
-		source: "manual",
-		ops: [
-			{
-				type: "SET_CAPTION_STYLE",
-				style_id: template.style_id,
-				font: template.font,
-				size: template.size,
-				position: template.position,
-				outline: template.outline,
-				highlight_mode: template.highlight_mode,
-			},
-		],
+	editor.clipforge.generateSceneCaptions({
+		template: CLIPFORGE_DEMO_MANIFEST.defaultCaptionStyle,
+		overwriteExisting: true,
 	});
 }
 

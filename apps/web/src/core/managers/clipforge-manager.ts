@@ -2,10 +2,13 @@ import type { EditorCore } from "@/core";
 import {
 	BestEffortExportIntegration,
 	buildClipIndex,
+	buildSceneCaptionSegments,
 	buildEmptyMediaMetadata,
 	collectIncompatibleMediaReferences,
 	collectMissingMediaReferences,
 	collectUnverifiedMediaReferences,
+	clearSceneCaptionsFromProject,
+	createCaptionTextElements,
 	createClipForgeDemoProject,
 	type ClipForgeExportArtifact,
 	applyExportPreflightActions,
@@ -13,11 +16,15 @@ import {
 	evaluateExportPreflight,
 	ensureClipForgeProjectData,
 	isReplacementTypeAllowed,
+	mergeCaptionElements,
+	retimeCaptionElement,
+	splitCaptionElement,
 	type IncompatibleMediaReference,
 	type MissingMediaReference,
 	resolveClipForgeTranscriber,
 	resolveMediaAssetByName,
 	SrtImportTranscriber,
+	updateSceneCaptionTrack,
 	validateTimelineDiffOps,
 } from "@/lib/clipforge";
 import { buildPlanImpactPreview } from "@/lib/clipforge/chat/plan-impact";
@@ -26,11 +33,13 @@ import { extractMediaAssetAudioToFloat32 } from "@/lib/media/audio";
 import {
 	ApplyTimelineDiffOpsCommand,
 	AutoEditTikTokDraftCommand,
+	CaptionProjectSnapshotCommand,
 } from "@/lib/commands";
 import { useClipForgeChatDraftStore } from "@/stores/clipforge-chat-draft-store";
 import type { MediaAsset } from "@/types/assets";
 import type {
 	ClipMediaMetadata,
+	CaptionSegmentView,
 	TimelineDiffOp,
 	TimelineDiffOpSource,
 } from "@/types/clipforge";
@@ -40,6 +49,7 @@ import type {
 	ExportPreflightResult,
 	ExportQuality,
 } from "@/types/export";
+import type { TProject } from "@/types/project";
 import type {
 	ChatPlannerContext,
 	ChatPlannerOverrides,
@@ -468,6 +478,265 @@ export class ClipForgeManager {
 		};
 	}
 
+	getSceneCaptions(): CaptionSegmentView[] {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) return [];
+		return buildSceneCaptionSegments({ project: activeProject });
+	}
+
+	generateSceneCaptions({
+		language,
+		template,
+		overwriteExisting,
+	}: {
+		language?: string;
+		template: "clean-bottom" | "bold-center";
+		overwriteExisting: boolean;
+	}): { generated: number; trackId: string | null } {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+
+		if (!overwriteExisting && this.getSceneCaptions().length > 0) {
+			throw new Error("Captions already exist in this scene. Use regenerate to replace them.");
+		}
+
+		const sceneId = activeProject.currentSceneId;
+		let nextProject = ensureClipForgeProjectData({ project: activeProject });
+		nextProject = clearSceneCaptionsFromProject({
+			project: nextProject,
+			sceneId,
+		}) as typeof nextProject;
+
+		const captionElements = createCaptionTextElements({
+			project: nextProject,
+			styleId: template,
+		});
+		if (captionElements.length === 0) {
+			throw new Error(
+				"No indexed transcript was found for this scene. Index clips or use the demo project captions first.",
+			);
+		}
+
+		nextProject = updateSceneCaptionTrack({
+			project: nextProject,
+			sceneId,
+			updateElements: () => captionElements,
+		}) as typeof nextProject;
+		nextProject = {
+			...nextProject,
+			metadata: {
+				...nextProject.metadata,
+				updatedAt: new Date(),
+			},
+			clipforge: {
+				...nextProject.clipforge,
+				activeCaptionStyleId: template,
+			},
+		};
+
+		this.applyCaptionProjectSnapshot({
+			before: activeProject,
+			after: nextProject,
+		});
+
+		return {
+			generated: captionElements.length,
+			trackId: nextProject.clipforge.captionTrackIdsBySceneId[sceneId] ?? null,
+		};
+	}
+
+	updateCaptionText({
+		elementId,
+		text,
+	}: {
+		elementId: string;
+		text: string;
+	}): void {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const sceneId = activeProject.currentSceneId;
+		const nextProject = updateSceneCaptionTrack({
+			project: ensureClipForgeProjectData({ project: activeProject }),
+			sceneId,
+			updateElements: (elements) => {
+				const target = elements.find((element) => element.id === elementId);
+				if (!target) {
+					throw new Error("Caption segment not found.");
+				}
+				return elements.map((element) =>
+					element.id === elementId
+						? {
+								...element,
+								content: text,
+							}
+						: element,
+				);
+			},
+		});
+		this.applyCaptionProjectSnapshot({ before: activeProject, after: nextProject });
+	}
+
+	retimeCaption({
+		elementId,
+		startTime,
+		duration,
+	}: {
+		elementId: string;
+		startTime: number;
+		duration: number;
+	}): void {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const sceneId = activeProject.currentSceneId;
+		const nextProject = updateSceneCaptionTrack({
+			project: ensureClipForgeProjectData({ project: activeProject }),
+			sceneId,
+			updateElements: (elements) => {
+				const target = elements.find((element) => element.id === elementId);
+				if (!target) {
+					throw new Error("Caption segment not found.");
+				}
+				return elements.map((element) =>
+					element.id === elementId
+						? retimeCaptionElement({
+								element,
+								startTime,
+								duration,
+							})
+						: element,
+				);
+			},
+		});
+		this.applyCaptionProjectSnapshot({ before: activeProject, after: nextProject });
+	}
+
+	splitCaption({
+		elementId,
+		splitWordIndex,
+	}: {
+		elementId: string;
+		splitWordIndex: number;
+	}): void {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const sceneId = activeProject.currentSceneId;
+		const nextProject = updateSceneCaptionTrack({
+			project: ensureClipForgeProjectData({ project: activeProject }),
+			sceneId,
+			updateElements: (elements) => {
+				const target = elements.find((element) => element.id === elementId);
+				if (!target) {
+					throw new Error("Caption segment not found.");
+				}
+				const { first, second } = splitCaptionElement({
+					element: target,
+					splitWordIndex,
+				});
+				return elements.flatMap((element) =>
+					element.id === elementId ? [first, second] : [element],
+				);
+			},
+		});
+		this.applyCaptionProjectSnapshot({ before: activeProject, after: nextProject });
+	}
+
+	mergeCaptions({
+		firstElementId,
+		secondElementId,
+	}: {
+		firstElementId: string;
+		secondElementId: string;
+	}): void {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const sceneId = activeProject.currentSceneId;
+		const nextProject = updateSceneCaptionTrack({
+			project: ensureClipForgeProjectData({ project: activeProject }),
+			sceneId,
+			updateElements: (elements) => {
+				const ordered = [...elements].sort(
+					(a, b) => a.startTime - b.startTime || a.id.localeCompare(b.id),
+				);
+				const firstIndex = ordered.findIndex((element) => element.id === firstElementId);
+				const secondIndex = ordered.findIndex((element) => element.id === secondElementId);
+				const first = firstIndex >= 0 ? ordered[firstIndex] : null;
+				const second = secondIndex >= 0 ? ordered[secondIndex] : null;
+				if (!first || !second) {
+					throw new Error("Adjacent caption segments could not be found.");
+				}
+				if (secondIndex !== firstIndex + 1) {
+					throw new Error("Only adjacent caption segments can be merged.");
+				}
+				const merged = mergeCaptionElements({ first, second });
+				return elements
+					.filter(
+						(element) =>
+							element.id !== firstElementId && element.id !== secondElementId,
+					)
+					.concat(merged);
+			},
+		});
+		this.applyCaptionProjectSnapshot({ before: activeProject, after: nextProject });
+	}
+
+	applySceneCaptionStyle({
+		styleId,
+	}: {
+		styleId: string;
+	}): void {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const clipforgeProject = ensureClipForgeProjectData({ project: activeProject });
+		const style = clipforgeProject.clipforge.captionStylesById[styleId];
+		if (!style) {
+			throw new Error("Caption style not found.");
+		}
+
+		const result = this.applyOps({
+			source: "manual",
+			ops: [
+				{
+					type: "SET_CAPTION_STYLE",
+					style_id: style.style_id,
+					font: style.font,
+					size: style.size,
+					position: style.position,
+					outline: style.outline,
+					highlight_mode: style.highlight_mode,
+				},
+			],
+		});
+		if (!result.applied) {
+			throw new Error(result.errors[0]?.message ?? "Failed to apply caption style.");
+		}
+	}
+
+	clearSceneCaptions(): { cleared: number } {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const existing = buildSceneCaptionSegments({ project: activeProject });
+		const nextProject = clearSceneCaptionsFromProject({
+			project: ensureClipForgeProjectData({ project: activeProject }),
+			sceneId: activeProject.currentSceneId,
+		});
+		this.applyCaptionProjectSnapshot({ before: activeProject, after: nextProject });
+		return { cleared: existing.length };
+	}
+
 	async exportBestEffort(): Promise<ClipForgeExportArtifact> {
 		return this.exportIntegration.exportBestEffort({
 			editor: this.editor,
@@ -714,5 +983,17 @@ export class ClipForgeManager {
 		this.editor.playback.seek({
 			time: Math.min(Math.max(currentTime, 0), totalDuration),
 		});
+	}
+
+	private applyCaptionProjectSnapshot({
+		before,
+		after,
+	}: {
+		before: TProject;
+		after: TProject;
+	}): void {
+		const command = new CaptionProjectSnapshotCommand(before, after);
+		this.editor.command.execute({ command });
+		this.stabilizePreview();
 	}
 }

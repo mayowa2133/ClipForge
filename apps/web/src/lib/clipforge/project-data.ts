@@ -4,8 +4,9 @@ import type {
 	ClipMediaMetadata,
 } from "@/types/clipforge";
 import type { TProject } from "@/types/project";
+import { adoptLegacyCaptionTracks } from "./caption-studio";
 
-export const CLIPFORGE_SCHEMA_VERSION = 2;
+export const CLIPFORGE_SCHEMA_VERSION = 3;
 
 const CLEAN_BOTTOM_STYLE: CaptionStyleTemplate = {
 	style_id: "clean-bottom",
@@ -34,6 +35,7 @@ export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 			[BOLD_CENTER_STYLE.style_id]: BOLD_CENTER_STYLE,
 		},
 		activeCaptionStyleId: CLEAN_BOTTOM_STYLE.style_id,
+		captionTrackIdsBySceneId: {},
 		opsAudit: [],
 	};
 }
@@ -81,6 +83,10 @@ export function normalizeClipForgeProjectData({
 		},
 		activeCaptionStyleId:
 			source.activeCaptionStyleId ?? defaults.activeCaptionStyleId,
+		captionTrackIdsBySceneId: {
+			...defaults.captionTrackIdsBySceneId,
+			...(source.captionTrackIdsBySceneId ?? {}),
+		},
 		opsAudit: source.opsAudit ?? [],
 	};
 }
@@ -90,17 +96,19 @@ export function ensureClipForgeProjectData({
 }: {
 	project: TProject;
 }): TProject & { clipforge: ClipForgeProjectData } {
-	if (project.clipforge) {
-		return {
-			...project,
-			clipforge: normalizeClipForgeProjectData({
-				clipforge: project.clipforge,
-			}),
-		} as TProject & { clipforge: ClipForgeProjectData };
-	}
+	const withClipForge = project.clipforge
+		? ({
+				...project,
+				clipforge: normalizeClipForgeProjectData({
+					clipforge: project.clipforge,
+				}),
+			} as TProject & { clipforge: ClipForgeProjectData })
+		: ({
+				...project,
+				clipforge: buildDefaultClipForgeProjectData(),
+			} as TProject & { clipforge: ClipForgeProjectData });
 
-	return {
-		...project,
-		clipforge: buildDefaultClipForgeProjectData(),
-	};
+	return adoptLegacyCaptionTracks({
+		project: withClipForge,
+	}) as TProject & { clipforge: ClipForgeProjectData };
 }

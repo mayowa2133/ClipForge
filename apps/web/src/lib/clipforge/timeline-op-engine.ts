@@ -29,6 +29,7 @@ import type {
 	VideoElement,
 } from "@/types/timeline";
 import { generateUUID } from "@/utils/id";
+import { applyCaptionStyleToTextElement, isCaptionTextElement } from "./caption-studio";
 import {
 	buildDefaultClipForgeProjectData,
 	ensureClipForgeProjectData,
@@ -600,17 +601,15 @@ function applySetCaptionStyleOp({
 	for (const track of tracks) {
 		if (track.type !== "text") continue;
 		for (const element of track.elements) {
-			element.fontFamily = style.font;
-			element.fontSize = style.size;
-			element.fontWeight =
-				style.style_id === "bold-center" || style.position === "center"
-					? "bold"
-					: element.fontWeight;
-			element.textAlign = style.position === "center" ? "center" : "left";
-			element.background = {
-				...element.background,
-				color: style.outline ? "#000000" : "transparent",
-			};
+			if (element.type !== "text" || !isCaptionTextElement(element)) {
+				continue;
+			}
+			const styledElement = applyCaptionStyleToTextElement({
+				element,
+				style,
+				canvasHeight: project.settings.canvasSize.height,
+			});
+			Object.assign(element, styledElement);
 		}
 	}
 }
