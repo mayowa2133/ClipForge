@@ -10,6 +10,7 @@ import {
 	AddTrackCommand,
 	RemoveTrackCommand,
 	ToggleTrackMuteCommand,
+	UpdateTrackVolumeCommand,
 	ToggleTrackVisibilityCommand,
 	InsertElementCommand,
 	UpdateElementTrimCommand,
@@ -615,6 +616,20 @@ export class TimelineManager {
 
 	toggleTrackMute({ trackId }: { trackId: string }): void {
 		const command = new ToggleTrackMuteCommand(trackId);
+		this.editor.command.execute({ command });
+	}
+
+	updateTrackVolume({
+		trackId,
+		volume,
+	}: {
+		trackId: string;
+		volume: number;
+	}): void {
+		const command = new UpdateTrackVolumeCommand(
+			trackId,
+			Math.max(0, Math.min(2, volume)),
+		);
 		this.editor.command.execute({ command });
 	}
 

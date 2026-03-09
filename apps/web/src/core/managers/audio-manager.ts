@@ -1,8 +1,17 @@
 import type { EditorCore } from "@/core";
-import type { AudioClipSource } from "@/lib/media/audio";
-import { createAudioContext, collectAudioClips } from "@/lib/media/audio";
+import type { AudioClipSource, ProjectMixSummary } from "@/lib/media/audio";
+import {
+	analyzeNormalizationGainDb,
+	buildProjectMixSummary,
+	collectAudioClips,
+	createAudioContext,
+	dbToGain,
+	getAudioEnvelopeGain,
+	getDuckingGainAtTime,
+} from "@/lib/media/audio";
 import { buildProjectAssemblyTracks, getProjectDurationFromScenes } from "@/lib/scenes";
 import { usePreviewStore } from "@/stores/preview-store";
+import { buildUploadAudioElement } from "@/lib/timeline";
 import {
 	ALL_FORMATS,
 	AudioBufferSink,
@@ -32,6 +41,11 @@ export class AudioManager {
 	private lastIsPlaying = false;
 	private lastVolume = 1;
 	private unsubscribers: Array<() => void> = [];
+	private mediaRecorder: MediaRecorder | null = null;
+	private recordingStream: MediaStream | null = null;
+	private recordingChunks: Blob[] = [];
+	private recordingInsertTime = 0;
+	private recordingStartedAtMs = 0;
 
 	constructor(private editor: EditorCore) {
 		this.lastVolume = this.editor.playback.getVolume();
@@ -157,7 +171,7 @@ export class AudioManager {
 			await audioContext.resume();
 		}
 
-		this.clips = await collectAudioClips({ tracks, mediaAssets });
+		this.clips = await collectAudioClips({ tracks, mediaAssets, project: activeProject });
 		if (!this.editor.playback.getIsPlaying()) return;
 
 		this.playbackStartTime = time;
@@ -272,13 +286,29 @@ export class AudioManager {
 				duration: clip.duration,
 				fadeInDuration: clip.fadeInDuration,
 				fadeOutDuration: clip.fadeOutDuration,
-			}) * clip.volume;
+			}) *
+				clip.volume *
+				dbToGain(clip.normalizationGainDb) *
+				clip.trackVolume *
+				clip.masterVolume *
+				getDuckingGainAtTime({
+					time: effectiveTimelineTime,
+					ducking: clip.ducking,
+				});
 			const endGain = getAudioEnvelopeGain({
 				timelineOffset: chunkEndOffset,
 				duration: clip.duration,
 				fadeInDuration: clip.fadeInDuration,
 				fadeOutDuration: clip.fadeOutDuration,
-			}) * clip.volume;
+			}) *
+				clip.volume *
+				dbToGain(clip.normalizationGainDb) *
+				clip.trackVolume *
+				clip.masterVolume *
+				getDuckingGainAtTime({
+					time: clip.startTime + chunkEndOffset,
+					ducking: clip.ducking,
+				});
 			clipGain.gain.setValueAtTime(startGain, Math.max(startTimestamp, audioContext.currentTime));
 			clipGain.gain.linearRampToValueAtTime(
 				endGain,
@@ -383,31 +413,200 @@ export class AudioManager {
 			return null;
 		}
 	}
-}
 
-function getAudioEnvelopeGain({
-	timelineOffset,
-	duration,
-	fadeInDuration,
-	fadeOutDuration,
-}: {
-	timelineOffset: number;
-	duration: number;
-	fadeInDuration: number;
-	fadeOutDuration: number;
-}): number {
-	const safeFadeIn = Math.max(0, Math.min(fadeInDuration, duration));
-	const safeFadeOut = Math.max(0, Math.min(fadeOutDuration, duration));
-	let gain = 1;
-
-	if (safeFadeIn > 0 && timelineOffset < safeFadeIn) {
-		gain = Math.min(gain, timelineOffset / safeFadeIn);
+	getProjectMixSummary(): ProjectMixSummary {
+		const previewMode = usePreviewStore.getState().previewMode;
+		const activeProject = this.editor.project.getActive();
+		const tracks =
+			previewMode === "project" && activeProject
+				? buildProjectAssemblyTracks({ scenes: activeProject.scenes })
+				: this.editor.timeline.getTracks();
+		return buildProjectMixSummary({
+			tracks,
+			project: activeProject,
+		});
 	}
 
-	const fadeOutStart = Math.max(0, duration - safeFadeOut);
-	if (safeFadeOut > 0 && timelineOffset > fadeOutStart) {
-		gain = Math.min(gain, (duration - timelineOffset) / safeFadeOut);
+	async normalizeElement({
+		trackId,
+		elementId,
+	}: {
+		trackId: string;
+		elementId: string;
+	}): Promise<number> {
+		const track = this.editor.timeline.getTrackById({ trackId });
+		const element = track?.elements.find((candidate) => candidate.id === elementId);
+		if (!element || element.type !== "audio") {
+			throw new Error("Normalize requires a selected audio clip.");
+		}
+
+		let file: File | null = null;
+		if (element.sourceType === "upload") {
+			const mediaAsset = this.editor.media
+				.getAssets()
+				.find((asset) => asset.id === element.mediaId);
+			file = mediaAsset?.file ?? null;
+		} else {
+			const response = await fetch(element.sourceUrl);
+			if (!response.ok) {
+				throw new Error("Failed to download audio for normalization.");
+			}
+			const blob = await response.blob();
+			file = new File([blob], `${element.name}.mp3`, {
+				type: blob.type || "audio/mpeg",
+			});
+		}
+
+		if (!file) {
+			throw new Error("Audio source could not be resolved for normalization.");
+		}
+
+		const normalizationGainDb = await analyzeNormalizationGainDb({ file });
+		this.editor.timeline.updateElements({
+			updates: [
+				{
+					trackId,
+					elementId,
+					updates: { normalizationGainDb },
+				},
+			],
+		});
+		return normalizationGainDb;
 	}
 
-	return Math.max(0, Math.min(1, gain));
+	async recordVoiceoverStart(): Promise<void> {
+		if (typeof window === "undefined" || typeof navigator === "undefined") {
+			throw new Error("Voiceover recording is only available in the browser.");
+		}
+		if (this.mediaRecorder && this.mediaRecorder.state === "recording") {
+			throw new Error("Voiceover recording is already in progress.");
+		}
+		if (!navigator.mediaDevices?.getUserMedia) {
+			throw new Error("Microphone recording is not supported in this browser.");
+		}
+
+		try {
+			const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			const recorder = new MediaRecorder(stream);
+			this.recordingStream = stream;
+			this.mediaRecorder = recorder;
+			this.recordingChunks = [];
+			this.recordingInsertTime = this.editor.playback.getCurrentTime();
+			this.recordingStartedAtMs =
+				typeof performance !== "undefined" ? performance.now() : Date.now();
+
+			recorder.addEventListener("dataavailable", (event) => {
+				if (event.data && event.data.size > 0) {
+					this.recordingChunks.push(event.data);
+				}
+			});
+			recorder.addEventListener("stop", () => {
+				this.recordingStream?.getTracks().forEach((track) => track.stop());
+				this.recordingStream = null;
+			});
+			recorder.start();
+		} catch (error) {
+			const message =
+				error instanceof DOMException && error.name === "NotAllowedError"
+					? "Microphone access was denied."
+					: error instanceof DOMException && error.name === "NotFoundError"
+						? "No microphone input device was found."
+						: error instanceof Error
+							? error.message
+							: "Unable to start voiceover recording.";
+			throw new Error(message);
+		}
+	}
+
+	async recordVoiceoverStop(): Promise<{
+		mediaId: string;
+		trackId: string;
+		duration: number;
+	}> {
+		if (!this.mediaRecorder) {
+			throw new Error("Voiceover recording has not started.");
+		}
+		const recorder = this.mediaRecorder;
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("An active project is required for voiceover recording.");
+		}
+
+		const stopped = await new Promise<Blob>((resolve, reject) => {
+			const cleanup = () => {
+				recorder.removeEventListener("stop", handleStop);
+				recorder.removeEventListener("error", handleError);
+			};
+			const handleStop = () => {
+				cleanup();
+				const blob = new Blob(this.recordingChunks, {
+					type: recorder.mimeType || "audio/webm",
+				});
+				resolve(blob);
+			};
+			const handleError = () => {
+				cleanup();
+				reject(new Error("Voiceover recording was interrupted."));
+			};
+			recorder.addEventListener("stop", handleStop, { once: true });
+			recorder.addEventListener("error", handleError, { once: true });
+			recorder.stop();
+		});
+
+		this.mediaRecorder = null;
+		if (stopped.size === 0) {
+			throw new Error("Voiceover recording was empty.");
+		}
+
+		const file = new File([stopped], `voiceover-${Date.now()}.webm`, {
+			type: stopped.type || "audio/webm",
+		});
+		const elapsedSeconds = Math.max(
+			0.1,
+			((typeof performance !== "undefined" ? performance.now() : Date.now()) -
+				this.recordingStartedAtMs) /
+				1000,
+		);
+		const duration = elapsedSeconds;
+		const asset = await this.editor.media.addMediaAsset({
+			projectId: activeProject.metadata.id,
+			asset: {
+				name: file.name,
+				type: "audio",
+				file,
+				url: URL.createObjectURL(file),
+				duration,
+				mimeType: file.type,
+			},
+		});
+		if (!asset) {
+			throw new Error("Failed to save the voiceover recording.");
+		}
+
+		const existingAudioTrack = this.editor.timeline
+			.getTracks()
+			.find((track) => track.type === "audio");
+		const trackId =
+			existingAudioTrack?.id ??
+			this.editor.timeline.addTrack({
+				type: "audio",
+			});
+		const element = buildUploadAudioElement({
+			mediaId: asset.id,
+			name: "Voiceover",
+			duration,
+			startTime: this.recordingInsertTime,
+		});
+		element.role = "voiceover";
+		this.editor.timeline.insertElement({
+			placement: { mode: "explicit", trackId },
+			element,
+		});
+
+		return {
+			mediaId: asset.id,
+			trackId,
+			duration,
+		};
+	}
 }

@@ -232,6 +232,7 @@ export class RendererManager {
 						tracks,
 						mediaAssets,
 						duration,
+						project: activeProject,
 					});
 				} catch (error) {
 					return {

@@ -1,4 +1,4 @@
-import type { TCanvasSize } from "@/types/project";
+import type { ProjectAudioSettings, TCanvasSize } from "@/types/project";
 
 export const DEFAULT_CANVAS_PRESETS: TCanvasSize[] = [
 	{ width: 1920, height: 1080 },
@@ -25,3 +25,10 @@ export const DEFAULT_CANVAS_SIZE: TCanvasSize = { width: 1920, height: 1080 };
 export const DEFAULT_FPS = 30;
 export const DEFAULT_BLUR_INTENSITY = 8;
 export const DEFAULT_COLOR = "#000000";
+export const DEFAULT_PROJECT_AUDIO_SETTINGS: ProjectAudioSettings = {
+	masterVolume: 1,
+	duckingEnabled: true,
+	duckingAmount: 0.45,
+	duckingAttackMs: 120,
+	duckingReleaseMs: 280,
+};

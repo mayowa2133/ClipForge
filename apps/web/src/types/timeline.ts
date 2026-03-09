@@ -104,6 +104,7 @@ export interface AudioTrack extends BaseTrack {
 	type: "audio";
 	elements: AudioElement[];
 	muted: boolean;
+	volume?: number;
 }
 
 export interface StickerTrack extends BaseTrack {
@@ -118,7 +119,9 @@ export type { Transform } from "./rendering";
 
 interface BaseAudioElement extends BaseTimelineElement {
 	type: "audio";
+	role?: "voiceover" | "music" | "sfx" | "audio";
 	volume: number;
+	normalizationGainDb?: number | null;
 	muted?: boolean;
 	buffer?: AudioBuffer;
 	playbackRate?: number;

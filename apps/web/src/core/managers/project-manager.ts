@@ -16,6 +16,7 @@ import {
 	DEFAULT_FPS,
 	DEFAULT_CANVAS_SIZE,
 	DEFAULT_COLOR,
+	DEFAULT_PROJECT_AUDIO_SETTINGS,
 } from "@/constants/project-constants";
 import { buildDefaultScene, getProjectDurationFromScenes } from "@/lib/scenes";
 import { buildScene } from "@/services/renderer/scene-builder";
@@ -94,6 +95,7 @@ export class ProjectManager {
 					type: "color",
 					color: DEFAULT_COLOR,
 				},
+				audio: { ...DEFAULT_PROJECT_AUDIO_SETTINGS },
 			},
 			version: CURRENT_PROJECT_VERSION,
 			clipforge: buildDefaultClipForgeProjectData(),

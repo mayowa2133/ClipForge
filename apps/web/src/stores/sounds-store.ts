@@ -27,7 +27,13 @@ interface SoundsStore {
 	isLoadingSavedSounds: boolean;
 	savedSoundsError: string | null;
 
-	addSoundToTimeline: ({ sound }: { sound: SoundEffect }) => Promise<boolean>;
+	addSoundToTimeline: ({
+		sound,
+		role,
+	}: {
+		sound: SoundEffect;
+		role?: "music" | "sfx" | "audio";
+	}) => Promise<boolean>;
 	setTopSoundEffects: ({ sounds }: { sounds: SoundEffect[] }) => void;
 	setLoading: ({ loading }: { loading: boolean }) => void;
 	setError: ({ error }: { error: string | null }) => void;
@@ -205,7 +211,7 @@ export const useSoundsStore = create<SoundsStore>((set, get) => ({
 		}
 	},
 
-	addSoundToTimeline: async ({ sound }) => {
+	addSoundToTimeline: async ({ sound, role = "sfx" }) => {
 		const audioUrl = sound.previewUrl;
 		if (!audioUrl) {
 			toast.error("Sound file not available");
@@ -241,6 +247,7 @@ export const useSoundsStore = create<SoundsStore>((set, get) => ({
 				startTime: currentTime,
 				buffer,
 			});
+			element.role = role;
 
 			editor.timeline.insertElement({
 				placement: { mode: "explicit", trackId },

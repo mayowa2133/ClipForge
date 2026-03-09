@@ -96,7 +96,7 @@ export function useSoundSearch({
 				resetPagination();
 
 				const response = await fetch(
-					`/api/sounds/search?q=${encodeURIComponent(query)}&type=effects&page=1`,
+					`/api/sounds/search?q=${encodeURIComponent(query)}&type=effects&page=1&commercial_only=${commercialOnly}`,
 				);
 
 				if (!ignore) {
@@ -130,6 +130,7 @@ export function useSoundSearch({
 		};
 	}, [
 		query,
+		commercialOnly,
 		lastSearchQuery,
 		searchResults.length,
 		setSearchResults,

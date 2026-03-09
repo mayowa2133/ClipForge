@@ -1,6 +1,7 @@
 "use client";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Slider } from "@/components/ui/slider";
 import {
 	Delete02Icon,
 	TaskAdd02Icon,
@@ -270,7 +271,28 @@ export function Timeline() {
 													height: `${getTrackHeight({ type: track.type })}px`,
 												}}
 											>
-												<div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+												<div className="flex min-w-0 flex-1 flex-col items-end justify-center gap-1">
+													{track.type === "audio" ? (
+														<div className="flex w-full items-center justify-end gap-2">
+															<span className="text-muted-foreground min-w-0 text-[10px]">
+																{Math.round((track.volume ?? 1) * 100)}%
+															</span>
+															<Slider
+																className="w-14"
+																value={[track.volume ?? 1]}
+																min={0}
+																max={2}
+																step={0.01}
+																onValueChange={(value) =>
+																	editor.timeline.updateTrackVolume({
+																		trackId: track.id,
+																		volume: value[0] ?? 1,
+																	})
+																}
+															/>
+														</div>
+													) : null}
+													<div className="flex min-w-0 flex-1 items-center justify-end gap-2">
 													{process.env.NODE_ENV === "development" &&
 														isMainTrack(track) && (
 															<div className="bg-red-500 size-1.5 rounded-full" />
@@ -304,6 +326,7 @@ export function Timeline() {
 														/>
 													)}
 													<TrackIcon track={track} />
+													</div>
 												</div>
 											</div>
 										))}

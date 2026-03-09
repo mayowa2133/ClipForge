@@ -221,8 +221,12 @@ export async function GET(request: NextRequest) {
 			const errorText = await response.text();
 			console.error("Freesound API error:", response.status, errorText);
 			return NextResponse.json(
-				{ error: "Failed to search sounds" },
-				{ status: response.status },
+				{
+					error: "Sound effects search is unavailable right now.",
+					message:
+						"Sound effects search could not reach the Freesound service in this environment.",
+				},
+				{ status: 503 },
 			);
 		}
 
@@ -273,8 +277,12 @@ export async function GET(request: NextRequest) {
 	} catch (error) {
 		console.error("Error searching sounds:", error);
 		return NextResponse.json(
-			{ error: "Internal server error" },
-			{ status: 500 },
+			{
+				error: "Sound effects search is unavailable right now.",
+				message:
+					"Sound effects search could not start in this environment. You can still use imported audio, saved sounds, and voiceover recording.",
+			},
+			{ status: 503 },
 		);
 	}
 }

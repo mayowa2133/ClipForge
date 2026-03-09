@@ -16,6 +16,14 @@ export interface TCanvasSize {
 	height: number;
 }
 
+export interface ProjectAudioSettings {
+	masterVolume: number;
+	duckingEnabled: boolean;
+	duckingAmount: number;
+	duckingAttackMs: number;
+	duckingReleaseMs: number;
+}
+
 export interface TProjectMetadata {
 	id: string;
 	name: string;
@@ -30,6 +38,7 @@ export interface TProjectSettings {
 	canvasSize: TCanvasSize;
 	originalCanvasSize?: TCanvasSize | null;
 	background: TBackground;
+	audio?: ProjectAudioSettings;
 }
 
 export interface TTimelineViewState {

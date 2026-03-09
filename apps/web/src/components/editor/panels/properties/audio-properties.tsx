@@ -15,6 +15,7 @@ import {
 	getElementVisibleSourceSpan,
 	getPlaybackDurationForSourceSpan,
 } from "@/lib/timeline/manual-editing";
+import { toast } from "sonner";
 
 const SPEED_PRESETS = [0.5, 1, 1.5, 2];
 
@@ -90,6 +91,9 @@ function SourceSection({
 					>
 						{isReplacing ? "Replacing..." : "Replace"}
 					</Button>
+					<p className="text-muted-foreground text-xs">
+						Role {getAudioRoleLabel({ element })}
+					</p>
 					<input {...fileInputProps} />
 				</SectionFields>
 			</SectionContent>
@@ -184,6 +188,20 @@ function AudioMixSection({
 		onCommit: commit,
 	});
 
+	const handleNormalize = async () => {
+		try {
+			const gainDb = await editor.audio.normalizeElement({
+				trackId,
+				elementId: element.id,
+			});
+			toast.success(`Normalization applied (${gainDb.toFixed(1)} dB).`);
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Failed to normalize audio.",
+			);
+		}
+	};
+
 	return (
 		<Section collapsible sectionKey="audio:mix">
 			<SectionHeader title="Audio" />
@@ -277,6 +295,12 @@ function AudioMixSection({
 					>
 						{element.muted ? "Unmute" : "Mute"}
 					</Button>
+					<Button variant="outline" size="sm" onClick={handleNormalize}>
+						Normalize
+					</Button>
+					<p className="text-muted-foreground text-xs">
+						Normalization {(element.normalizationGainDb ?? 0).toFixed(1)} dB
+					</p>
 				</SectionFields>
 			</SectionContent>
 		</Section>
@@ -400,4 +424,17 @@ function clampCompanionFade({
 	const current =
 		kind === "in" ? element.fadeOutDuration ?? 0 : element.fadeInDuration ?? 0;
 	return Math.max(0, Math.min(current, duration - nextValue));
+}
+
+function getAudioRoleLabel({ element }: { element: AudioElement }) {
+	switch (element.role ?? "audio") {
+		case "voiceover":
+			return "Voiceover";
+		case "music":
+			return "Music";
+		case "sfx":
+			return "SFX";
+		default:
+			return "Audio";
+	}
 }

@@ -94,6 +94,19 @@ function StateBadge({
 	);
 }
 
+function TextStateBadge({ label }: { label: string }) {
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<div className="rounded-md bg-black/65 px-1.5 py-1 text-[10px] font-semibold text-white shadow-sm">
+					{label}
+				</div>
+			</TooltipTrigger>
+			<TooltipContent>{label}</TooltipContent>
+		</Tooltip>
+	);
+}
+
 interface TimelineElementProps {
 	element: TimelineElementType;
 	track: TimelineTrack;
@@ -307,6 +320,16 @@ function ElementInner({
 		(element.type === "video" || element.type === "image") &&
 		hasVisualFinishing({ element }) &&
 		(element.effects?.length ?? 0) > 0;
+	const audioRole =
+		element.type === "audio"
+			? element.role === "voiceover"
+				? "VO"
+				: element.role === "music"
+					? "Music"
+					: element.role === "sfx"
+						? "SFX"
+						: null
+			: null;
 
 	return (
 		<div
@@ -318,6 +341,7 @@ function ElementInner({
 		>
 			<TooltipProvider delayDuration={200}>
 				<div className="absolute top-1 left-1 z-10 flex items-center gap-1">
+					{audioRole ? <TextStateBadge label={audioRole} /> : null}
 					{hasTransition ? (
 						<StateBadge icon={<Blend className="size-3" />} label="Transition" />
 					) : null}
