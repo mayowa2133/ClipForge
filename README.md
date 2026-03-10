@@ -211,6 +211,11 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
   - shows the recipe for review,
   - and only builds after explicit user confirmation.
 - Draft assembly remains active-scene scoped in M44 and uses the same command/validator/apply authority as the rest of the editor.
+- Footage intelligence now strengthens that first draft before build:
+  - ClipForge caches coarse video activity and scene-change analysis per asset,
+  - ranks strong early moments as hook candidates,
+  - surfaces likely trims/cuts with explainable reasons,
+  - and lets the creative-brief planner prefer those hook/keep-cut recommendations when available.
 
 ### Built-in demo project
 

@@ -19,6 +19,19 @@ export interface MediaBeatAnalysis {
 	version: 1;
 }
 
+export interface MediaVisualActivityWindow {
+	startTime: number;
+	endTime: number;
+	score: number;
+}
+
+export interface MediaVisualAnalysis {
+	sceneCuts: number[];
+	activityWindows: MediaVisualActivityWindow[];
+	analyzedAt: string | null;
+	version: 1;
+}
+
 export interface DerivedMediaOrigin {
 	kind: "freeze-frame";
 	sourceMediaId: string;

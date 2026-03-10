@@ -50,6 +50,7 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M42: Reusable creator workflow with templates, scene recipes, and project kits.
 - [x] M43: Multi-format publishing with version packs, auto reframe, safe layout adaptation, and multi-version export.
 - [x] M44: AI creative director with brief-to-draft TikTok recipe planning and deterministic draft assembly.
+- [x] M45: Footage intelligence with hook selection, moment scoring, and keep/cut ranking.
 
 ## Working Rules
 

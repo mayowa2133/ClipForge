@@ -158,12 +158,15 @@ describe("drafting helpers", () => {
 			projectKitTemplates: [],
 		});
 
-		expect(recipe.operations.map((step) => step.kind)).toContain("auto-edit");
+		expect(recipe.operations.map((step) => step.kind)).not.toContain("auto-edit");
 		expect(recipe.operations.map((step) => step.kind)).toContain("make-version");
 		expect(recipe.operations.map((step) => step.kind)).toContain("apply-caption-style");
 		expect(recipe.operations.map((step) => step.kind)).not.toContain("auto-montage");
 		expect(recipe.warnings).toContain(
 			"No transcript metadata is available, so caption generation may be skipped.",
+		);
+		expect(recipe.warnings).toContain(
+			"Hook scoring is unavailable, so opener selection falls back to clip order.",
 		);
 		expect(recipe.warnings).toContain(
 			"No analyzed beat source is active, so beat-paced montage may be skipped.",
@@ -233,5 +236,52 @@ describe("drafting helpers", () => {
 
 		const step = recipe.operations.find((candidate) => candidate.kind === "apply-project-kit");
 		expect(step?.params.kitId).toBe("kit-luxury");
+	});
+
+	test("planDraftRecipe prefers a ranked hook and keep/cut recommendations when scene assembly already exists", () => {
+		const project = buildProjectFixture();
+		const recipe = planDraftRecipe({
+			brief: buildCreativeBriefFromPrompt({
+				prompt: "make me a viral TikTok from this",
+				project,
+			}),
+			project,
+			mediaAssets: [buildMediaAsset({ id: "video-1", type: "video", duration: 8 })],
+			beatSourceMediaId: null,
+			beatMarkerCount: 0,
+			projectKitTemplates: [],
+			footageIntelligenceReport: {
+				generatedAt: "2026-03-10T00:00:00.000Z",
+				hookCandidates: [
+					{
+						id: "hook:video-1:0.000:1.200",
+						trackId: "video-track-1",
+						elementId: "video-1",
+						startTime: 0,
+						endTime: 1.2,
+						score: 3.4,
+						reasons: ["Starts early in the scene."],
+					},
+				],
+				momentScores: [],
+				keepCutRecommendations: [
+					{
+						id: "keep-cut:video-1",
+						trackId: "video-track-1",
+						elementId: "video-1",
+						action: "trim",
+						startTime: 0,
+						endTime: 2.5,
+						score: 2.1,
+						reasons: ["Trim to the strongest sub-window."],
+					},
+				],
+				warnings: [],
+			},
+		});
+
+		expect(recipe.operations.map((step) => step.kind)).not.toContain("auto-edit");
+		expect(recipe.hookCandidateId).toBe("hook:video-1:0.000:1.200");
+		expect(recipe.keepCutRecommendationIds).toEqual(["keep-cut:video-1"]);
 	});
 });

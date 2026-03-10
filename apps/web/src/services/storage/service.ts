@@ -351,6 +351,7 @@ class StorageService {
 			mimeType: metadata.mimeType,
 			compatibility: metadata.compatibility,
 			beatAnalysis: metadata.beatAnalysis,
+			visualAnalysis: metadata.visualAnalysis,
 			derived: metadata.derived,
 		};
 	}
@@ -375,6 +376,7 @@ class StorageService {
 			mimeType: mediaAsset.mimeType ?? mediaAsset.file.type ?? "",
 			compatibility: mediaAsset.compatibility,
 			beatAnalysis: mediaAsset.beatAnalysis,
+			visualAnalysis: mediaAsset.visualAnalysis,
 			derived: mediaAsset.derived,
 		};
 	}

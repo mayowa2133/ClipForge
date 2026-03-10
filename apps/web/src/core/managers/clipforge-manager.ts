@@ -6,6 +6,7 @@ import {
 	buildEmptyMediaMetadata,
 	buildCreativeBriefFromPrompt,
 	buildDraftImpactSummary,
+	buildSceneFootageIntelligenceReport,
 	collectIncompatibleMediaReferences,
 	collectMissingMediaReferences,
 	collectUnverifiedMediaReferences,
@@ -47,7 +48,9 @@ import type {
 	CreativeBrief,
 	DraftImpactSummary,
 	DraftRecipe,
+	FootageIntelligenceReport,
 	TimelineDiffOp,
+	CutRangeOp,
 	TimelineDiffOpSource,
 } from "@/types/clipforge";
 import type {
@@ -82,6 +85,7 @@ export class ClipForgeManager {
 
 		const command = new AutoEditTikTokDraftCommand(videoAssets);
 		this.editor.command.execute({ command });
+		this.invalidateSceneFootageIntelligence();
 		this.stabilizePreview();
 	}
 
@@ -476,6 +480,72 @@ export class ClipForgeManager {
 		});
 	}
 
+	async analyzeSceneFootageIntelligence(): Promise<FootageIntelligenceReport> {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const nextProject = ensureClipForgeProjectData({ project: activeProject });
+		const activeScene =
+			nextProject.scenes.find((scene) => scene.id === nextProject.currentSceneId) ??
+			nextProject.scenes[0] ??
+			null;
+		if (!activeScene) {
+			throw new Error("No active scene.");
+		}
+
+		const sceneVideoMediaIds = activeScene.tracks
+			.filter((track) => track.type === "video")
+			.flatMap((track) =>
+				track.elements
+					.filter((element): element is Extract<typeof track.elements[number], { type: "video" }> => element.type === "video")
+					.map((element) => element.mediaId),
+			);
+		for (const mediaId of [...new Set(sceneVideoMediaIds)]) {
+			const asset = this.editor.media.getAssets().find((candidate) => candidate.id === mediaId);
+			if (asset?.type === "video" && !asset.visualAnalysis) {
+				await this.editor.media.analyzeVisualActivity({ mediaId });
+			}
+		}
+
+		const beatState = this.editor.audio.getSceneBeatMarkers();
+		const report = buildSceneFootageIntelligenceReport({
+			project: {
+				...nextProject,
+				clipforge: ensureClipForgeProjectData({ project: nextProject }).clipforge,
+			},
+			mediaAssets: this.editor.media.getAssets(),
+			beatMarkers: beatState.markers,
+		});
+
+		this.editor.project.setActiveProject({
+			project: {
+				...nextProject,
+				metadata: {
+					...nextProject.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...nextProject.clipforge,
+					sceneFootageIntelligenceBySceneId: {
+						...nextProject.clipforge.sceneFootageIntelligenceBySceneId,
+						[activeScene.id]: report,
+					},
+				},
+			},
+		});
+		this.editor.save.markDirty();
+
+		return report;
+	}
+
+	getSceneFootageIntelligence(): FootageIntelligenceReport | null {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) return null;
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		return project.clipforge.sceneFootageIntelligenceBySceneId[project.currentSceneId] ?? null;
+	}
+
 	planDraftRecipe({
 		brief,
 	}: {
@@ -489,6 +559,7 @@ export class ClipForgeManager {
 			beatSourceMediaId: this.editor.audio.getSceneBeatMarkers().sourceMediaId,
 			beatMarkerCount: this.editor.audio.getSceneBeatMarkers().markers.length,
 			projectKitTemplates: this.editor.project.getProjectKitTemplates(),
+			footageIntelligenceReport: this.getSceneFootageIntelligence(),
 		});
 	}
 
@@ -508,9 +579,23 @@ export class ClipForgeManager {
 		const messages: string[] = [];
 		let appliedSteps = 0;
 		let skippedSteps = 0;
+		let workingFootageReport = this.getSceneFootageIntelligence();
 
 		for (const step of recipe.operations) {
 			try {
+				if (appliedSteps === 0 && recipe.hookCandidateId && !recipe.operations.some((candidate) => candidate.kind === "auto-edit")) {
+					this.applyHookCandidate({ candidateId: recipe.hookCandidateId });
+					messages.push("Promoted the recommended opener.");
+					appliedSteps += 1;
+					try {
+						workingFootageReport = await this.analyzeSceneFootageIntelligence();
+					} catch {
+						workingFootageReport = null;
+						messages.push(
+							"Hook scoring could not be refreshed after promoting the opener, so follow-up trims may be reduced.",
+						);
+					}
+				}
 				switch (step.kind) {
 					case "apply-project-kit": {
 						const kitId = readStringParam({ params: step.params, key: "kitId" });
@@ -529,6 +614,27 @@ export class ClipForgeManager {
 						break;
 					}
 					case "make-version": {
+						if ((recipe.keepCutRecommendationIds?.length ?? 0) > 0) {
+							const refreshedRecommendationIds =
+								workingFootageReport?.keepCutRecommendations
+									.filter((recommendation) => recommendation.action !== "keep")
+									.slice(0, recipe.keepCutRecommendationIds?.length ?? 0)
+									.map((recommendation) => recommendation.id) ?? [];
+							if (refreshedRecommendationIds.length > 0) {
+								const keepCutResult = this.applyKeepCutRecommendations({
+									recommendationIds: refreshedRecommendationIds,
+								});
+								if (keepCutResult.applied > 0) {
+									appliedSteps += 1;
+									messages.push(`Applied ${keepCutResult.applied} keep/cut recommendations.`);
+								}
+							} else if (!workingFootageReport) {
+								skippedSteps += 1;
+								messages.push(
+									"Skipped keep/cut recommendations because footage intelligence was unavailable.",
+								);
+							}
+						}
 						const durationTargetS = readNumberParam({
 							params: step.params,
 							key: "durationTargetS",
@@ -738,6 +844,132 @@ export class ClipForgeManager {
 		};
 	}
 
+	applyHookCandidate({
+		candidateId,
+	}: {
+		candidateId: string;
+	}): void {
+		const report = this.getSceneFootageIntelligence();
+		const candidate = report?.hookCandidates.find((item) => item.id === candidateId) ?? null;
+		if (!candidate) {
+			throw new Error("Hook candidate not found.");
+		}
+		if (candidate.startTime <= 0.05) {
+			return;
+		}
+		const result = this.applyOps({
+			source: "manual",
+			ops: [
+				{
+					type: "CUT_RANGE",
+					start_ms: 0,
+					end_ms: Math.round(candidate.startTime * 1000),
+				},
+			],
+		});
+		if (!result.applied) {
+			throw new Error(result.errors[0]?.message ?? "Unable to apply hook candidate.");
+		}
+	}
+
+	applyKeepCutRecommendations({
+		recommendationIds,
+		mode = "explicit",
+	}: {
+		recommendationIds?: string[];
+		mode?: "explicit" | "all-non-keep";
+	}): { applied: number; messages: string[] } {
+		const report = this.getSceneFootageIntelligence();
+		if (!report) {
+			throw new Error("No footage intelligence report is available.");
+		}
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const activeScene =
+			activeProject.scenes.find((scene) => scene.id === activeProject.currentSceneId) ??
+			activeProject.scenes[0] ??
+			null;
+		if (!activeScene) {
+			throw new Error("No active scene.");
+		}
+
+		const selectedIds =
+			mode === "all-non-keep"
+				? new Set(
+						report.keepCutRecommendations
+							.filter((recommendation) => recommendation.action !== "keep")
+							.map((recommendation) => recommendation.id),
+					)
+				: new Set(recommendationIds ?? []);
+		const recommendations = report.keepCutRecommendations.filter((recommendation) =>
+			selectedIds.has(recommendation.id),
+		);
+		if (recommendations.length === 0) {
+			return { applied: 0, messages: ["No keep/cut recommendations were selected."] };
+		}
+
+		const trackByElementId = new Map(
+			activeScene.tracks.flatMap((track) =>
+				track.elements.map((element) => [element.id, { track, element }] as const),
+			),
+		);
+		const ops: CutRangeOp[] = [];
+		for (const recommendation of recommendations) {
+			const resolved = trackByElementId.get(recommendation.elementId);
+			if (!resolved || resolved.element.type !== "video") continue;
+			const elementStart = resolved.element.startTime;
+			const elementEnd = resolved.element.startTime + resolved.element.duration;
+			if (recommendation.action === "cut") {
+				ops.push({
+					type: "CUT_RANGE",
+					start_ms: Math.round(elementStart * 1000),
+					end_ms: Math.round(elementEnd * 1000),
+				});
+				continue;
+			}
+			if (recommendation.action === "trim") {
+				if (recommendation.endTime < elementEnd - 0.05) {
+					ops.push({
+						type: "CUT_RANGE",
+						start_ms: Math.round(recommendation.endTime * 1000),
+						end_ms: Math.round(elementEnd * 1000),
+					});
+				}
+				if (recommendation.startTime > elementStart + 0.05) {
+					ops.push({
+						type: "CUT_RANGE",
+						start_ms: Math.round(elementStart * 1000),
+						end_ms: Math.round(recommendation.startTime * 1000),
+					});
+				}
+			}
+		}
+
+		const dedupedOps = [...new Map(
+			ops
+				.sort((left, right) => right.start_ms - left.start_ms)
+				.map((op) => [`${op.type}:${op.start_ms}:${op.end_ms}`, op] as const),
+		).values()];
+		if (dedupedOps.length === 0) {
+			return { applied: 0, messages: ["No trim or cut operations were needed."] };
+		}
+		const result = this.applyOps({
+			source: "manual",
+			ops: dedupedOps,
+		});
+		if (!result.applied) {
+			throw new Error(result.errors[0]?.message ?? "Unable to apply keep/cut recommendations.");
+		}
+		return {
+			applied: recommendations.length,
+			messages: recommendations.map((recommendation) =>
+				`${recommendation.action.toUpperCase()}: ${recommendation.reasons[0] ?? "Updated weak footage span."}`,
+			),
+		};
+	}
+
 	applyOps({
 		ops,
 		source = "manual",
@@ -760,6 +992,7 @@ export class ClipForgeManager {
 
 		const command = new ApplyTimelineDiffOpsCommand(validation.ops, source);
 		this.editor.command.execute({ command });
+		this.invalidateSceneFootageIntelligence();
 		this.stabilizePreview();
 
 		return {
@@ -1305,6 +1538,33 @@ export class ClipForgeManager {
 			)
 			.sort((a, b) => a.startTime - b.startTime)
 			.map(({ trackId, elementId }) => ({ trackId, elementId }));
+	}
+
+	private invalidateSceneFootageIntelligence(): void {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) return;
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		const sceneId = project.currentSceneId;
+		if (!(sceneId in project.clipforge.sceneFootageIntelligenceBySceneId)) {
+			return;
+		}
+		this.editor.project.setActiveProject({
+			project: {
+				...project,
+				metadata: {
+					...project.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...project.clipforge,
+					sceneFootageIntelligenceBySceneId: {
+						...project.clipforge.sceneFootageIntelligenceBySceneId,
+						[sceneId]: null,
+					},
+				},
+			},
+		});
+		this.editor.save.markDirty();
 	}
 }
 

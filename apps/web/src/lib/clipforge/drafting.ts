@@ -12,6 +12,7 @@ import type {
 	DraftImpactSummary,
 	DraftRecipe,
 	DraftSectionPlan,
+	FootageIntelligenceReport,
 } from "@/types/clipforge";
 import type { ProjectVersionTarget, TProject } from "@/types/project";
 import type { ProjectKitTemplate, SceneRecipePresetId } from "@/types/templates";
@@ -134,6 +135,7 @@ export function planDraftRecipe({
 	beatSourceMediaId,
 	beatMarkerCount,
 	projectKitTemplates,
+	footageIntelligenceReport,
 }: {
 	brief: CreativeBrief;
 	project: TProject;
@@ -141,6 +143,7 @@ export function planDraftRecipe({
 	beatSourceMediaId: string | null;
 	beatMarkerCount: number;
 	projectKitTemplates: ProjectKitTemplate[];
+	footageIntelligenceReport?: FootageIntelligenceReport | null;
 }): DraftRecipe {
 	const warnings: string[] = [];
 	const operations: DraftBuildStep[] = [];
@@ -163,21 +166,27 @@ export function planDraftRecipe({
 		  )
 		: false;
 	const overlayPresets = GOAL_TO_OVERLAY_PRESETS[brief.goal] ?? [];
+	const topHookCandidate = footageIntelligenceReport?.hookCandidates[0] ?? null;
+	const keepCutRecommendationIds =
+		footageIntelligenceReport?.keepCutRecommendations
+			.filter((recommendation) => recommendation.action !== "keep")
+			.slice(0, 3)
+			.map((recommendation) => recommendation.id) ?? [];
+	const hasSceneAssembly =
+		(activeScene?.tracks.reduce((total, track) => total + track.elements.length, 0) ?? 0) > 0;
 
 	if (!hasVisualMedia) {
 		warnings.push("No video clips are available for a TikTok draft.");
 	} else {
-		operations.push({
-			kind: "auto-edit",
-			params: {},
-		});
-		const existingElementCount =
-			activeScene?.tracks.reduce(
-				(total, track) => total + track.elements.length,
-				0,
-			) ?? 0;
-		if (existingElementCount > 0) {
-			warnings.push("Building this draft will rebuild the active scene assembly.");
+		if (!hasSceneAssembly) {
+			operations.push({
+				kind: "auto-edit",
+				params: {},
+			});
+		} else if (!topHookCandidate) {
+			warnings.push(
+				"Hook scoring is unavailable, so opener selection falls back to clip order.",
+			);
 		}
 	}
 
@@ -235,6 +244,9 @@ export function planDraftRecipe({
 	} else {
 		warnings.push("No analyzed beat source is active, so beat-paced montage may be skipped.");
 	}
+	for (const footageWarning of footageIntelligenceReport?.warnings ?? []) {
+		warnings.push(footageWarning);
+	}
 
 	for (const [index, presetId] of overlayPresets.entries()) {
 		operations.push({
@@ -283,6 +295,13 @@ export function planDraftRecipe({
 		brief,
 		sections: buildSectionPlan({ brief }),
 		operations,
+		hookCandidateId: !operations.some((step) => step.kind === "auto-edit")
+			? topHookCandidate?.id ?? null
+			: null,
+		keepCutRecommendationIds:
+			!operations.some((step) => step.kind === "auto-edit") && keepCutRecommendationIds.length > 0
+				? keepCutRecommendationIds
+				: [],
 		warnings,
 	};
 }

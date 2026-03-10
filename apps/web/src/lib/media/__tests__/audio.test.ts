@@ -112,7 +112,7 @@ describe("audio mix helpers", () => {
 		];
 		const project = buildProject({
 			clipforge: {
-				schemaVersion: 3,
+				schemaVersion: 4,
 				mediaMetadataById: {
 					"spoken-media": {
 						words: [
@@ -131,6 +131,7 @@ describe("audio mix helpers", () => {
 				captionStylesById: {},
 				activeCaptionStyleId: "clean-bottom",
 				captionTrackIdsBySceneId: {},
+				sceneFootageIntelligenceBySceneId: {},
 				opsAudit: [],
 			},
 		} as Partial<TProject>);

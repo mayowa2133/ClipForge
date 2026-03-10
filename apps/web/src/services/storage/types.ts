@@ -2,6 +2,7 @@ import type {
 	DerivedMediaOrigin,
 	MediaBeatAnalysis,
 	MediaCompatibilitySnapshot,
+	MediaVisualAnalysis,
 	MediaType,
 } from "@/types/assets";
 import type {
@@ -36,6 +37,7 @@ export interface MediaAssetData {
 	mimeType?: string;
 	compatibility?: MediaCompatibilitySnapshot;
 	beatAnalysis?: MediaBeatAnalysis;
+	visualAnalysis?: MediaVisualAnalysis;
 	derived?: DerivedMediaOrigin;
 }
 

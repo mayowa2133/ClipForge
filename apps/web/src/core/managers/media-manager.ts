@@ -12,6 +12,7 @@ import {
 	probeAssetCompatibility,
 } from "@/lib/media/media-compatibility";
 import { analyzeBeatGridFromFile } from "@/lib/media/beat-analysis";
+import { analyzeVisualActivityFromFile } from "@/lib/media/visual-analysis";
 import { generateFreezeFrameFile } from "@/lib/media/processing";
 
 export class MediaManager {
@@ -145,6 +146,7 @@ export class MediaManager {
 				mimeType: renamedAsset.mimeType ?? renamedAsset.file.type ?? "",
 				compatibility: renamedAsset.compatibility,
 				beatAnalysis: renamedAsset.beatAnalysis,
+				visualAnalysis: renamedAsset.visualAnalysis,
 				derived: renamedAsset.derived,
 			};
 			await storageService.saveMediaAssetMetadata({
@@ -423,6 +425,7 @@ export class MediaManager {
 					mimeType: nextAsset.mimeType ?? nextAsset.file.type ?? "",
 					compatibility: nextAsset.compatibility,
 					beatAnalysis: nextAsset.beatAnalysis,
+					visualAnalysis: nextAsset.visualAnalysis,
 					derived: nextAsset.derived,
 				};
 				await storageService.saveMediaAssetMetadata({
@@ -489,6 +492,62 @@ export class MediaManager {
 			mimeType: nextAsset.mimeType ?? nextAsset.file.type ?? "",
 			compatibility: nextAsset.compatibility,
 			beatAnalysis: nextAsset.beatAnalysis,
+			visualAnalysis: nextAsset.visualAnalysis,
+			derived: nextAsset.derived,
+		};
+		await storageService.saveMediaAssetMetadata({
+			projectId,
+			metadata,
+		});
+
+		return nextAsset;
+	}
+
+	async analyzeVisualActivity({
+		mediaId,
+	}: {
+		mediaId: string;
+	}): Promise<MediaAsset | null> {
+		const projectId =
+			this.currentProjectId ?? this.editor.project.getActive()?.metadata.id ?? null;
+		if (!projectId) {
+			throw new Error("Open a project before analyzing footage.");
+		}
+
+		const index = this.assets.findIndex((asset) => asset.id === mediaId);
+		if (index < 0) {
+			throw new Error("Video asset not found.");
+		}
+
+		const asset = this.assets[index] as MediaAsset;
+		if (asset.type !== "video") {
+			throw new Error("Footage analysis currently supports imported video assets.");
+		}
+
+		const visualAnalysis = await analyzeVisualActivityFromFile({ file: asset.file });
+		const nextAsset: MediaAsset = {
+			...asset,
+			visualAnalysis,
+		};
+		this.assets[index] = nextAsset;
+		this.notify();
+
+		const metadata: MediaAssetData = {
+			id: nextAsset.id,
+			name: nextAsset.name,
+			type: nextAsset.type,
+			size: nextAsset.file.size,
+			lastModified: nextAsset.file.lastModified,
+			width: nextAsset.width,
+			height: nextAsset.height,
+			duration: nextAsset.duration,
+			fps: nextAsset.fps,
+			thumbnailUrl: nextAsset.thumbnailUrl,
+			ephemeral: nextAsset.ephemeral,
+			mimeType: nextAsset.mimeType ?? nextAsset.file.type ?? "",
+			compatibility: nextAsset.compatibility,
+			beatAnalysis: nextAsset.beatAnalysis,
+			visualAnalysis: nextAsset.visualAnalysis,
 			derived: nextAsset.derived,
 		};
 		await storageService.saveMediaAssetMetadata({

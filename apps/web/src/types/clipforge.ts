@@ -69,6 +69,45 @@ export interface CaptionSegmentView {
 	words: Array<{ text: string; startTime: number; endTime: number }> | null;
 }
 
+export interface FootageMomentScore {
+	id: string;
+	trackId: string;
+	elementId: string;
+	startTime: number;
+	endTime: number;
+	totalScore: number;
+	reasons: string[];
+}
+
+export interface HookCandidate {
+	id: string;
+	trackId: string;
+	elementId: string;
+	startTime: number;
+	endTime: number;
+	score: number;
+	reasons: string[];
+}
+
+export interface KeepCutRecommendation {
+	id: string;
+	trackId: string;
+	elementId: string;
+	action: "keep" | "trim" | "cut";
+	startTime: number;
+	endTime: number;
+	score: number;
+	reasons: string[];
+}
+
+export interface FootageIntelligenceReport {
+	generatedAt: string;
+	hookCandidates: HookCandidate[];
+	momentScores: FootageMomentScore[];
+	keepCutRecommendations: KeepCutRecommendation[];
+	warnings: string[];
+}
+
 export type CreativeBriefGoal =
 	| "viral-tiktok"
 	| "vlog"
@@ -123,6 +162,8 @@ export interface DraftRecipe {
 	brief: CreativeBrief;
 	sections: DraftSectionPlan[];
 	operations: DraftBuildStep[];
+	hookCandidateId?: string | null;
+	keepCutRecommendationIds?: string[];
 	warnings: string[];
 }
 
@@ -282,6 +323,7 @@ export interface ClipForgeProjectData {
 	captionStylesById: Record<string, CaptionStyleTemplate>;
 	activeCaptionStyleId: string | null;
 	captionTrackIdsBySceneId: Record<string, string | null>;
+	sceneFootageIntelligenceBySceneId: Record<string, FootageIntelligenceReport | null>;
 	opsAudit: TimelineDiffAuditEntry[];
 }
 

@@ -104,6 +104,10 @@ export function ChatContent() {
 			}),
 		[draftRecipe, enabledDraftStepsByIndex],
 	);
+	const sceneFootageIntelligence = useMemo(
+		() => editor.clipforge.getSceneFootageIntelligence(),
+		[editor, draftRecipe],
+	);
 
 	useEffect(() => {
 		if (draft.length === 0) return;
@@ -228,6 +232,11 @@ export function ChatContent() {
 			};
 			setLastPlannerRequest(plannerRequest);
 			if (editor.clipforge.isDraftBuildIntent({ prompt: plannerRequest.userText })) {
+				try {
+					await editor.clipforge.analyzeSceneFootageIntelligence();
+				} catch (error) {
+					console.warn("Footage intelligence analysis failed:", error);
+				}
 				const brief = editor.clipforge.buildCreativeBrief({
 					prompt: plannerRequest.userText,
 					context: plannerRequest.context,
@@ -822,6 +831,77 @@ export function ChatContent() {
 							))}
 						</ul>
 					</div>
+					{sceneFootageIntelligence && (
+						<div className="rounded-md border px-3 py-2">
+							<p className="text-sm font-medium">Footage insights</p>
+							<div className="text-muted-foreground mt-2 space-y-2 text-xs">
+								{draftRecipe.hookCandidateId && (
+									<div>
+										<p className="font-medium text-foreground">Recommended opener</p>
+										{(() => {
+											const candidate = sceneFootageIntelligence.hookCandidates.find(
+												(item) => item.id === draftRecipe.hookCandidateId,
+											);
+											if (!candidate) {
+												return (
+													<p>Hook scoring is unavailable, so the opener will follow clip order.</p>
+												);
+											}
+											return (
+												<p>
+													{formatSeconds(candidate.startTime)} to {formatSeconds(candidate.endTime)} ·{" "}
+													{candidate.reasons[0] ?? "Strong early moment."}
+												</p>
+											);
+										})()}
+									</div>
+								)}
+								{sceneFootageIntelligence.momentScores.slice(0, 3).length > 0 && (
+									<div>
+										<p className="font-medium text-foreground">Strong moments</p>
+										<ul className="mt-1 space-y-1">
+											{sceneFootageIntelligence.momentScores.slice(0, 3).map((moment) => (
+												<li key={moment.id}>
+													{formatSeconds(moment.startTime)} to {formatSeconds(moment.endTime)} ·{" "}
+													{moment.reasons[0] ?? "High-signal moment."}
+												</li>
+											))}
+										</ul>
+									</div>
+								)}
+								{sceneFootageIntelligence.keepCutRecommendations.filter(
+									(recommendation) => recommendation.action !== "keep",
+								).length > 0 && (
+									<div>
+										<p className="font-medium text-foreground">Likely trims and cuts</p>
+										<ul className="mt-1 space-y-1">
+											{sceneFootageIntelligence.keepCutRecommendations
+												.filter((recommendation) => recommendation.action !== "keep")
+												.slice(0, 3)
+												.map((recommendation) => (
+													<li key={recommendation.id}>
+														{recommendation.action === "trim" ? "Trim" : "Cut"} ·{" "}
+														{formatSeconds(recommendation.startTime)} to{" "}
+														{formatSeconds(recommendation.endTime)} ·{" "}
+														{recommendation.reasons[0] ?? "Weak footage span."}
+													</li>
+												))}
+										</ul>
+									</div>
+								)}
+								{sceneFootageIntelligence.warnings.length > 0 && (
+									<div>
+										<p className="font-medium text-foreground">Analysis warnings</p>
+										<ul className="mt-1 space-y-1">
+											{sceneFootageIntelligence.warnings.slice(0, 2).map((warning, index) => (
+												<li key={`${warning}-${index}`}>{warning}</li>
+											))}
+										</ul>
+									</div>
+								)}
+							</div>
+						</div>
+					)}
 					<div className="rounded-md border px-3 py-2">
 						<p className="text-sm font-medium">Build plan</p>
 						<div className="mt-2 flex flex-col gap-2">
@@ -1110,6 +1190,11 @@ function formatPlannerTime(playheadMs: number): string {
 	const minutes = Math.floor(totalSeconds / 60);
 	const seconds = totalSeconds % 60;
 	return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatSeconds(seconds: number): string {
+	const totalMs = Math.max(0, Math.round(seconds * 1000));
+	return formatPlannerTime(totalMs);
 }
 
 function formatSignedDurationMs(durationMs: number): string {
