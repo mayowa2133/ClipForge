@@ -42,19 +42,28 @@
    - `Heuristic mode active`
    - or OpenAI health (`ready`, `degraded`, `unavailable`)
    - plus current context (`selected` count and playhead time)
-5. Chat planner proposes deterministic JSON timeline ops.
-   - In `auto` mode, ClipForge prefers the server-backed model planner and falls back to the heuristic planner if needed.
+5. Chat now has two deterministic planning paths:
+   - direct edit prompts produce deterministic JSON timeline ops
+   - high-level short-form prompts produce a structured `Draft recipe`
+   - in `auto` mode, ClipForge still prefers the server-backed model planner for raw-op requests and falls back to the heuristic planner if needed
 6. If the target is ambiguous, the chat panel shows a clarification step first in all planner modes.
    - Choose the intended clip or caption, then ClipForge re-runs the plan.
-7. Proposed ops are shown in review UI.
+7. Review UI depends on intent:
+   - raw-op requests show the existing JSON-op review flow
+   - draft-build requests show a recipe card with target duration, section plan, caption/overlay style, version targets, warnings, and explicit build steps
+8. For draft-build requests:
+   - toggle steps on/off if needed
+   - adjust duration/style defaults
+   - click `Build draft` to assemble the first cut from existing editor systems
+9. For raw-op requests:
    - The review UI shows which planner produced the result and any fallback warnings.
    - A plan safety summary shows repaired/dropped/blocked outcomes across semantic safety + validator reconciliation.
    - Validator-aware reconciliation runs once before review so proposed ops are usually apply-ready.
    - A deterministic dry-run impact preview shows each op’s expected change before apply.
    - You can toggle individual ops on/off; ClipForge re-validates the selected subset.
    - `Jump` on a card seeks to its target time and selects the target segment when available.
-8. Click `Apply` to validate + apply the selected subset through OpenCut command stack.
-9. Use undo/redo normally and continue iterating.
+10. Click `Apply` for raw ops or `Build draft` for recipe plans.
+11. Use undo/redo normally and continue iterating.
 
 Example chat prompts:
 
@@ -65,6 +74,9 @@ Example chat prompts:
 - `trim this clip by 0.5s at the start`
 - `move this earlier by 1s`
 - `replace "teh" with "the" in this caption`
+- `make me a viral TikTok from this`
+- `luxury morning routine style`
+- `make it shorter with bold captions`
 
 ## Flow C: Best-effort Export
 

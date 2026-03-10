@@ -4,6 +4,8 @@ import {
 	buildClipIndex,
 	buildSceneCaptionSegments,
 	buildEmptyMediaMetadata,
+	buildCreativeBriefFromPrompt,
+	buildDraftImpactSummary,
 	collectIncompatibleMediaReferences,
 	collectMissingMediaReferences,
 	collectUnverifiedMediaReferences,
@@ -26,6 +28,8 @@ import {
 	SrtImportTranscriber,
 	updateSceneCaptionTrack,
 	validateTimelineDiffOps,
+	isCreativeDraftIntent,
+	planDraftRecipe as planCreativeDraftRecipe,
 } from "@/lib/clipforge";
 import { buildPlanImpactPreview } from "@/lib/clipforge/chat/plan-impact";
 import { reconcileValidatorErrors } from "@/lib/clipforge/chat/validator-reconciliation";
@@ -40,6 +44,9 @@ import type { MediaAsset } from "@/types/assets";
 import type {
 	ClipMediaMetadata,
 	CaptionSegmentView,
+	CreativeBrief,
+	DraftImpactSummary,
+	DraftRecipe,
 	TimelineDiffOp,
 	TimelineDiffOpSource,
 } from "@/types/clipforge";
@@ -446,6 +453,289 @@ export class ClipForgeManager {
 			mediaAssets: this.editor.media.getAssets(),
 			ops,
 		});
+	}
+
+	isDraftBuildIntent({
+		prompt,
+	}: {
+		prompt: string;
+	}): boolean {
+		return isCreativeDraftIntent({ prompt });
+	}
+
+	buildCreativeBrief({
+		prompt,
+	}: {
+		prompt: string;
+		context?: ChatPlannerContext;
+	}): CreativeBrief {
+		const activeProject = this.editor.project.getActive();
+		return buildCreativeBriefFromPrompt({
+			prompt,
+			project: activeProject,
+		});
+	}
+
+	planDraftRecipe({
+		brief,
+	}: {
+		brief: CreativeBrief;
+	}): DraftRecipe {
+		const activeProject = this.editor.project.getActive();
+		return planCreativeDraftRecipe({
+			brief,
+			project: activeProject,
+			mediaAssets: this.editor.media.getAssets(),
+			beatSourceMediaId: this.editor.audio.getSceneBeatMarkers().sourceMediaId,
+			beatMarkerCount: this.editor.audio.getSceneBeatMarkers().markers.length,
+			projectKitTemplates: this.editor.project.getProjectKitTemplates(),
+		});
+	}
+
+	previewDraftRecipe({
+		recipe,
+	}: {
+		recipe: DraftRecipe;
+	}): DraftImpactSummary {
+		return buildDraftImpactSummary({ recipe });
+	}
+
+	async applyDraftRecipe({
+		recipe,
+	}: {
+		recipe: DraftRecipe;
+	}): Promise<{ appliedSteps: number; skippedSteps: number; messages: string[] }> {
+		const messages: string[] = [];
+		let appliedSteps = 0;
+		let skippedSteps = 0;
+
+		for (const step of recipe.operations) {
+			try {
+				switch (step.kind) {
+					case "apply-project-kit": {
+						const kitId = readStringParam({ params: step.params, key: "kitId" });
+						if (!kitId) {
+							throw new Error("Missing project kit id.");
+						}
+						await this.editor.project.applyProjectKit({ kitId });
+						appliedSteps += 1;
+						messages.push(`Applied project kit.`);
+						break;
+					}
+					case "auto-edit": {
+						this.autoEditTikTokDraft();
+						appliedSteps += 1;
+						messages.push("Built initial TikTok assembly.");
+						break;
+					}
+					case "make-version": {
+						const durationTargetS = readNumberParam({
+							params: step.params,
+							key: "durationTargetS",
+						});
+						if (!durationTargetS) {
+							throw new Error("Missing draft duration target.");
+						}
+						const aggressiveness =
+							readNumberParam({
+								params: step.params,
+								key: "aggressiveness",
+							}) ?? 0.75;
+						const result = this.applyOps({
+							source: "chat",
+							ops: [
+								{
+									type: "MAKE_VERSION",
+									duration_target_s: durationTargetS,
+									aggressiveness,
+								},
+							],
+						});
+						if (!result.applied) {
+							throw new Error(result.errors[0]?.message ?? "MAKE_VERSION failed.");
+						}
+						appliedSteps += 1;
+						messages.push(`Tightened draft to ${durationTargetS}s.`);
+						break;
+					}
+					case "generate-captions": {
+						if (this.getSceneCaptions().length > 0) {
+							skippedSteps += 1;
+							messages.push("Skipped caption generation because scene captions already exist.");
+							break;
+						}
+						const template = readStringParam({
+							params: step.params,
+							key: "template",
+						});
+						this.generateSceneCaptions({
+							language: "auto",
+							template:
+								template === "clean-bottom" ? "clean-bottom" : "bold-center",
+							overwriteExisting: false,
+						});
+						appliedSteps += 1;
+						messages.push("Generated scene captions.");
+						break;
+					}
+					case "apply-caption-style": {
+						const styleId = readStringParam({
+							params: step.params,
+							key: "styleId",
+						});
+						if (!styleId) {
+							throw new Error("Missing caption style id.");
+						}
+						this.applySceneCaptionStyle({ styleId });
+						appliedSteps += 1;
+						messages.push(`Applied caption style ${styleId}.`);
+						break;
+					}
+					case "auto-montage": {
+						const musicMediaId = readStringParam({
+							params: step.params,
+							key: "musicMediaId",
+						});
+						if (!musicMediaId) {
+							skippedSteps += 1;
+							messages.push("Skipped auto montage because no beat source is active.");
+							break;
+						}
+						const visuals = this.getVisualSelectionsForDraft();
+						if (visuals.length === 0) {
+							skippedSteps += 1;
+							messages.push("Skipped auto montage because no visual clips are available.");
+							break;
+						}
+						this.editor.selection.setSelectedElements({ elements: visuals });
+						this.editor.timeline.buildAutoMontageFromSelection({
+							musicMediaId,
+							strategy:
+								readStringParam({ params: step.params, key: "strategy" }) ===
+								"one-cut-per-beat"
+									? "one-cut-per-beat"
+									: "one-cut-per-two-beats",
+							beatDivision:
+								readNumberParam({ params: step.params, key: "beatDivision" }) ?? 2,
+						});
+						appliedSteps += 1;
+						messages.push("Applied beat-paced auto montage.");
+						break;
+					}
+					case "insert-overlay": {
+						this.editor.timeline.insertSocialOverlayPreset({
+							presetId:
+								(readStringParam({ params: step.params, key: "presetId" }) as Parameters<
+									typeof this.editor.timeline.insertSocialOverlayPreset
+								>[0]["presetId"]) ?? "routine-label",
+							variantId:
+								(readStringParam({
+									params: step.params,
+									key: "variantId",
+								}) as Parameters<
+									typeof this.editor.timeline.insertSocialOverlayPreset
+								>[0]["variantId"]) ?? undefined,
+							motionPresetId:
+								(readStringParam({
+									params: step.params,
+									key: "motionPresetId",
+								}) as Parameters<
+									typeof this.editor.timeline.insertSocialOverlayPreset
+								>[0]["motionPresetId"]) ?? undefined,
+							startTime:
+								readNumberParam({ params: step.params, key: "startTime" }) ?? 0.3,
+							duration:
+								readNumberParam({ params: step.params, key: "duration" }) ?? 2,
+						});
+						appliedSteps += 1;
+						messages.push("Inserted social overlay.");
+						break;
+					}
+					case "insert-scene-recipe": {
+						const recipeId = readStringParam({
+							params: step.params,
+							key: "recipeId",
+						});
+						if (!recipeId) {
+							throw new Error("Missing scene recipe id.");
+						}
+						await this.editor.scenes.insertSceneRecipe({
+							recipeId,
+							startTime:
+								readNumberParam({ params: step.params, key: "startTime" }) ??
+								this.editor.playback.getCurrentTime(),
+						});
+						appliedSteps += 1;
+						messages.push(`Inserted ${recipeId} scene recipe.`);
+						break;
+					}
+					case "apply-version-pack": {
+						const targets = readStringArrayParam({
+							params: step.params,
+							key: "targets",
+						}).filter(isProjectVersionTarget);
+						if (targets.length === 0) {
+							skippedSteps += 1;
+							messages.push("Skipped version pack update because no targets were requested.");
+							break;
+						}
+						const activeProject = this.editor.project.getActive();
+						const currentPack = activeProject.settings.versionPack;
+						if (!currentPack) {
+							throw new Error("Project version pack is unavailable.");
+						}
+						await this.editor.project.updateVersionPack({
+							versionPack: {
+								...currentPack,
+								targets: currentPack.targets.map((target) => ({
+									...target,
+									enabled: targets.includes(target.id),
+								})),
+								activeTargetId:
+									targets[0] ?? currentPack.activeTargetId ?? null,
+							},
+						});
+						appliedSteps += 1;
+						messages.push(`Enabled ${targets.join(", ")} publish targets.`);
+						break;
+					}
+					case "apply-safe-layout": {
+						const targetVersionIds = readStringArrayParam({
+							params: step.params,
+							key: "targetVersionIds",
+						}).filter(isProjectVersionTarget);
+						if (targetVersionIds.length === 0) {
+							skippedSteps += 1;
+							messages.push("Skipped safe layout because no target versions were queued.");
+							break;
+						}
+						for (const targetVersionId of targetVersionIds) {
+							this.editor.timeline.applySafeLayoutToScene({ targetVersionId });
+						}
+						appliedSteps += 1;
+						messages.push(`Applied safe layout for ${targetVersionIds.join(", ")}.`);
+						break;
+					}
+				}
+			} catch (error) {
+				if (step.kind === "auto-edit") {
+					throw error;
+				}
+				skippedSteps += 1;
+				messages.push(
+					error instanceof Error
+						? `Skipped ${step.kind}: ${error.message}`
+						: `Skipped ${step.kind}.`,
+				);
+			}
+		}
+
+		this.stabilizePreview();
+		return {
+			appliedSteps,
+			skippedSteps,
+			messages,
+		};
 	}
 
 	applyOps({
@@ -1000,4 +1290,59 @@ export class ClipForgeManager {
 		this.editor.command.execute({ command });
 		this.stabilizePreview();
 	}
+
+	private getVisualSelectionsForDraft(): Array<{ trackId: string; elementId: string }> {
+		return this.editor.timeline
+			.getTracks()
+			.flatMap((track) =>
+				track.elements
+					.filter((element) => element.type === "video" || element.type === "image")
+					.map((element) => ({
+						trackId: track.id,
+						elementId: element.id,
+						startTime: element.startTime,
+					})),
+			)
+			.sort((a, b) => a.startTime - b.startTime)
+			.map(({ trackId, elementId }) => ({ trackId, elementId }));
+	}
+}
+
+function readStringParam({
+	params,
+	key,
+}: {
+	params: Record<string, unknown>;
+	key: string;
+}): string | null {
+	const value = params[key];
+	return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function readNumberParam({
+	params,
+	key,
+}: {
+	params: Record<string, unknown>;
+	key: string;
+}): number | null {
+	const value = params[key];
+	return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readStringArrayParam({
+	params,
+	key,
+}: {
+	params: Record<string, unknown>;
+	key: string;
+}): string[] {
+	const value = params[key];
+	return Array.isArray(value)
+		? value.filter((candidate): candidate is string => typeof candidate === "string")
+		: [];
+}
+
+function isProjectVersionTarget(value: string): value is ProjectVersionTarget {
+	return value === "9:16" || value === "1:1" || value === "16:9";
 }

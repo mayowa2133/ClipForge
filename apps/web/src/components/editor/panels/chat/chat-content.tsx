@@ -2,6 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { NumberField } from "@/components/ui/number-field";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { ENABLE_CLIPFORGE_CHAT } from "@/constants/feature-flags";
 import { useEditor } from "@/hooks/use-editor";
 import {
@@ -13,7 +21,12 @@ import {
 } from "@/lib/clipforge";
 import { useClipForgeChatDraftStore } from "@/stores/clipforge-chat-draft-store";
 import { useClipForgeChatSettingsStore } from "@/stores/clipforge-chat-settings-store";
-import type { TimelineDiffOp } from "@/types/clipforge";
+import type {
+	CreativeBrief,
+	DraftImpactSummary,
+	DraftRecipe,
+	TimelineDiffOp,
+} from "@/types/clipforge";
 import type {
 	ChatClarificationRequest,
 	ChatPlanPreviewResult,
@@ -54,6 +67,12 @@ export function ChatContent() {
 	const [impactPreview, setImpactPreview] = useState<ChatPlanPreviewResult | null>(
 		null,
 	);
+	const [draftRecipe, setDraftRecipe] = useState<DraftRecipe | null>(null);
+	const [draftImpact, setDraftImpact] = useState<DraftImpactSummary | null>(null);
+	const [enabledDraftStepsByIndex, setEnabledDraftStepsByIndex] = useState<
+		Record<number, boolean>
+	>({});
+	const [draftBuildMessages, setDraftBuildMessages] = useState<string[]>([]);
 	const [enabledOpsByIndex, setEnabledOpsByIndex] = useState<
 		Record<number, boolean>
 	>({});
@@ -76,6 +95,14 @@ export function ChatContent() {
 				enabledOpsByIndex,
 			}),
 		[proposedOps, enabledOpsByIndex],
+	);
+	const selectedDraftSteps = useMemo(
+		() =>
+			selectEnabledDraftSteps({
+				recipe: draftRecipe,
+				enabledStepsByIndex: enabledDraftStepsByIndex,
+			}),
+		[draftRecipe, enabledDraftStepsByIndex],
 	);
 
 	useEffect(() => {
@@ -138,10 +165,22 @@ export function ChatContent() {
 		setEnabledOpsByIndex({});
 	};
 
+	const resetDraftRecipe = () => {
+		setDraftRecipe(null);
+		setDraftImpact(null);
+		setEnabledDraftStepsByIndex({});
+	};
+
 	const buildPreviewForOps = ({ ops }: { ops: TimelineDiffOp[] }) => {
 		const preview = editor.clipforge.previewOpsImpact({ ops });
 		setImpactPreview(preview);
 		setEnabledOpsByIndex(buildEnabledOpsMap({ ops }));
+	};
+
+	const buildPreviewForDraftRecipe = ({ recipe }: { recipe: DraftRecipe }) => {
+		setDraftRecipe(recipe);
+		setDraftImpact(editor.clipforge.previewDraftRecipe({ recipe }));
+		setEnabledDraftStepsByIndex(buildEnabledDraftStepsMap({ recipe }));
 	};
 
 	const handlePropose = async () => {
@@ -165,6 +204,8 @@ export function ChatContent() {
 		setErrors([]);
 		setProposalMeta(null);
 		resetPreview();
+		resetDraftRecipe();
+		setDraftBuildMessages([]);
 		setPendingClarification(null);
 		setClarificationOverrides(null);
 		try {
@@ -186,6 +227,19 @@ export function ChatContent() {
 				},
 			};
 			setLastPlannerRequest(plannerRequest);
+			if (editor.clipforge.isDraftBuildIntent({ prompt: plannerRequest.userText })) {
+				const brief = editor.clipforge.buildCreativeBrief({
+					prompt: plannerRequest.userText,
+					context: plannerRequest.context,
+				});
+				const recipe = editor.clipforge.planDraftRecipe({ brief });
+				buildPreviewForDraftRecipe({ recipe });
+				setProposedOps([]);
+				setErrors([]);
+				setLastPlanError(null);
+				setPendingClarification(null);
+				return;
+			}
 			const result = await provider.proposeEdits(plannerRequest);
 			if (activeRequestIdRef.current !== requestId) {
 				return;
@@ -417,11 +471,58 @@ export function ChatContent() {
 		setPrompt("");
 		setProposedOps([]);
 		resetPreview();
+		resetDraftRecipe();
+		setDraftBuildMessages([]);
 		setErrors([]);
 		setProposalMeta(null);
 		setLastPlanError(null);
 		setPendingClarification(null);
 		setClarificationOverrides(null);
+	};
+
+	const handleToggleDraftStep = ({ stepIndex }: { stepIndex: number }) => {
+		setEnabledDraftStepsByIndex((previous) => ({
+			...previous,
+			[stepIndex]: previous[stepIndex] === false,
+		}));
+	};
+
+	const handleDraftBriefChange = ({
+		nextBrief,
+	}: {
+		nextBrief: CreativeBrief;
+	}) => {
+		const nextRecipe = editor.clipforge.planDraftRecipe({ brief: nextBrief });
+		buildPreviewForDraftRecipe({ recipe: nextRecipe });
+	};
+
+	const handleBuildDraft = async () => {
+		if (!draftRecipe || selectedDraftSteps.length === 0) return;
+
+		try {
+			const result = await editor.clipforge.applyDraftRecipe({
+				recipe: {
+					...draftRecipe,
+					operations: selectedDraftSteps,
+				},
+			});
+			setDraftBuildMessages(result.messages);
+			setPrompt("");
+			setProposalMeta(null);
+			setErrors([]);
+			resetPreview();
+			resetDraftRecipe();
+			setPendingClarification(null);
+			setClarificationOverrides(null);
+			toast.success("Draft built.");
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : "Failed to build draft.";
+			setLastPlanError(message);
+			toast.error("Failed to build draft.", {
+				description: message,
+			});
+		}
 	};
 
 	const handleToggleOp = ({ opIndex }: { opIndex: number }) => {
@@ -490,6 +591,16 @@ export function ChatContent() {
 				: "The deterministic local planner is active.";
 	const playheadMs = Math.round(editor.playback.getCurrentTime() * 1000);
 	const selectedCount = editor.selection.getSelectedElements().length;
+	const activeProject = editor.project.getActiveOrNull();
+	const captionStyleOptions = activeProject?.clipforge
+		? Object.values(activeProject.clipforge.captionStylesById)
+		: [];
+	const overlayStyleOptions = [
+		{ value: "clean-vlog", label: "Clean vlog" },
+		{ value: "bold-social", label: "Bold social" },
+		{ value: "luxury", label: "Luxury" },
+		{ value: "minimal", label: "Minimal" },
+	] as const;
 	const contextSummary = `Context: ${
 		selectedCount > 0 ? `${selectedCount} selected` : "no selection"
 	}, playhead ${formatPlannerTime(playheadMs)}`;
@@ -601,6 +712,174 @@ export function ChatContent() {
 				</div>
 			)}
 
+			{draftRecipe && (
+				<div className="flex flex-col gap-3 rounded-md border p-3">
+					<div className="flex items-start justify-between gap-3">
+						<div>
+							<p className="text-sm font-medium">Creative brief</p>
+							<p className="text-muted-foreground text-xs">
+								First-draft plan for the active scene.
+							</p>
+						</div>
+						<p className="text-muted-foreground text-xs">
+							{draftImpact?.totalSteps ?? draftRecipe.operations.length} steps
+						</p>
+					</div>
+					<div className="grid grid-cols-2 gap-3">
+						<div className="flex flex-col gap-2">
+							<Label>Target length</Label>
+							<NumberField
+								value={draftRecipe.brief.durationTargetS ?? 0}
+								min={5}
+								max={60}
+								step={1}
+								onChange={(event) =>
+									handleDraftBriefChange({
+										nextBrief: {
+											...draftRecipe.brief,
+											durationTargetS: Math.max(
+												5,
+												Number.parseInt(event.currentTarget.value || "0", 10) || 0,
+											),
+										},
+									})
+								}
+							/>
+						</div>
+						<div className="flex flex-col gap-2">
+							<Label>Look</Label>
+							<Select
+								value={draftRecipe.brief.overlayStyleVariantId ?? "clean-vlog"}
+								onValueChange={(value) =>
+									handleDraftBriefChange({
+										nextBrief: {
+											...draftRecipe.brief,
+											overlayStyleVariantId: value,
+											tone:
+												value === "luxury"
+													? "luxury"
+													: value === "bold-social"
+														? "bold"
+														: value === "minimal"
+															? "minimal"
+															: "clean",
+										},
+									})
+								}
+							>
+								<SelectTrigger>
+									<SelectValue placeholder="Style" />
+								</SelectTrigger>
+								<SelectContent>
+									{overlayStyleOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+						<div className="flex flex-col gap-2">
+							<Label>Caption look</Label>
+							<Select
+								value={draftRecipe.brief.captionStyleId ?? "bold-center"}
+								onValueChange={(value) =>
+									handleDraftBriefChange({
+										nextBrief: {
+											...draftRecipe.brief,
+											captionStyleId: value,
+										},
+									})
+								}
+							>
+								<SelectTrigger>
+									<SelectValue placeholder="Caption style" />
+								</SelectTrigger>
+								<SelectContent>
+									{captionStyleOptions.map((style) => (
+										<SelectItem key={style.style_id} value={style.style_id}>
+											{style.style_id}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+						<div className="flex flex-col gap-2">
+							<Label>Publish targets</Label>
+							<p className="text-muted-foreground rounded-md border px-3 py-2 text-xs">
+								{draftRecipe.brief.versionTargets.join(", ")}
+							</p>
+						</div>
+					</div>
+					<div className="rounded-md border px-3 py-2">
+						<p className="text-sm font-medium">Story arc</p>
+						<ul className="text-muted-foreground mt-2 space-y-1 text-xs">
+							{draftRecipe.sections.map((section) => (
+								<li key={`${section.kind}-${section.label}`}>
+									{section.label}: {section.targetDurationS.toFixed(1)}s ·{" "}
+									{formatDraftSectionStrategy({ strategy: section.strategy })}
+								</li>
+							))}
+						</ul>
+					</div>
+					<div className="rounded-md border px-3 py-2">
+						<p className="text-sm font-medium">Build plan</p>
+						<div className="mt-2 flex flex-col gap-2">
+							{draftRecipe.operations.map((step, index) => {
+								const enabled = enabledDraftStepsByIndex[index] !== false;
+								return (
+									<label
+										key={`${step.kind}-${index}`}
+										className="flex cursor-pointer items-start gap-2 text-sm"
+									>
+										<input
+											type="checkbox"
+											checked={enabled}
+											onChange={() => handleToggleDraftStep({ stepIndex: index })}
+										/>
+										<span>
+											<span className="block font-medium">
+												{formatDraftStepLabel({ step })}
+											</span>
+											<span className="text-muted-foreground block text-xs">
+												{formatDraftStepDetail({ step })}
+											</span>
+										</span>
+									</label>
+								);
+							})}
+						</div>
+					</div>
+					{draftRecipe.warnings.length > 0 && (
+						<div className="rounded-md border border-amber-300 bg-amber-50 p-3">
+							<p className="mb-1 text-sm font-medium">Things to know</p>
+							<ul className="list-disc space-y-1 pl-4 text-xs">
+								{draftRecipe.warnings.map((warning, index) => (
+									<li key={`${warning}-${index}`}>{warning}</li>
+								))}
+							</ul>
+						</div>
+					)}
+					<div className="flex gap-2">
+						<Button
+							onClick={() => void handleBuildDraft()}
+							disabled={selectedDraftSteps.length === 0}
+						>
+							Build first draft
+						</Button>
+						<Button
+							variant="outline"
+							onClick={() => {
+								resetDraftRecipe();
+								setDraftBuildMessages([]);
+							}}
+						>
+							Cancel
+						</Button>
+					</div>
+				</div>
+			)}
+
 			{proposedOps.length > 0 && (
 				<div className="flex flex-1 flex-col gap-2">
 					{impactPreview && (
@@ -701,6 +980,17 @@ export function ChatContent() {
 				</div>
 			)}
 
+			{draftBuildMessages.length > 0 && (
+				<div className="rounded-md border p-3">
+					<p className="mb-1 text-sm font-medium">What was built</p>
+					<ul className="list-disc space-y-1 pl-4 text-xs">
+						{draftBuildMessages.map((message, index) => (
+							<li key={`${message}-${index}`}>{message}</li>
+						))}
+					</ul>
+				</div>
+			)}
+
 			{errors.length > 0 && (
 				<div className="rounded-md border border-red-300 bg-red-50 p-3">
 					<p className="mb-1 text-sm font-medium">Validation errors</p>
@@ -715,6 +1005,104 @@ export function ChatContent() {
 			)}
 		</div>
 	);
+}
+
+function buildEnabledDraftStepsMap({
+	recipe,
+}: {
+	recipe: DraftRecipe;
+}): Record<number, boolean> {
+	const next: Record<number, boolean> = {};
+	for (const [index] of recipe.operations.entries()) {
+		next[index] = true;
+	}
+	return next;
+}
+
+function selectEnabledDraftSteps({
+	recipe,
+	enabledStepsByIndex,
+}: {
+	recipe: DraftRecipe | null;
+	enabledStepsByIndex: Record<number, boolean>;
+}) {
+	if (!recipe) return [];
+	return recipe.operations.filter((_, index) => enabledStepsByIndex[index] !== false);
+}
+
+function formatDraftStepLabel({
+	step,
+}: {
+	step: DraftRecipe["operations"][number];
+}): string {
+	switch (step.kind) {
+		case "auto-edit":
+			return "Assemble first cut";
+		case "make-version":
+			return "Trim to target length";
+		case "generate-captions":
+			return "Generate captions";
+		case "apply-caption-style":
+			return "Style captions";
+		case "apply-project-kit":
+			return "Apply creator kit";
+		case "insert-scene-recipe":
+			return "Add scene pattern";
+		case "insert-overlay":
+			return "Add overlay";
+		case "auto-montage":
+			return "Tighten pacing to music";
+		case "apply-version-pack":
+			return "Set publish formats";
+		case "apply-safe-layout":
+			return "Adapt layout for extra formats";
+	}
+}
+
+function formatDraftStepDetail({
+	step,
+}: {
+	step: DraftRecipe["operations"][number];
+}): string {
+	switch (step.kind) {
+		case "make-version":
+			return `Aim for ${step.params.durationTargetS ?? "target"}s total.`;
+		case "apply-caption-style":
+			return `Use ${step.params.styleId ?? "the active"} caption style.`;
+		case "apply-project-kit":
+			return String(step.params.kitName ?? "Matched creator defaults");
+		case "insert-scene-recipe":
+			return String(step.params.recipeId ?? "Built-in scene pattern");
+		case "insert-overlay":
+			return `Drop in ${String(step.params.presetId ?? "an overlay preset")}.`;
+		case "auto-montage":
+			return `${step.params.strategy ?? "Beat montage"} using the active beat grid.`;
+		case "apply-version-pack":
+			return `${Array.isArray(step.params.targets) ? step.params.targets.join(", ") : "Current target"} format targets.`;
+		case "apply-safe-layout":
+			return "Keep overlays and captions in-frame for extra formats.";
+		default:
+			return "Deterministic build step.";
+	}
+}
+
+function formatDraftSectionStrategy({
+	strategy,
+}: {
+	strategy: DraftRecipe["sections"][number]["strategy"];
+}): string {
+	switch (strategy) {
+		case "talking":
+			return "talking-led";
+		case "montage":
+			return "montage";
+		case "broll":
+			return "b-roll";
+		case "caption-led":
+			return "caption-led";
+		case "overlay-led":
+			return "overlay-led";
+	}
 }
 
 function formatPlannerTime(playheadMs: number): string {

@@ -21,6 +21,7 @@ export * from "./timeline-transcript";
 export * from "./phrase-resolution";
 export * from "./segment-resolution";
 export * from "./text-overlay-presets";
+export * from "./drafting";
 export * from "./transcribers/whisper-cli";
 export * from "./demo/manifest";
 export * from "./demo/create-demo-project";

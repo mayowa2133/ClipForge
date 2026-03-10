@@ -1,0 +1,237 @@
+import { describe, expect, test } from "bun:test";
+import { buildDefaultProjectVersionPack } from "@/constants/project-constants";
+import {
+	buildCreativeBriefFromPrompt,
+	buildDefaultClipForgeProjectData,
+	planDraftRecipe,
+} from "@/lib/clipforge";
+import type { MediaAsset } from "@/types/assets";
+import type { TProject } from "@/types/project";
+import type { ProjectKitTemplate } from "@/types/templates";
+
+function buildProjectFixture(): TProject {
+	const canvasSize = { width: 1080, height: 1920 };
+	return {
+		metadata: {
+			id: "project-draft-1",
+			name: "Draft Fixture",
+			duration: 60,
+			createdAt: new Date("2026-03-10T00:00:00.000Z"),
+			updatedAt: new Date("2026-03-10T00:00:00.000Z"),
+		},
+		scenes: [
+			{
+				id: "scene-1",
+				name: "Main",
+				isMain: true,
+				bookmarks: [],
+				createdAt: new Date("2026-03-10T00:00:00.000Z"),
+				updatedAt: new Date("2026-03-10T00:00:00.000Z"),
+				tracks: [
+					{
+						id: "video-track-1",
+						type: "video",
+						name: "Main",
+						isMain: true,
+						muted: false,
+						hidden: false,
+						elements: [
+							{
+								id: "video-1",
+								type: "video",
+								name: "Clip 1",
+								mediaId: "video-1",
+								startTime: 0,
+								duration: 8,
+								trimStart: 0,
+								trimEnd: 0,
+								transform: {
+									scale: 1,
+									position: { x: 0, y: 0 },
+									rotate: 0,
+								},
+								opacity: 1,
+							},
+						],
+					},
+				],
+			},
+		],
+		currentSceneId: "scene-1",
+		settings: {
+			fps: 30,
+			canvasSize,
+			versionPack: buildDefaultProjectVersionPack({ canvasSize }),
+			background: { type: "color", color: "#000000" },
+		},
+		version: 17,
+		clipforge: {
+			...buildDefaultClipForgeProjectData(),
+			mediaMetadataById: {
+				"video-1": {
+					words: [
+						{ text: "hello", start_ms: 0, end_ms: 400 },
+						{ text: "world", start_ms: 400, end_ms: 900 },
+					],
+					segments: [{ text: "hello world", start_ms: 0, end_ms: 900 }],
+					silenceRegions: [],
+					transcriptionStatus: "ready",
+					transcriptionProvider: "browser-whisper",
+					transcriptionLanguage: "en",
+					transcriptionError: null,
+					indexedAt: "2026-03-10T00:00:00.000Z",
+				},
+			},
+		},
+	};
+}
+
+function buildMediaAsset({
+	id,
+	type,
+	duration,
+	beatAnalysis,
+}: {
+	id: string;
+	type: "video" | "audio";
+	duration?: number;
+	beatAnalysis?: MediaAsset["beatAnalysis"];
+}): MediaAsset {
+	return {
+		id,
+		name: id,
+		type,
+		duration,
+		beatAnalysis,
+		file: new File(["fixture"], `${id}.${type === "video" ? "mp4" : "mp3"}`, {
+			type: type === "video" ? "video/mp4" : "audio/mpeg",
+		}),
+	};
+}
+
+describe("drafting helpers", () => {
+	test("buildCreativeBriefFromPrompt resolves deterministic defaults for a vague viral-tiktok prompt", () => {
+		const brief = buildCreativeBriefFromPrompt({
+			prompt: "make me a viral TikTok from this",
+			project: buildProjectFixture(),
+		});
+
+		expect(brief.goal).toBe("viral-tiktok");
+		expect(brief.tone).toBe("clean");
+		expect(brief.durationTargetS).toBe(27);
+		expect(brief.captionStyleId).toBe("clean-bottom");
+		expect(brief.overlayStyleVariantId).toBe("clean-vlog");
+		expect(brief.beatDivision).toBe(2);
+		expect(brief.versionTargets).toEqual(["9:16"]);
+	});
+
+	test("buildCreativeBriefFromPrompt respects explicit style, duration, and version requests", () => {
+		const brief = buildCreativeBriefFromPrompt({
+			prompt:
+				"make me a luxury morning routine tiktok in 18 seconds with bold captions for 1:1 and 16:9",
+			project: buildProjectFixture(),
+		});
+
+		expect(brief.goal).toBe("luxury-routine");
+		expect(brief.tone).toBe("luxury");
+		expect(brief.durationTargetS).toBe(18);
+		expect(brief.captionStyleId).toBe("bold-center");
+		expect(brief.overlayStyleVariantId).toBe("luxury");
+		expect(brief.versionTargets).toEqual(["9:16", "1:1", "16:9"]);
+	});
+
+	test("planDraftRecipe includes core assembly steps and warnings when montage prerequisites are missing", () => {
+		const project = buildProjectFixture();
+		project.clipforge = {
+			...project.clipforge!,
+			mediaMetadataById: {},
+		};
+		const recipe = planDraftRecipe({
+			brief: buildCreativeBriefFromPrompt({
+				prompt: "make me a viral TikTok from this",
+				project,
+			}),
+			project,
+			mediaAssets: [buildMediaAsset({ id: "video-1", type: "video", duration: 8 })],
+			beatSourceMediaId: null,
+			beatMarkerCount: 0,
+			projectKitTemplates: [],
+		});
+
+		expect(recipe.operations.map((step) => step.kind)).toContain("auto-edit");
+		expect(recipe.operations.map((step) => step.kind)).toContain("make-version");
+		expect(recipe.operations.map((step) => step.kind)).toContain("apply-caption-style");
+		expect(recipe.operations.map((step) => step.kind)).not.toContain("auto-montage");
+		expect(recipe.warnings).toContain(
+			"No transcript metadata is available, so caption generation may be skipped.",
+		);
+		expect(recipe.warnings).toContain(
+			"No analyzed beat source is active, so beat-paced montage may be skipped.",
+		);
+	});
+
+	test("planDraftRecipe includes caption generation and beat montage when prerequisites exist", () => {
+		const project = buildProjectFixture();
+		const recipe = planDraftRecipe({
+			brief: buildCreativeBriefFromPrompt({
+				prompt: "make me a viral TikTok from this",
+				project,
+			}),
+			project,
+			mediaAssets: [
+				buildMediaAsset({ id: "video-1", type: "video", duration: 8 }),
+				buildMediaAsset({
+					id: "song-1",
+					type: "audio",
+					duration: 30,
+					beatAnalysis: {
+						bpm: 120,
+						beats: [0, 0.5, 1, 1.5],
+						downbeats: [0, 2],
+						analyzedAt: "2026-03-10T00:00:00.000Z",
+						version: 1,
+					},
+				}),
+			],
+			beatSourceMediaId: "song-1",
+			beatMarkerCount: 16,
+			projectKitTemplates: [],
+		});
+
+		expect(recipe.operations.map((step) => step.kind)).toContain("generate-captions");
+		expect(recipe.operations.map((step) => step.kind)).toContain("auto-montage");
+		const montageStep = recipe.operations.find((step) => step.kind === "auto-montage");
+		expect(montageStep?.params.musicMediaId).toBe("song-1");
+		expect(montageStep?.params.beatDivision).toBe(2);
+	});
+
+	test("planDraftRecipe matches a project kit deterministically from the brief", () => {
+		const project = buildProjectFixture();
+		const projectKitTemplates: ProjectKitTemplate[] = [
+			{
+				id: "kit-luxury",
+				name: "Luxury Routine Kit",
+				kind: "project-kit",
+				version: 1,
+				createdAt: new Date("2026-03-10T00:00:00.000Z"),
+				updatedAt: new Date("2026-03-10T00:00:00.000Z"),
+				payload: {},
+			},
+		];
+
+		const recipe = planDraftRecipe({
+			brief: buildCreativeBriefFromPrompt({
+				prompt: "make me a luxury routine tiktok",
+				project,
+			}),
+			project,
+			mediaAssets: [buildMediaAsset({ id: "video-1", type: "video", duration: 8 })],
+			beatSourceMediaId: null,
+			beatMarkerCount: 0,
+			projectKitTemplates,
+		});
+
+		const step = recipe.operations.find((candidate) => candidate.kind === "apply-project-kit");
+		expect(step?.params.kitId).toBe("kit-luxury");
+	});
+});

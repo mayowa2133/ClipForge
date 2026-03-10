@@ -1,3 +1,5 @@
+import type { ProjectVersionTarget } from "./project";
+
 export type ClipForgeAspectRatioPreset = "9:16" | "1:1" | "16:9";
 
 export type CaptionHighlightMode = "none" | "line" | "word";
@@ -65,6 +67,72 @@ export interface CaptionSegmentView {
 	duration: number;
 	endTime: number;
 	words: Array<{ text: string; startTime: number; endTime: number }> | null;
+}
+
+export type CreativeBriefGoal =
+	| "viral-tiktok"
+	| "vlog"
+	| "luxury-routine"
+	| "talking-head"
+	| "product-highlight";
+
+export type CreativeBriefTone =
+	| "clean"
+	| "bold"
+	| "luxury"
+	| "energetic"
+	| "minimal";
+
+export interface CreativeBrief {
+	goal: CreativeBriefGoal;
+	tone: CreativeBriefTone;
+	durationTargetS: number | null;
+	captionStyleId: string | null;
+	overlayStyleVariantId: string | null;
+	motionPresetId: string | null;
+	beatDivision: 1 | 2 | 4 | null;
+	versionTargets: ProjectVersionTarget[];
+	notes: string | null;
+}
+
+export interface DraftSectionPlan {
+	kind: "hook" | "body" | "payoff" | "cta";
+	label: string;
+	targetDurationS: number;
+	strategy: "talking" | "montage" | "broll" | "caption-led" | "overlay-led";
+}
+
+export type DraftBuildStepKind =
+	| "auto-edit"
+	| "make-version"
+	| "generate-captions"
+	| "apply-caption-style"
+	| "apply-project-kit"
+	| "insert-scene-recipe"
+	| "insert-overlay"
+	| "auto-montage"
+	| "apply-version-pack"
+	| "apply-safe-layout";
+
+export interface DraftBuildStep {
+	kind: DraftBuildStepKind;
+	params: Record<string, unknown>;
+}
+
+export interface DraftRecipe {
+	brief: CreativeBrief;
+	sections: DraftSectionPlan[];
+	operations: DraftBuildStep[];
+	warnings: string[];
+}
+
+export interface DraftImpactSummary {
+	totalSteps: number;
+	overlayCount: number;
+	versionTargets: ProjectVersionTarget[];
+	willRebuildAssembly: boolean;
+	willGenerateCaptions: boolean;
+	usesBeatMontage: boolean;
 }
 
 export interface TimelineDiffBaseOp {

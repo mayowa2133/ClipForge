@@ -143,7 +143,10 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
 4. Use `Index All Clips`, `Index Clip`, or `Import SRT...` in the Assets panel if you need to re-run or override transcript metadata.
 5. Click `Auto Edit TikTok` to build a 9:16 draft timeline.
 6. Open `Captions` tab and generate captions using `Clean Bottom` or `Bold Center`.
-7. Open chat from the right panel toggle (or `Ctrl/Cmd + /`), request edits in plain English (for example `trim this clip by 0.5s at the start`, `add text here that says "watch this"`, `replace "teh" with "the" in this caption`, or `trim the first clip by 0.5s and move it to 5s`), review JSON ops, confirm which planner was used, then click `Apply`.
+7. Open chat from the right panel toggle (or `Ctrl/Cmd + /`).
+   - Direct edit prompts (for example `trim this clip by 0.5s at the start`, `add text here that says "watch this"`, `replace "teh" with "the" in this caption`, or `trim the first clip by 0.5s and move it to 5s`) still produce deterministic JSON ops for review/apply.
+   - High-level draft prompts (for example `make me a viral TikTok from this`, `luxury morning routine style`, or `make it shorter with bold captions`) now produce a structured `Draft recipe` card first.
+   - The recipe shows target duration, section plan, caption/overlay style, version targets, and explicit build steps before you click `Build draft`.
 8. Use normal OpenCut `Undo/Redo` shortcuts.
 9. Click the top-right `Export` button:
    - The preview toolbar shows sampled preview/export fidelity before you export.
@@ -202,6 +205,12 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
   - the selected subset is re-validated before apply is enabled,
   - and `Jump` seeks playhead + selects the target segment when available.
 - Preview is non-mutating and never bypasses the existing validator/apply authority.
+- High-level AI draft assembly is now available for short-form prompts:
+  - ClipForge extracts a structured creative brief from chat,
+  - plans a deterministic draft recipe over existing systems (auto edit, captions, overlays, montage, version pack, safe layout),
+  - shows the recipe for review,
+  - and only builds after explicit user confirmation.
+- Draft assembly remains active-scene scoped in M44 and uses the same command/validator/apply authority as the rest of the editor.
 
 ### Built-in demo project
 
