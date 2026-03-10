@@ -125,8 +125,8 @@ export function buildPreviewFidelityReport({
 		issues.push({
 			code: "preview-used-legacy-fallback",
 			message:
-				"Preview required the legacy canvas fallback, so exact export parity is not guaranteed.",
-			severity: "error",
+				"Preview required the legacy canvas fallback, so fidelity is approximate until parity confirms a match.",
+			severity: "warning",
 		});
 	}
 
@@ -135,7 +135,7 @@ export function buildPreviewFidelityReport({
 			code: "export-used-legacy-fallback",
 			message:
 				"Export rendering required the legacy canvas fallback for sampled frames.",
-			severity: "error",
+			severity: "warning",
 		});
 	}
 
@@ -191,15 +191,15 @@ export function classifyPreviewFidelityStatus({
 }): PreviewFidelityStatus {
 	if (
 		issues.some((issue) => issue.code === "preview-export-parity-mismatch") ||
-		issues.some((issue) => issue.code === "parity-check-failed") ||
-		previewDiagnostics.usedLegacyFallback ||
-		!!exportDiagnostics?.usedLegacyFallback
+		issues.some((issue) => issue.code === "parity-check-failed")
 	) {
 		return "unsupported";
 	}
 
 	if (
 		previewDiagnostics.usedBinaryFallback ||
+		previewDiagnostics.usedLegacyFallback ||
+		!!exportDiagnostics?.usedLegacyFallback ||
 		previewDiagnostics.unsupportedFeatures.length > 0 ||
 		samples.length === 0
 	) {

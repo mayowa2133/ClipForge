@@ -73,6 +73,28 @@ export interface CaptionWordTiming {
 	endTime: number;
 }
 
+export type SocialOverlayPresetId =
+	| "timestamp-card"
+	| "routine-label"
+	| "location-tag"
+	| "chapter-card"
+	| "stat-card"
+	| "quote-card-social";
+
+export type OverlayStyleVariantId =
+	| "clean-vlog"
+	| "bold-social"
+	| "luxury"
+	| "minimal";
+
+export type OverlayTextSlot = "primary" | "secondary" | "time" | "label";
+
+export interface OverlayMeta {
+	kind: SocialOverlayPresetId;
+	variantId: OverlayStyleVariantId;
+	slot?: OverlayTextSlot;
+}
+
 export interface VisualKeyframeMap {
 	positionX?: AnimatedPropertyKeyframe[];
 	positionY?: AnimatedPropertyKeyframe[];
@@ -170,6 +192,7 @@ export interface VideoElement extends BaseTimelineElement {
 export interface ImageElement extends BaseTimelineElement {
 	type: "image";
 	mediaId: string;
+	overlayMeta?: OverlayMeta | null;
 	hidden?: boolean;
 	linkedGroupId?: string | null;
 	transitionIn?: ElementTransitionIn | null;
@@ -185,6 +208,7 @@ export interface TextElement extends BaseTimelineElement {
 	type: "text";
 	role?: "text" | "caption";
 	captionTiming?: { words: CaptionWordTiming[] } | null;
+	overlayMeta?: OverlayMeta | null;
 	content: string;
 	fontSize: number;
 	fontFamily: string;

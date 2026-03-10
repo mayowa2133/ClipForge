@@ -85,7 +85,41 @@ function VoiceoverView() {
 	const [error, setError] = useState<string | null>(null);
 	const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
 	const [elapsedSeconds, setElapsedSeconds] = useState(0);
+	const [version, setVersion] = useState(0);
 	const currentTime = editor.playback.getCurrentTime();
+
+	useEffect(() => {
+		const unsubscribers = [
+			editor.timeline.subscribe(() => setVersion((value) => value + 1)),
+			editor.media.subscribe(() => setVersion((value) => value + 1)),
+		];
+		return () => {
+			unsubscribers.forEach((unsubscribe) => unsubscribe());
+		};
+	}, [editor]);
+	void version;
+
+	const voiceoverAssets = useMemo(() => {
+		const voiceoverIds = new Set(
+			editor.timeline
+				.getTracks()
+				.flatMap((track) =>
+					track.type === "audio"
+						? track.elements.flatMap((element) =>
+								element.type === "audio" &&
+								element.sourceType === "upload" &&
+								(element.role ?? "audio") === "voiceover"
+									? [element.mediaId]
+									: [],
+							)
+						: [],
+				),
+		);
+		return editor.media
+			.getAssets()
+			.filter((asset) => asset.type === "audio" && voiceoverIds.has(asset.id))
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}, [editor, version]);
 
 	useEffect(() => {
 		if (!isRecording || recordingStartedAt === null) {
@@ -168,6 +202,24 @@ function VoiceoverView() {
 				<p className="text-muted-foreground mt-3 text-xs">
 					Microphone permission is required. Recording stays local and is saved as an audio asset in this project.
 				</p>
+			</div>
+			<div className="space-y-3">
+				<div>
+					<p className="text-sm font-medium">Recorded takes</p>
+					<p className="text-muted-foreground text-sm">
+						Voiceovers stay here so they do not get mixed into Songs.
+					</p>
+				</div>
+				<div className="space-y-3">
+					{voiceoverAssets.map((asset) => (
+						<VoiceoverAssetItem key={asset.id} asset={asset} />
+					))}
+					{voiceoverAssets.length === 0 ? (
+						<div className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
+							Record a take to manage it here.
+						</div>
+					) : null}
+				</div>
 			</div>
 		</div>
 	);
@@ -453,13 +505,34 @@ function SongsView() {
 	useEffect(() => editor.media.subscribe(() => setVersion((value) => value + 1)), [editor]);
 	void version;
 
+	const voiceoverAssetIds = useMemo(
+		() =>
+			new Set(
+				editor.timeline
+					.getTracks()
+					.flatMap((track) =>
+						track.type === "audio"
+							? track.elements.flatMap((element) =>
+									element.type === "audio" &&
+									element.sourceType === "upload" &&
+									(element.role ?? "audio") === "voiceover"
+										? [element.mediaId]
+										: [],
+								)
+							: [],
+					),
+			),
+		[editor, version],
+	);
+
 	const audioAssets = useMemo(
 		() =>
 			editor.media
 				.getAssets()
 				.filter((asset) => asset.type === "audio")
+				.filter((asset) => !voiceoverAssetIds.has(asset.id))
 				.filter((asset) => asset.name.toLowerCase().includes(search.trim().toLowerCase())),
-		[editor, search, version],
+		[editor, search, version, voiceoverAssetIds],
 	);
 
 	return (
@@ -487,6 +560,74 @@ function SongsView() {
 					) : null}
 				</div>
 			</ScrollArea>
+		</div>
+	);
+}
+
+function VoiceoverAssetItem({ asset }: { asset: MediaAsset }) {
+	const editor = useEditor();
+	const activeProject = editor.project.getActive();
+	const [isRenameOpen, setIsRenameOpen] = useState(false);
+	const [draftName, setDraftName] = useState(asset.name);
+
+	useEffect(() => {
+		setDraftName(asset.name);
+	}, [asset.name]);
+
+	const handleRename = async () => {
+		if (!activeProject) return;
+		const renamed = await editor.media.renameMediaAsset({
+			projectId: activeProject.metadata.id,
+			id: asset.id,
+			name: draftName,
+		});
+		if (!renamed) {
+			toast.error("Failed to rename voiceover.");
+			return;
+		}
+		setIsRenameOpen(false);
+		toast.success("Voiceover renamed.");
+	};
+
+	const handleDelete = async () => {
+		if (!activeProject) return;
+		await editor.media.removeMediaAsset({
+			projectId: activeProject.metadata.id,
+			id: asset.id,
+		});
+		toast.success("Voiceover deleted.");
+	};
+
+	return (
+		<div className="group flex items-center gap-3 rounded-lg border p-3">
+			<div className="bg-accent flex size-11 shrink-0 items-center justify-center rounded-md">
+				<HugeiconsIcon icon={VoiceIcon} />
+			</div>
+			<div className="min-w-0 flex-1">
+				<p className="truncate text-sm font-medium">{asset.name}</p>
+				<p className="text-muted-foreground text-xs">
+					{formatTimeCode({ timeInSeconds: asset.duration ?? 0 })}
+				</p>
+			</div>
+			<Dialog open={isRenameOpen} onOpenChange={setIsRenameOpen}>
+				<DialogTrigger asChild>
+					<Button variant="text" size="sm">Rename</Button>
+				</DialogTrigger>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Rename voiceover</DialogTitle>
+						<DialogDescription>Update the name shown for this recorded take.</DialogDescription>
+					</DialogHeader>
+					<Input value={draftName} onChange={({ currentTarget }) => setDraftName(currentTarget.value)} />
+					<DialogFooter>
+						<Button variant="text" onClick={() => setIsRenameOpen(false)}>Cancel</Button>
+						<Button onClick={() => void handleRename()}>Save</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+			<Button variant="text" size="sm" onClick={() => void handleDelete()}>
+				Delete
+			</Button>
 		</div>
 	);
 }

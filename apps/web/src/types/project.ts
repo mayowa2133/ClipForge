@@ -1,4 +1,4 @@
-import type { TScene } from "./timeline";
+import type { OverlayStyleVariantId, TScene } from "./timeline";
 import type { ClipForgeProjectData } from "./clipforge";
 
 export type TBackground =
@@ -24,6 +24,30 @@ export interface ProjectAudioSettings {
 	duckingReleaseMs: number;
 }
 
+export interface ProjectBrandKit {
+	primaryColor: string;
+	secondaryColor: string;
+	accentColor: string;
+	titleFontFamily: string;
+	bodyFontFamily: string;
+	logoMediaId?: string | null;
+}
+
+export type OverlayMotionPresetId =
+	| "fade-up"
+	| "slide-up"
+	| "pop-in"
+	| "drift-in"
+	| "none";
+
+export type OverlaySafeMarginPreset = "tight" | "standard";
+
+export interface ProjectOverlayDefaults {
+	variantId: OverlayStyleVariantId;
+	motionPresetId: OverlayMotionPresetId;
+	safeMarginPreset?: OverlaySafeMarginPreset;
+}
+
 export interface TProjectMetadata {
 	id: string;
 	name: string;
@@ -39,6 +63,8 @@ export interface TProjectSettings {
 	originalCanvasSize?: TCanvasSize | null;
 	background: TBackground;
 	audio?: ProjectAudioSettings;
+	brandKit?: ProjectBrandKit;
+	overlayDefaults?: ProjectOverlayDefaults;
 }
 
 export interface TTimelineViewState {

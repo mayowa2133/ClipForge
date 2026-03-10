@@ -1,4 +1,9 @@
-import type { ProjectAudioSettings, TCanvasSize } from "@/types/project";
+import type {
+	ProjectAudioSettings,
+	ProjectBrandKit,
+	ProjectOverlayDefaults,
+	TCanvasSize,
+} from "@/types/project";
 
 export const DEFAULT_CANVAS_PRESETS: TCanvasSize[] = [
 	{ width: 1920, height: 1080 },
@@ -31,4 +36,19 @@ export const DEFAULT_PROJECT_AUDIO_SETTINGS: ProjectAudioSettings = {
 	duckingAmount: 0.45,
 	duckingAttackMs: 120,
 	duckingReleaseMs: 280,
+};
+
+export const DEFAULT_PROJECT_BRAND_KIT: ProjectBrandKit = {
+	primaryColor: "#FFFFFF",
+	secondaryColor: "#D7D9E0",
+	accentColor: "#1EA7FF",
+	titleFontFamily: "Arial",
+	bodyFontFamily: "Arial",
+	logoMediaId: null,
+};
+
+export const DEFAULT_PROJECT_OVERLAY_DEFAULTS: ProjectOverlayDefaults = {
+	variantId: "clean-vlog",
+	motionPresetId: "fade-up",
+	safeMarginPreset: "standard",
 };

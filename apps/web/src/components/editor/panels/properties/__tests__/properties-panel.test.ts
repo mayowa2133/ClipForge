@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { getLinkedSelectionLabel } from "@/components/editor/panels/properties";
+import {
+	collapseOverlaySelection,
+	getLinkedSelectionLabel,
+} from "@/components/editor/panels/properties";
 
 describe("properties linked selection label", () => {
 	test("returns video plus audio for one linked group", () => {
@@ -54,5 +57,62 @@ describe("properties linked selection label", () => {
 				],
 			}),
 		).toBeNull();
+	});
+
+	test("collapses a linked overlay text pair into one inspector target", () => {
+		const collapsed = collapseOverlaySelection({
+			elementsWithTracks: [
+				{
+					track: { id: "text-track", type: "text", name: "Text", elements: [] } as never,
+					element: {
+						id: "overlay-1",
+						type: "text",
+						name: "7:20 am",
+						linkedGroupId: "overlay-group",
+						overlayMeta: { kind: "timestamp-card", variantId: "clean-vlog", slot: "time" },
+					} as never,
+				},
+				{
+					track: { id: "text-track", type: "text", name: "Text", elements: [] } as never,
+					element: {
+						id: "overlay-2",
+						type: "text",
+						name: "Get loose",
+						linkedGroupId: "overlay-group",
+						overlayMeta: { kind: "timestamp-card", variantId: "clean-vlog", slot: "label" },
+					} as never,
+				},
+			],
+		});
+
+		expect(collapsed).toHaveLength(1);
+		expect(collapsed[0]?.element.id).toBe("overlay-1");
+	});
+
+	test("does not collapse unrelated text selection", () => {
+		const collapsed = collapseOverlaySelection({
+			elementsWithTracks: [
+				{
+					track: { id: "text-track", type: "text", name: "Text", elements: [] } as never,
+					element: {
+						id: "text-1",
+						type: "text",
+						name: "Headline",
+						role: "text",
+					} as never,
+				},
+				{
+					track: { id: "text-track", type: "text", name: "Text", elements: [] } as never,
+					element: {
+						id: "text-2",
+						type: "text",
+						name: "Subtitle",
+						role: "text",
+					} as never,
+				},
+			],
+		});
+
+		expect(collapsed).toHaveLength(2);
 	});
 });

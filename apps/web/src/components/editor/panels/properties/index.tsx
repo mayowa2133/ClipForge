@@ -14,9 +14,13 @@ import type { TimelineElement, TimelineTrack } from "@/types/timeline";
 export function PropertiesPanel() {
 	const editor = useEditor();
 	const { selectedElements } = useElementSelection();
+	const selectedElementIds = selectedElements.map((selection) => selection.elementId);
 
-	const elementsWithTracks = editor.timeline.getElementsWithTracks({
+	const rawElementsWithTracks = editor.timeline.getElementsWithTracks({
 		elements: selectedElements,
+	});
+	const elementsWithTracks = collapseOverlaySelection({
+		elementsWithTracks: rawElementsWithTracks,
 	});
 	const linkedSelectionLabel = getLinkedSelectionLabel({ elementsWithTracks });
 
@@ -36,7 +40,11 @@ export function PropertiesPanel() {
 						if (element.type === "text") {
 							return (
 								<div key={element.id}>
-									<TextProperties element={element} trackId={track.id} />
+									<TextProperties
+										element={element}
+										trackId={track.id}
+										selectedElementIds={selectedElementIds}
+									/>
 								</div>
 							);
 						}
@@ -68,6 +76,29 @@ export function PropertiesPanel() {
 			)}
 		</div>
 	);
+}
+
+export function collapseOverlaySelection({
+	elementsWithTracks,
+}: {
+	elementsWithTracks: Array<{ track: TimelineTrack; element: TimelineElement }>;
+}): Array<{ track: TimelineTrack; element: TimelineElement }> {
+	if (elementsWithTracks.length < 2) return elementsWithTracks;
+
+	const textOverlays = elementsWithTracks.filter(
+		(entry): entry is { track: TimelineTrack; element: Extract<TimelineElement, { type: "text" }> } =>
+			entry.element.type === "text" && Boolean(entry.element.overlayMeta),
+	);
+	if (textOverlays.length !== elementsWithTracks.length) return elementsWithTracks;
+
+	const linkedGroupIds = new Set(
+		textOverlays
+			.map((entry) => entry.element.linkedGroupId)
+			.filter((value): value is string => typeof value === "string" && value.length > 0),
+	);
+	if (linkedGroupIds.size !== 1) return elementsWithTracks;
+
+	return [textOverlays[0]];
 }
 
 export function getLinkedSelectionLabel({

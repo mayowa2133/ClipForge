@@ -26,6 +26,7 @@ export const TAB_KEYS = [
 ] as const;
 
 export type Tab = (typeof TAB_KEYS)[number];
+export type GraphicsTab = "titles" | "overlays" | "cta" | "brand" | "text";
 
 const createHugeiconsIcon =
 	({ icon }: { icon: IconSvgElement }) =>
@@ -44,7 +45,7 @@ export const tabs = {
 	},
 	text: {
 		icon: createHugeiconsIcon({ icon: TextIcon }),
-		label: "Text",
+		label: "Graphics",
 	},
 	stickers: {
 		icon: createHugeiconsIcon({ icon: Happy01Icon }),
@@ -80,6 +81,8 @@ type MediaViewMode = "grid" | "list";
 interface AssetsPanelStore {
 	activeTab: Tab;
 	setActiveTab: (tab: Tab) => void;
+	graphicsTab: GraphicsTab;
+	setGraphicsTab: (tab: GraphicsTab) => void;
 	highlightMediaId: string | null;
 	requestRevealMedia: (mediaId: string) => void;
 	clearHighlight: () => void;
@@ -92,6 +95,8 @@ interface AssetsPanelStore {
 export const useAssetsPanelStore = create<AssetsPanelStore>((set) => ({
 	activeTab: "media",
 	setActiveTab: (tab) => set({ activeTab: tab }),
+	graphicsTab: "titles",
+	setGraphicsTab: (graphicsTab) => set({ activeTab: "text", graphicsTab }),
 	highlightMediaId: null,
 	requestRevealMedia: (mediaId) =>
 		set({ activeTab: "media", highlightMediaId: mediaId }),

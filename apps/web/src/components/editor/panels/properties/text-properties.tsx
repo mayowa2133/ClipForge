@@ -1,8 +1,8 @@
 import { Textarea } from "@/components/ui/textarea";
 import { FontPicker } from "@/components/ui/font-picker";
-import type { TextElement } from "@/types/timeline";
+import type { OverlayStyleVariantId, OverlayTextSlot, TextElement } from "@/types/timeline";
 import { NumberField } from "@/components/ui/number-field";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { Section, SectionContent, SectionField, SectionFields, SectionHeader } from "./section";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { uppercase } from "@/utils/string";
@@ -19,9 +19,24 @@ import {
 } from "@/constants/text-constants";
 import { usePropertyDraft } from "./hooks/use-property-draft";
 import { TransformSection, BlendingSection } from "./sections";
+import { useAssetsPanelStore } from "@/stores/assets-panel-store";
+import {
+	OVERLAY_STYLE_VARIANTS,
+	resolveProjectOverlayDefaults,
+	resolveProjectBrandKit,
+	type GraphicsMotionPresetId,
+} from "@/lib/timeline";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { TextFontIcon } from "@hugeicons/core-free-icons";
 import { OcTextHeightIcon, OcTextWidthIcon } from "@opencut/ui/icons";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 
 function createOffsetConverter({
 	defaultValue,
@@ -48,19 +63,236 @@ const paddingYConverter = createOffsetConverter({ defaultValue: DEFAULT_TEXT_BAC
 export function TextProperties({
 	element,
 	trackId,
+	selectedElementIds,
 }: {
 	element: TextElement;
 	trackId: string;
+	selectedElementIds?: string[];
 }) {
 	return (
 		<div className="flex h-full flex-col">
-			<ContentSection element={element} trackId={trackId} />
+			{!element.overlayMeta ? (
+				<ContentSection element={element} trackId={trackId} />
+			) : null}
+			{element.role !== "caption" ? (
+				<GraphicsSection
+					element={element}
+					trackId={trackId}
+					selectedElementIds={selectedElementIds}
+				/>
+			) : null}
 			<TransformSection element={element} trackId={trackId} />
 			<BlendingSection element={element} trackId={trackId} />
 			<TypographySection element={element} trackId={trackId} />
 			<SpacingSection element={element} trackId={trackId} />
 			<BackgroundSection element={element} trackId={trackId} />
 		</div>
+	);
+}
+
+const GRAPHICS_MOTION_OPTIONS: Array<{
+	value: GraphicsMotionPresetId;
+	label: string;
+}> = [
+	{ value: "fade-up", label: "Fade up" },
+	{ value: "slide-up", label: "Slide up" },
+	{ value: "pop-in", label: "Pop in" },
+	{ value: "drift-in", label: "Drift in" },
+	{ value: "none", label: "None" },
+];
+
+const OVERLAY_SLOT_LABELS: Partial<Record<OverlayTextSlot, string>> = {
+	primary: "Primary",
+	secondary: "Secondary",
+	time: "Time",
+	label: "Label",
+};
+
+function GraphicsSection({
+	element,
+	trackId,
+	selectedElementIds,
+}: {
+	element: TextElement;
+	trackId: string;
+	selectedElementIds?: string[];
+}) {
+	const editor = useEditor();
+	const setActiveTab = useAssetsPanelStore((state) => state.setActiveTab);
+	const setGraphicsTab = useAssetsPanelStore((state) => state.setGraphicsTab);
+	const brandKit = resolveProjectBrandKit({ project: editor.project.getActive() });
+	const overlayDefaults = resolveProjectOverlayDefaults({ project: editor.project.getActive() });
+	const hasMotion = Boolean(element.keyframes && Object.keys(element.keyframes).length > 0);
+	const overlayElements = useMemo(() => {
+		if (!element.overlayMeta) return [];
+		const selectedIds = new Set(selectedElementIds ?? [element.id]);
+		const linkedGroupId = element.linkedGroupId ?? null;
+		return editor.timeline
+			.getTracks()
+			.flatMap((track) =>
+				track.elements.filter(
+					(candidate): candidate is TextElement =>
+						candidate.type === "text" &&
+						Boolean(candidate.overlayMeta) &&
+						(selectedIds.has(candidate.id) ||
+							(linkedGroupId !== null && candidate.linkedGroupId === linkedGroupId)),
+				),
+			)
+			.sort((left, right) => left.startTime - right.startTime);
+	}, [editor, element, selectedElementIds]);
+	const overlaySlots = useMemo(
+		() =>
+			overlayElements
+				.filter((candidate) => typeof candidate.overlayMeta?.slot === "string")
+				.map((candidate) => ({
+					slot: candidate.overlayMeta?.slot as OverlayTextSlot,
+					elementId: candidate.id,
+					value: candidate.content,
+				})),
+		[overlayElements],
+	);
+	const overlayVariantId =
+		element.overlayMeta?.variantId ?? overlayDefaults.variantId;
+	const overlayElementIds = overlayElements.map((candidate) => candidate.id);
+
+	return (
+		<Section collapsible sectionKey="text:graphics">
+			<SectionHeader title={element.overlayMeta ? "Overlay" : "Graphics"} />
+			<SectionContent>
+				<SectionFields>
+					<p className="text-muted-foreground text-xs">
+						{element.overlayMeta
+							? "Browse overlay cards on the left, then fine-tune this insert here."
+							: "Browse presets on the left, then tune text styling here."}
+					</p>
+					<div className="flex gap-2">
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => {
+								setActiveTab("text");
+								setGraphicsTab(element.overlayMeta ? "overlays" : "titles");
+							}}
+						>
+							Browse
+						</Button>
+						{!element.overlayMeta ? (
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() =>
+									editor.timeline.updateElements({
+										updates: [
+											{
+												trackId,
+												elementId: element.id,
+												updates: {
+													color: brandKit.primaryColor,
+													fontFamily: brandKit.titleFontFamily,
+												},
+											},
+										],
+									})
+								}
+							>
+								Use brand colors
+							</Button>
+						) : null}
+					</div>
+					{element.overlayMeta ? (
+						<>
+							<SectionField label="Overlay kind">
+								<div className="text-sm capitalize">
+									{element.overlayMeta.kind.replaceAll("-", " ")}
+								</div>
+							</SectionField>
+							<SectionField label="Style">
+								<Select
+									value={overlayVariantId}
+									onValueChange={(value) =>
+										editor.timeline.applyOverlayStyleVariant({
+											trackId,
+											elementIds: overlayElementIds,
+											variantId: value as OverlayStyleVariantId,
+										})
+									}
+								>
+									<SelectTrigger className="w-40">
+										<SelectValue placeholder="Overlay style" />
+									</SelectTrigger>
+									<SelectContent>
+										{OVERLAY_STYLE_VARIANTS.map((variant) => (
+											<SelectItem key={variant.id} value={variant.id}>
+												{variant.label}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</SectionField>
+							{overlaySlots.map((slot) => (
+								<SectionField
+									key={slot.elementId}
+									label={OVERLAY_SLOT_LABELS[slot.slot] ?? slot.slot}
+								>
+									<Textarea
+										value={slot.value}
+										className="min-h-16"
+										onChange={(event) =>
+											editor.timeline.updateOverlayTextSlots({
+												elementIds: overlayElementIds,
+												values: { [slot.slot]: event.target.value },
+											})
+										}
+									/>
+								</SectionField>
+							))}
+						</>
+					) : null}
+					<SectionField label="Motion">
+						<div className="flex items-center gap-2">
+							<Select
+								onValueChange={(value) => {
+									const targetIds = element.overlayMeta ? overlayElementIds : [element.id];
+									for (const elementId of targetIds) {
+										editor.timeline.applyGraphicsMotionPreset({
+											trackId,
+											elementId,
+											motionPresetId: value as GraphicsMotionPresetId,
+										});
+									}
+								}}
+							>
+								<SelectTrigger className="w-36">
+									<SelectValue placeholder={hasMotion ? "Change" : "Apply"} />
+								</SelectTrigger>
+								<SelectContent>
+									{GRAPHICS_MOTION_OPTIONS.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => {
+									const targetIds = element.overlayMeta ? overlayElementIds : [element.id];
+									for (const elementId of targetIds) {
+										editor.timeline.clearElementKeyframes({
+											trackId,
+											elementId,
+										});
+									}
+								}}
+							>
+								Reset motion
+							</Button>
+						</div>
+					</SectionField>
+				</SectionFields>
+			</SectionContent>
+		</Section>
 	);
 }
 

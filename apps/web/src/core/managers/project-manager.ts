@@ -17,6 +17,8 @@ import {
 	DEFAULT_CANVAS_SIZE,
 	DEFAULT_COLOR,
 	DEFAULT_PROJECT_AUDIO_SETTINGS,
+	DEFAULT_PROJECT_BRAND_KIT,
+	DEFAULT_PROJECT_OVERLAY_DEFAULTS,
 } from "@/constants/project-constants";
 import { buildDefaultScene, getProjectDurationFromScenes } from "@/lib/scenes";
 import { buildScene } from "@/services/renderer/scene-builder";
@@ -96,6 +98,8 @@ export class ProjectManager {
 					color: DEFAULT_COLOR,
 				},
 				audio: { ...DEFAULT_PROJECT_AUDIO_SETTINGS },
+				brandKit: { ...DEFAULT_PROJECT_BRAND_KIT },
+				overlayDefaults: { ...DEFAULT_PROJECT_OVERLAY_DEFAULTS },
 			},
 			version: CURRENT_PROJECT_VERSION,
 			clipforge: buildDefaultClipForgeProjectData(),

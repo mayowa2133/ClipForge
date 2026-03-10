@@ -99,6 +99,67 @@ export class MediaManager {
 		}
 	}
 
+	async renameMediaAsset({
+		projectId,
+		id,
+		name,
+	}: {
+		projectId: string;
+		id: string;
+		name: string;
+	}): Promise<MediaAsset | null> {
+		this.currentProjectId = projectId;
+		const trimmedName = name.trim();
+		if (!trimmedName) {
+			return null;
+		}
+
+		const existingAsset = this.assets.find((asset) => asset.id === id) ?? null;
+		if (!existingAsset) {
+			return null;
+		}
+
+		const renamedAsset: MediaAsset = {
+			...existingAsset,
+			name: trimmedName,
+		};
+		this.assets = this.assets.map((asset) =>
+			asset.id === id ? renamedAsset : asset,
+		);
+		this.notify();
+
+		try {
+			const metadata: MediaAssetData = {
+				id: renamedAsset.id,
+				name: renamedAsset.name,
+				type: renamedAsset.type,
+				size: renamedAsset.file.size,
+				lastModified: renamedAsset.file.lastModified,
+				width: renamedAsset.width,
+				height: renamedAsset.height,
+				duration: renamedAsset.duration,
+				fps: renamedAsset.fps,
+				thumbnailUrl: renamedAsset.thumbnailUrl,
+				ephemeral: renamedAsset.ephemeral,
+				mimeType: renamedAsset.mimeType ?? renamedAsset.file.type ?? "",
+				compatibility: renamedAsset.compatibility,
+				derived: renamedAsset.derived,
+			};
+			await storageService.saveMediaAssetMetadata({
+				projectId,
+				metadata,
+			});
+			return renamedAsset;
+		} catch (error) {
+			console.error("Failed to rename media asset:", error);
+			this.assets = this.assets.map((asset) =>
+				asset.id === id ? existingAsset : asset,
+			);
+			this.notify();
+			return null;
+		}
+	}
+
 	async relinkMediaAsset({
 		projectId,
 		id,

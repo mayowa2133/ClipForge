@@ -4,6 +4,12 @@ import type {
 	TimelineTrack,
 	TimelineElement,
 	ClipboardItem,
+	OverlayMeta,
+	OverlayStyleVariantId,
+	OverlayTextSlot,
+	SocialOverlayPresetId,
+	TextElement,
+	StickerElement,
 } from "@/types/timeline";
 import { calculateTotalDuration } from "@/lib/timeline";
 import {
@@ -65,9 +71,17 @@ import {
 	type FilterPresetId,
 	type FinishableVisualElement,
 	type AnimatableVisualProperty,
+	type GraphicsMotionPresetId,
+	type GraphicsPresetId,
+	applyOverlayStyleVariantToElements,
+	buildGraphicsPresetElements,
+	buildSocialOverlayPresetElements,
+	applyGraphicsMotionPreset,
+	resolveProjectOverlayDefaults,
 } from "@/lib/timeline";
 import { mediaSupportsAudio } from "@/lib/media/media-utils";
 import type { VisualAdjustments, VisualEffect, VisualEffectKind } from "@/types/timeline";
+import { generateUUID } from "@/utils/id";
 
 export class TimelineManager {
 	private listeners = new Set<() => void>();
@@ -614,6 +628,222 @@ export class TimelineManager {
 		this.editor.command.execute({ command });
 	}
 
+	insertGraphicsPreset({
+		presetId,
+		motionPresetId = "fade-up",
+		startTime,
+		duration,
+	}: {
+		presetId: GraphicsPresetId;
+		motionPresetId?: GraphicsMotionPresetId;
+		startTime: number;
+		duration?: number;
+	}): { trackId: string; elementId: string }[] {
+		const project = this.editor.project.getActive();
+		const logoMediaId = project?.settings.brandKit?.logoMediaId ?? null;
+		const logoAsset =
+			logoMediaId
+				? this.editor.media
+						.getAssets()
+						.find((asset) => asset.id === logoMediaId && asset.type === "image")
+				: null;
+		const elements = buildGraphicsPresetElements({
+			project,
+			presetId,
+			motionPresetId,
+			startTime,
+			duration,
+			logoAsset: logoAsset ? { id: logoAsset.id, name: logoAsset.name } : null,
+		});
+		const linkedGroupId = elements.length > 1 ? generateUUID() : null;
+		const commands = elements.map((element) => {
+			const nextElement = linkedGroupId ? { ...element, linkedGroupId } : element;
+			return new InsertElementCommand({
+				element: nextElement,
+				placement: {
+					mode: "auto",
+					trackType: nextElement.type === "image" ? "video" : "text",
+				},
+			});
+		});
+		const command = commands.length === 1 ? commands[0] : new BatchCommand(commands);
+		this.editor.command.execute({ command });
+		const inserted = commands
+			.map((insertCommand) => ({
+				trackId: insertCommand.getTrackId(),
+				elementId: insertCommand.getElementId(),
+			}))
+			.filter(
+				(candidate): candidate is { trackId: string; elementId: string } =>
+					typeof candidate.trackId === "string",
+			);
+		if (inserted.length > 0) {
+			this.editor.selection.setSelectedElements({ elements: inserted });
+		}
+		return inserted;
+	}
+
+	insertSocialOverlayPreset({
+		presetId,
+		variantId,
+		motionPresetId,
+		startTime,
+		duration,
+		values,
+	}: {
+		presetId: SocialOverlayPresetId;
+		variantId?: OverlayStyleVariantId;
+		motionPresetId?: GraphicsMotionPresetId;
+		startTime: number;
+		duration?: number;
+		values?: Partial<Record<OverlayTextSlot, string>>;
+	}): { trackId: string; elementId: string }[] {
+		const project = this.editor.project.getActive();
+		const overlayDefaults = resolveProjectOverlayDefaults({ project });
+		const elements = buildSocialOverlayPresetElements({
+			project,
+			presetId,
+			variantId,
+			motionPresetId: motionPresetId ?? overlayDefaults.motionPresetId,
+			startTime,
+			duration,
+			values,
+		});
+		const linkedGroupId = elements.length > 1 ? generateUUID() : null;
+		const commands = elements.map((element) => {
+			const nextElement = linkedGroupId ? { ...element, linkedGroupId } : element;
+			return new InsertElementCommand({
+				element: nextElement,
+				placement: {
+					mode: "auto",
+					trackType: nextElement.type === "image" ? "video" : "text",
+				},
+			});
+		});
+		const command = commands.length === 1 ? commands[0] : new BatchCommand(commands);
+		this.editor.command.execute({ command });
+		const inserted = commands
+			.map((insertCommand) => ({
+				trackId: insertCommand.getTrackId(),
+				elementId: insertCommand.getElementId(),
+			}))
+			.filter(
+				(candidate): candidate is { trackId: string; elementId: string } =>
+					typeof candidate.trackId === "string",
+			);
+		if (inserted.length > 0) {
+			this.editor.selection.setSelectedElements({ elements: inserted });
+		}
+		return inserted;
+	}
+
+	applyOverlayStyleVariant({
+		trackId,
+		elementIds,
+		variantId,
+	}: {
+		trackId: string;
+		elementIds: string[];
+		variantId: OverlayStyleVariantId;
+	}): void {
+		const anchorTrack = this.getTrackById({ trackId });
+		const anchorElement = anchorTrack?.elements.find((candidate) => elementIds.includes(candidate.id));
+		const overlayMeta = (anchorElement as { overlayMeta?: OverlayMeta | null } | undefined)?.overlayMeta;
+		if (!anchorElement || !overlayMeta) {
+			throw new Error("Overlay style variants require a selected overlay element.");
+		}
+
+		const overlayElements = this.getOverlayElements({
+			anchorElementId: anchorElement.id,
+			linkedGroupId:
+				"linkedGroupId" in anchorElement ? anchorElement.linkedGroupId ?? null : null,
+			elementIds,
+		});
+		const updates = applyOverlayStyleVariantToElements({
+			project: this.editor.project.getActive(),
+			kind: overlayMeta.kind,
+			variantId,
+			elements: overlayElements,
+		});
+		this.updateElements({
+			updates: updates.map((update) => ({
+				trackId: this.findTrackIdForElement({ elementId: update.elementId }) ?? trackId,
+				elementId: update.elementId,
+				updates: update.updates,
+			})),
+		});
+	}
+
+	updateOverlayTextSlots({
+		elementIds,
+		values,
+	}: {
+		elementIds: string[];
+		values: Partial<Record<OverlayTextSlot, string>>;
+	}): void {
+		const updates = this.getTracks()
+			.flatMap((track) =>
+				track.elements
+					.filter(
+						(element): element is TextElement =>
+							element.type === "text" &&
+							elementIds.includes(element.id) &&
+							typeof element.overlayMeta?.slot === "string",
+					)
+					.map((element) => {
+						const nextValue = values[element.overlayMeta?.slot as OverlayTextSlot];
+						return nextValue === undefined
+							? null
+							: {
+									trackId: track.id,
+									elementId: element.id,
+									updates: { content: nextValue },
+								};
+					}),
+			)
+			.filter((update): update is { trackId: string; elementId: string; updates: { content: string } } => update !== null);
+		if (updates.length === 0) return;
+		this.updateElements({ updates });
+	}
+
+	applyGraphicsMotionPreset({
+		trackId,
+		elementId,
+		motionPresetId,
+	}: {
+		trackId: string;
+		elementId: string;
+		motionPresetId: GraphicsMotionPresetId;
+	}): void {
+		const track = this.getTrackById({ trackId });
+		const element = track?.elements.find((candidate) => candidate.id === elementId);
+		if (!element || (element.type !== "text" && element.type !== "sticker")) {
+			throw new Error("Graphics motion presets only apply to text and sticker elements.");
+		}
+		const nextKeyframes = applyGraphicsMotionPreset({
+			element: element as TextElement | StickerElement,
+			motionPresetId,
+		});
+		this.updateElements({
+			updates: [
+				{
+					trackId,
+					elementId,
+					updates: { keyframes: nextKeyframes },
+				},
+			],
+		});
+	}
+
+	findTrackIdForElement({ elementId }: { elementId: string }): string | null {
+		for (const track of this.getTracks()) {
+			if (track.elements.some((element) => element.id === elementId)) {
+				return track.id;
+			}
+		}
+		return null;
+	}
+
 	toggleTrackMute({ trackId }: { trackId: string }): void {
 		const command = new ToggleTrackMuteCommand(trackId);
 		this.editor.command.execute({ command });
@@ -680,6 +910,35 @@ export class TimelineManager {
 		}
 
 		return result;
+	}
+
+	private getOverlayElements({
+		anchorElementId,
+		linkedGroupId,
+		elementIds,
+	}: {
+		anchorElementId: string;
+		linkedGroupId: string | null;
+		elementIds: string[];
+	}): Array<TextElement | Extract<TimelineElement, { type: "image" }>> {
+		const idSet = new Set(elementIds);
+		return this.getTracks()
+			.flatMap((track) =>
+				track.elements.filter((element) => {
+					if (element.id === anchorElementId) return true;
+					if (idSet.has(element.id)) return true;
+					return (
+						Boolean(linkedGroupId) &&
+						"linkedGroupId" in element &&
+						element.linkedGroupId === linkedGroupId
+					);
+				}),
+			)
+			.filter(
+				(element): element is TextElement | Extract<TimelineElement, { type: "image" }> =>
+					(element.type === "text" || element.type === "image") &&
+					Boolean((element as { overlayMeta?: OverlayMeta | null }).overlayMeta),
+			);
 	}
 
 	pasteAtTime({

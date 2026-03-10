@@ -7,6 +7,7 @@ export * from "./ruler-utils";
 export * from "./manual-editing";
 export * from "./motion";
 export * from "./finishing";
+export * from "./graphics";
 
 export function calculateTotalDuration({
 	tracks,

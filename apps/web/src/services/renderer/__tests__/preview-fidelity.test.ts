@@ -220,6 +220,30 @@ describe("preview fidelity", () => {
 		expect(status).toBe("approximate");
 	});
 
+	test("classifies legacy fallback without mismatch as approximate", () => {
+		const report = buildPreviewFidelityReport({
+			graphFingerprint: "graph-v1",
+			previewDiagnostics: {
+				...baseDiagnostics,
+				usedLegacyFallback: true,
+			},
+			exportDiagnostics: {
+				backendKind: "binary-canvas",
+				usedBinaryFallback: false,
+				usedLegacyFallback: false,
+				unsupportedFeatures: [],
+			},
+			samples: [{ time: 0, previewHash: "a", exportHash: "a", match: true }],
+			checkedAt: "2026-03-09T12:00:00.000Z",
+		});
+
+		expect(report.status).toBe("approximate");
+		expect(
+			report.issues.find((issue) => issue.code === "preview-used-legacy-fallback")
+				?.severity,
+		).toBe("warning");
+	});
+
 	test("parity mismatch produces unsupported report with sample metadata", () => {
 		const report = buildPreviewFidelityReport({
 			graphFingerprint: "graph-v1",
