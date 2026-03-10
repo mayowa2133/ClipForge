@@ -112,19 +112,45 @@ export function ScenesView({ children }: { children: React.ReactNode }) {
 							{formatTimeCode({ timeInSeconds: projectDuration })}
 						</p>
 					</div>
-					<Button
-						size="sm"
-						variant="outline"
-						onClick={() =>
-							editor.scenes.createSceneAfter({
-								sceneId: currentScene?.id ?? scenes[scenes.length - 1]?.id ?? "",
-							})
-						}
-						disabled={scenes.length === 0}
-					>
-						<Plus className="mr-1 size-4" />
-						Add scene
-					</Button>
+					<div className="flex items-center gap-2">
+						<Button
+							size="sm"
+							variant="outline"
+							onClick={async () => {
+								const name = window.prompt(
+									"Scene recipe name",
+									`${currentScene?.name ?? "Scene"} Recipe`,
+								);
+								if (!name || !currentScene) return;
+								try {
+									await editor.scenes.saveSceneAsRecipe({
+										name: name.trim(),
+										sceneId: currentScene.id,
+									});
+									toast.success("Scene recipe saved.");
+								} catch (error) {
+									console.error("Failed to save scene recipe:", error);
+									toast.error("Failed to save scene recipe");
+								}
+							}}
+							disabled={!currentScene}
+						>
+							Save as recipe
+						</Button>
+						<Button
+							size="sm"
+							variant="outline"
+							onClick={() =>
+								editor.scenes.createSceneAfter({
+									sceneId: currentScene?.id ?? scenes[scenes.length - 1]?.id ?? "",
+								})
+							}
+							disabled={scenes.length === 0}
+						>
+							<Plus className="mr-1 size-4" />
+							Add scene
+						</Button>
+					</div>
 				</div>
 				<div className="flex flex-col gap-3 py-4">
 					{scenes.length === 0 ? (

@@ -12,4 +12,9 @@ describe("assets panel tab registry", () => {
 		expect("adjustment" in tabs).toBe(false);
 		expect(tabs.sounds.label).toBe("Audio");
 	});
+
+	test("exposes templates as a first-class authoring workflow", () => {
+		expect(TAB_KEYS.includes("templates" as (typeof TAB_KEYS)[number])).toBe(true);
+		expect(tabs.templates.label).toBe("Templates");
+	});
 });

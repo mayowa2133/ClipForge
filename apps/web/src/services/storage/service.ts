@@ -8,6 +8,7 @@ import type {
 	StorageConfig,
 	SerializedProject,
 	SerializedScene,
+	SerializedTemplateLibraryItem,
 } from "./types";
 import type { SavedSoundsData, SavedSound, SoundEffect } from "@/types/sounds";
 import type {
@@ -25,6 +26,7 @@ import {
 	ensureClipForgeProjectData,
 	normalizeClipForgeProjectData,
 } from "@/lib/clipforge";
+import type { CreatorTemplate, SerializedCreatorTemplate } from "@/types/templates";
 
 function normalizeBookmarks({ raw }: { raw: unknown }): Bookmark[] {
 	if (!Array.isArray(raw)) return [];
@@ -52,6 +54,7 @@ function normalizeBookmarks({ raw }: { raw: unknown }): Bookmark[] {
 class StorageService {
 	private projectsAdapter: IndexedDBAdapter<SerializedProject>;
 	private savedSoundsAdapter: IndexedDBAdapter<SavedSoundsData>;
+	private templatesAdapter: IndexedDBAdapter<SerializedTemplateLibraryItem>;
 	private config: StorageConfig;
 	private migrationsPromise: Promise<void> | null = null;
 
@@ -60,6 +63,7 @@ class StorageService {
 			projectsDb: "video-editor-projects",
 			mediaDb: "video-editor-media",
 			savedSoundsDb: "video-editor-saved-sounds",
+			templatesDb: "video-editor-templates",
 			version: 1,
 		};
 
@@ -72,6 +76,11 @@ class StorageService {
 		this.savedSoundsAdapter = new IndexedDBAdapter<SavedSoundsData>(
 			this.config.savedSoundsDb,
 			"saved-sounds",
+			this.config.version,
+		);
+		this.templatesAdapter = new IndexedDBAdapter<SerializedTemplateLibraryItem>(
+			this.config.templatesDb,
+			"templates",
 			this.config.version,
 		);
 	}
@@ -242,6 +251,25 @@ class StorageService {
 
 	async deleteProject({ id }: { id: string }): Promise<void> {
 		await this.projectsAdapter.remove(id);
+	}
+
+	async saveTemplate({
+		template,
+	}: {
+		template: CreatorTemplate;
+	}): Promise<void> {
+		await this.templatesAdapter.set(template.id, serializeTemplate({ template }));
+	}
+
+	async loadAllTemplates(): Promise<CreatorTemplate[]> {
+		const serializedTemplates = await this.templatesAdapter.getAll();
+		return serializedTemplates
+			.map((template) => deserializeTemplate({ template }))
+			.sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+	}
+
+	async deleteTemplate({ id }: { id: string }): Promise<void> {
+		await this.templatesAdapter.remove(id);
 	}
 
 	async saveMediaAsset({
@@ -533,6 +561,30 @@ class StorageService {
 	isFullySupported(): boolean {
 		return this.isIndexedDBSupported() && this.isOPFSSupported();
 	}
+}
+
+function serializeTemplate({
+	template,
+}: {
+	template: CreatorTemplate;
+}): SerializedCreatorTemplate {
+	return {
+		...template,
+		createdAt: template.createdAt.toISOString(),
+		updatedAt: template.updatedAt.toISOString(),
+	} as SerializedCreatorTemplate;
+}
+
+function deserializeTemplate({
+	template,
+}: {
+	template: SerializedCreatorTemplate;
+}): CreatorTemplate {
+	return {
+		...template,
+		createdAt: new Date(template.createdAt),
+		updatedAt: new Date(template.updatedAt),
+	} as CreatorTemplate;
 }
 
 function serializeClipForgeData({

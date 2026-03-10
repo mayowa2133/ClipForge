@@ -1,5 +1,6 @@
 import type { OverlayStyleVariantId, TScene } from "./timeline";
 import type { ClipForgeProjectData } from "./clipforge";
+import type { ProjectMontageDefaults } from "./templates";
 
 export type TBackground =
 	| {
@@ -65,6 +66,7 @@ export interface TProjectSettings {
 	audio?: ProjectAudioSettings;
 	brandKit?: ProjectBrandKit;
 	overlayDefaults?: ProjectOverlayDefaults;
+	montageDefaults?: ProjectMontageDefaults;
 }
 
 export interface TTimelineViewState {

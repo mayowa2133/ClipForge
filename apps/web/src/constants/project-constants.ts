@@ -4,6 +4,7 @@ import type {
 	ProjectOverlayDefaults,
 	TCanvasSize,
 } from "@/types/project";
+import type { ProjectMontageDefaults } from "@/types/templates";
 
 export const DEFAULT_CANVAS_PRESETS: TCanvasSize[] = [
 	{ width: 1920, height: 1080 },
@@ -51,4 +52,9 @@ export const DEFAULT_PROJECT_OVERLAY_DEFAULTS: ProjectOverlayDefaults = {
 	variantId: "clean-vlog",
 	motionPresetId: "fade-up",
 	safeMarginPreset: "standard",
+};
+
+export const DEFAULT_PROJECT_MONTAGE_DEFAULTS: ProjectMontageDefaults = {
+	beatDivision: 2,
+	motionPresetId: "fade-up",
 };

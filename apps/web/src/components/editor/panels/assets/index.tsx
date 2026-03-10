@@ -10,6 +10,7 @@ import { FiltersView } from "./views/filters";
 import { SettingsView } from "./views/settings";
 import { SoundsView } from "./views/sounds";
 import { StickersView } from "./views/stickers";
+import { TemplatesView } from "./views/templates";
 import { TextView } from "./views/text";
 import { TransitionsView } from "./views/transitions";
 
@@ -25,6 +26,7 @@ export function AssetsPanel() {
 		transitions: <TransitionsView />,
 		captions: <Captions />,
 		filters: <FiltersView />,
+		templates: <TemplatesView />,
 		settings: <SettingsView />,
 	};
 

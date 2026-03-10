@@ -11,6 +11,7 @@ import type {
 } from "@/types/project";
 import type { TScene } from "@/types/timeline";
 import type { SerializedClipForgeProjectData } from "@/types/clipforge";
+import type { SerializedCreatorTemplate } from "@/types/templates";
 
 export interface StorageAdapter<T> {
 	get(key: string): Promise<T | null>;
@@ -65,8 +66,11 @@ export interface StorageConfig {
 	projectsDb: string;
 	mediaDb: string;
 	savedSoundsDb: string;
+	templatesDb: string;
 	version: number;
 }
+
+export type SerializedTemplateLibraryItem = SerializedCreatorTemplate;
 
 // TypeScript type augmentation to add async iterator methods to FileSystemDirectoryHandle
 // These methods are part of the File System Access API spec but may not be in all type definitions

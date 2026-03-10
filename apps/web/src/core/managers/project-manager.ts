@@ -8,16 +8,28 @@ import type {
 	TTimelineViewState,
 } from "@/types/project";
 import type { ExportOptions, ExportResult } from "@/types/export";
+import type {
+	ComponentTemplate,
+	CreatorTemplate,
+	ProjectKitTemplate,
+	SceneRecipeTemplate,
+} from "@/types/templates";
 import { storageService } from "@/services/storage/service";
 import { toast } from "sonner";
 import { generateUUID } from "@/utils/id";
-import { UpdateProjectSettingsCommand } from "@/lib/commands/project";
+import {
+	ApplyProjectKitCommand,
+	UpdateProjectSettingsCommand,
+	DeleteCreatorTemplateCommand,
+	UpsertCreatorTemplateCommand,
+} from "@/lib/commands";
 import {
 	DEFAULT_FPS,
 	DEFAULT_CANVAS_SIZE,
 	DEFAULT_COLOR,
 	DEFAULT_PROJECT_AUDIO_SETTINGS,
 	DEFAULT_PROJECT_BRAND_KIT,
+	DEFAULT_PROJECT_MONTAGE_DEFAULTS,
 	DEFAULT_PROJECT_OVERLAY_DEFAULTS,
 } from "@/constants/project-constants";
 import { buildDefaultScene, getProjectDurationFromScenes } from "@/lib/scenes";
@@ -33,6 +45,7 @@ import { DEFAULT_TIMELINE_VIEW_STATE } from "@/constants/timeline-constants";
 import { loadFonts } from "@/lib/fonts/google-fonts";
 import { collectFontFamilies } from "@/lib/timeline/element-utils";
 import { buildDefaultClipForgeProjectData } from "@/lib/clipforge";
+import { buildProjectKitPayload } from "@/lib/timeline";
 
 export interface MigrationState {
 	isMigrating: boolean;
@@ -44,10 +57,12 @@ export interface MigrationState {
 export class ProjectManager {
 	private active: TProject | null = null;
 	private savedProjects: TProjectMetadata[] = [];
+	private templateLibrary: CreatorTemplate[] = [];
 	private isLoading = true;
 	private isInitialized = false;
 	private invalidProjectIds = new Set<string>();
 	private storageMigrationPromise: Promise<void> | null = null;
+	private templateLibraryPromise: Promise<void> | null = null;
 	private listeners = new Set<() => void>();
 	private migrationState: MigrationState = {
 		isMigrating: false,
@@ -56,7 +71,9 @@ export class ProjectManager {
 		projectName: null,
 	};
 
-	constructor(private editor: EditorCore) {}
+	constructor(private editor: EditorCore) {
+		void this.loadTemplateLibrary();
+	}
 
 	private async ensureStorageMigrations(): Promise<void> {
 		if (this.storageMigrationPromise) {
@@ -100,6 +117,7 @@ export class ProjectManager {
 				audio: { ...DEFAULT_PROJECT_AUDIO_SETTINGS },
 				brandKit: { ...DEFAULT_PROJECT_BRAND_KIT },
 				overlayDefaults: { ...DEFAULT_PROJECT_OVERLAY_DEFAULTS },
+				montageDefaults: { ...DEFAULT_PROJECT_MONTAGE_DEFAULTS },
 			},
 			version: CURRENT_PROJECT_VERSION,
 			clipforge: buildDefaultClipForgeProjectData(),
@@ -220,6 +238,23 @@ export class ProjectManager {
 			this.isInitialized = true;
 			this.notify();
 		}
+	}
+
+	async loadTemplateLibrary(): Promise<void> {
+		if (this.templateLibraryPromise) {
+			await this.templateLibraryPromise;
+			return;
+		}
+		this.templateLibraryPromise = storageService
+			.loadAllTemplates()
+			.then((templates) => {
+				this.templateLibrary = templates;
+				this.notify();
+			})
+			.finally(() => {
+				this.templateLibraryPromise = null;
+			});
+		await this.templateLibraryPromise;
 	}
 
 	async deleteProjects({ ids }: { ids: string[] }): Promise<void> {
@@ -448,6 +483,99 @@ export class ProjectManager {
 		}
 
 		command.execute();
+	}
+
+	getTemplateLibrary(): CreatorTemplate[] {
+		return this.templateLibrary;
+	}
+
+	getComponentTemplates(): ComponentTemplate[] {
+		return this.templateLibrary.filter(
+			(template): template is ComponentTemplate => template.kind === "component",
+		);
+	}
+
+	getSceneRecipeTemplates(): SceneRecipeTemplate[] {
+		return this.templateLibrary.filter(
+			(template): template is SceneRecipeTemplate => template.kind === "scene-recipe",
+		);
+	}
+
+	getProjectKitTemplates(): ProjectKitTemplate[] {
+		return this.templateLibrary.filter(
+			(template): template is ProjectKitTemplate => template.kind === "project-kit",
+		);
+	}
+
+	setTemplateLibrary({ templates }: { templates: CreatorTemplate[] }): void {
+		this.templateLibrary = templates;
+		this.notify();
+	}
+
+	findTemplateById({ templateId }: { templateId: string }): CreatorTemplate | null {
+		return this.templateLibrary.find((template) => template.id === templateId) ?? null;
+	}
+
+	async deleteTemplate({ templateId }: { templateId: string }): Promise<void> {
+		this.editor.command.execute({
+			command: new DeleteCreatorTemplateCommand(templateId),
+		});
+	}
+
+	async saveProjectAsKit({
+		name,
+		includeBrand = true,
+		includeCaptionStyle = true,
+		includeOverlayDefaults = true,
+		includeAudioMix = true,
+		includeMontageDefaults = true,
+	}: {
+		name: string;
+		includeBrand?: boolean;
+		includeCaptionStyle?: boolean;
+		includeOverlayDefaults?: boolean;
+		includeAudioMix?: boolean;
+		includeMontageDefaults?: boolean;
+	}): Promise<string> {
+		const activeProject = this.getActiveOrNull();
+		if (!activeProject) {
+			throw new Error("No active project");
+		}
+
+		const now = new Date();
+		const template: ProjectKitTemplate = {
+			id: generateUUID(),
+			name,
+			kind: "project-kit",
+			version: 1,
+			thumbnailAssetId: activeProject.metadata.thumbnail ?? null,
+			createdAt: now,
+			updatedAt: now,
+			payload: buildProjectKitPayload({
+				project: activeProject,
+				includeBrand,
+				includeCaptionStyle,
+				includeOverlayDefaults,
+				includeAudioMix,
+				includeMontageDefaults,
+			}),
+		};
+
+		this.editor.command.execute({
+			command: new UpsertCreatorTemplateCommand(template),
+		});
+		return template.id;
+	}
+
+	async applyProjectKit({ kitId }: { kitId: string }): Promise<void> {
+		const template = this.findTemplateById({ templateId: kitId });
+		if (!template || template.kind !== "project-kit") {
+			throw new Error("Project kit not found.");
+		}
+
+		this.editor.command.execute({
+			command: new ApplyProjectKitCommand(template.payload),
+		});
 	}
 
 	async updateThumbnail({ thumbnail }: { thumbnail: string }): Promise<void> {

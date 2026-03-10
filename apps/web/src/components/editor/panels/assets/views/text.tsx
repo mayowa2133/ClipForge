@@ -216,6 +216,22 @@ export function TextView() {
 								New graphics presets use these defaults. Existing graphics stay unchanged.
 							</p>
 						</div>
+						<div className="flex justify-end">
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => {
+									const name = window.prompt(
+										"Project kit name",
+										`${editor.project.getActive()?.metadata.name ?? "Creator"} Kit`,
+									);
+									if (!name) return;
+									void editor.project.saveProjectAsKit({ name: name.trim() });
+								}}
+							>
+								Save as project kit
+							</Button>
+						</div>
 						<BrandField label="Primary color">
 							<ColorPicker
 								value={uppercase({ string: brandKit.primaryColor.replace("#", "") })}

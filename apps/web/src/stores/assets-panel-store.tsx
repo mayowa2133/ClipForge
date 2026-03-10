@@ -12,6 +12,7 @@ import {
 	ColorsIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { LayoutTemplate } from "lucide-react";
 
 export const TAB_KEYS = [
 	"media",
@@ -22,11 +23,13 @@ export const TAB_KEYS = [
 	"transitions",
 	"captions",
 	"filters",
+	"templates",
 	"settings",
 ] as const;
 
 export type Tab = (typeof TAB_KEYS)[number];
 export type GraphicsTab = "titles" | "overlays" | "cta" | "brand" | "text";
+export type TemplatesTab = "components" | "scene-recipes" | "project-kits";
 
 const createHugeiconsIcon =
 	({ icon }: { icon: IconSvgElement }) =>
@@ -67,6 +70,10 @@ export const tabs = {
 		icon: createHugeiconsIcon({ icon: ColorsIcon }),
 		label: "Filters",
 	},
+	templates: {
+		icon: LayoutTemplate,
+		label: "Templates",
+	},
 	settings: {
 		icon: createHugeiconsIcon({ icon: Settings01Icon }),
 		label: "Settings",
@@ -83,6 +90,8 @@ interface AssetsPanelStore {
 	setActiveTab: (tab: Tab) => void;
 	graphicsTab: GraphicsTab;
 	setGraphicsTab: (tab: GraphicsTab) => void;
+	templatesTab: TemplatesTab;
+	setTemplatesTab: (tab: TemplatesTab) => void;
 	highlightMediaId: string | null;
 	requestRevealMedia: (mediaId: string) => void;
 	clearHighlight: () => void;
@@ -97,6 +106,8 @@ export const useAssetsPanelStore = create<AssetsPanelStore>((set) => ({
 	setActiveTab: (tab) => set({ activeTab: tab }),
 	graphicsTab: "titles",
 	setGraphicsTab: (graphicsTab) => set({ activeTab: "text", graphicsTab }),
+	templatesTab: "components",
+	setTemplatesTab: (templatesTab) => set({ activeTab: "templates", templatesTab }),
 	highlightMediaId: null,
 	requestRevealMedia: (mediaId) =>
 		set({ activeTab: "media", highlightMediaId: mediaId }),

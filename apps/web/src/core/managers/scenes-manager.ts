@@ -1,5 +1,6 @@
 import type { EditorCore } from "@/core";
 import type { TimelineTrack, TScene } from "@/types/timeline";
+import type { SceneRecipeTemplate } from "@/types/templates";
 import { storageService } from "@/services/storage/service";
 import {
 	getMainScene,
@@ -16,6 +17,12 @@ import {
 } from "@/lib/timeline/bookmarks";
 import { ensureMainTrack } from "@/lib/timeline/track-utils";
 import {
+	ApplyProjectKitCommand,
+	BatchCommand,
+	InsertElementCommand,
+	UpsertCreatorTemplateCommand,
+} from "@/lib/commands";
+import {
 	CreateSceneCommand,
 	DeleteSceneCommand,
 	DuplicateSceneCommand,
@@ -26,6 +33,12 @@ import {
 	ToggleBookmarkCommand,
 	UpdateBookmarkCommand,
 } from "@/lib/commands/scene";
+import {
+	buildSceneRecipePayloadFromScene,
+	getBuiltInSceneRecipeDefinition,
+	instantiateTemplateElements,
+} from "@/lib/timeline";
+import { generateUUID } from "@/utils/id";
 
 export class ScenesManager {
 	private active: TScene | null = null;
@@ -83,6 +96,107 @@ export class ScenesManager {
 		const command = new DuplicateSceneCommand(sceneId);
 		this.editor.command.execute({ command });
 		return command.getSceneId();
+	}
+
+	async saveSceneAsRecipe({
+		name,
+		sceneId,
+		mode = "portable",
+	}: {
+		name: string;
+		sceneId: string;
+		mode?: "portable";
+	}): Promise<string> {
+		if (mode !== "portable") {
+			throw new Error("Only portable scene recipes are supported.");
+		}
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			throw new Error("No active project");
+		}
+		const payload = buildSceneRecipePayloadFromScene({
+			project: activeProject,
+			sceneId,
+		});
+		const now = new Date();
+		const template: SceneRecipeTemplate = {
+			id: generateUUID(),
+			name,
+			kind: "scene-recipe",
+			version: 1,
+			thumbnailAssetId: null,
+			createdAt: now,
+			updatedAt: now,
+			payload,
+		};
+		this.editor.command.execute({
+			command: new UpsertCreatorTemplateCommand(template),
+		});
+		return template.id;
+	}
+
+	async insertSceneRecipe({
+		recipeId,
+		startTime,
+	}: {
+		recipeId: string;
+		startTime?: number;
+	}): Promise<void> {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			throw new Error("No active project");
+		}
+		const builtInRecipe = getBuiltInSceneRecipeDefinition({
+			recipeId: recipeId as Parameters<typeof getBuiltInSceneRecipeDefinition>[0]["recipeId"],
+		});
+		const payload =
+			builtInRecipe?.buildPayload({ project: activeProject }) ??
+			(() => {
+				const template = this.editor.project.findTemplateById({ templateId: recipeId });
+				if (!template || template.kind !== "scene-recipe") {
+					throw new Error("Scene recipe not found.");
+				}
+				return template.payload;
+			})();
+
+		const insertable = instantiateTemplateElements({
+			elements: payload.elements,
+			startTime: startTime ?? this.editor.playback.getCurrentTime(),
+		});
+		const commands = insertable.map(
+			({ element, trackType }) =>
+				new InsertElementCommand({
+					element,
+					placement: { mode: "auto", trackType },
+				}),
+		);
+		const defaultsCommand =
+			payload.defaults && (payload.defaults.captionStyleId || payload.defaults.montageDefaults)
+				? new ApplyProjectKitCommand({
+						captionStyleId: payload.defaults.captionStyleId ?? null,
+						montageDefaults: payload.defaults.montageDefaults ?? null,
+					})
+				: null;
+		const command =
+			commands.length === 0 && defaultsCommand
+				? defaultsCommand
+				: new BatchCommand([
+						...(defaultsCommand ? [defaultsCommand] : []),
+						...commands,
+					]);
+		this.editor.command.execute({ command });
+		const inserted = commands
+			.map((insertCommand) => ({
+				trackId: insertCommand.getTrackId(),
+				elementId: insertCommand.getElementId(),
+			}))
+			.filter(
+				(candidate): candidate is { trackId: string; elementId: string } =>
+					typeof candidate.trackId === "string" && typeof candidate.elementId === "string",
+			);
+		if (inserted.length > 0) {
+			this.editor.selection.setSelectedElements({ elements: inserted });
+		}
 	}
 
 	async reorderScenes({ sceneIds }: { sceneIds: string[] }): Promise<void> {

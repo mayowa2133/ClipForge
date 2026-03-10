@@ -7,3 +7,4 @@ export * from "./media";
 export * from "./scene";
 export * from "./project";
 export * from "./clipforge";
+export * from "./template";

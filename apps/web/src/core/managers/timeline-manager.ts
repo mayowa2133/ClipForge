@@ -11,7 +11,9 @@ import type {
 	SocialOverlayPresetId,
 	TextElement,
 	StickerElement,
+	ImageElement,
 } from "@/types/timeline";
+import type { ComponentTemplate } from "@/types/templates";
 import { calculateTotalDuration } from "@/lib/timeline";
 import { useTimelineStore } from "@/stores/timeline-store";
 import {
@@ -51,7 +53,11 @@ import {
 	RemoveElementKeyframeCommand,
 	ClearElementKeyframesCommand,
 } from "@/lib/commands/timeline";
-import { BatchCommand, PreviewTracker } from "@/lib/commands";
+import {
+	BatchCommand,
+	PreviewTracker,
+	UpsertCreatorTemplateCommand,
+} from "@/lib/commands";
 import type { InsertElementParams } from "@/lib/commands/timeline/element/insert-element";
 import {
 	canPreserveElementSourceSpan,
@@ -81,6 +87,8 @@ import {
 	buildSocialOverlayPresetElements,
 	applyGraphicsMotionPreset,
 	resolveProjectOverlayDefaults,
+	buildComponentTemplatePayload,
+	instantiateTemplateElements,
 } from "@/lib/timeline";
 import { mediaSupportsAudio } from "@/lib/media/media-utils";
 import {
@@ -902,6 +910,94 @@ export class TimelineManager {
 			.filter(
 				(candidate): candidate is { trackId: string; elementId: string } =>
 					typeof candidate.trackId === "string",
+			);
+		if (inserted.length > 0) {
+			this.editor.selection.setSelectedElements({ elements: inserted });
+		}
+		return inserted;
+	}
+
+	saveSelectionAsComponentTemplate({
+		name,
+		selection,
+	}: {
+		name: string;
+		selection?: { trackId: string; elementId: string }[];
+	}): string {
+		const selectedElements = selection ?? this.editor.selection.getSelectedElements();
+		if (selectedElements.length === 0) {
+			throw new Error("Select one or more graphics elements before saving a component.");
+		}
+		const payload = buildComponentTemplatePayload({
+			elementsWithTracks: this.getElementsWithTracks({ elements: selectedElements }),
+		});
+		const now = new Date();
+		const template: ComponentTemplate = {
+			id: generateUUID(),
+			name,
+			kind: "component",
+			version: 1,
+			thumbnailAssetId: null,
+			createdAt: now,
+			updatedAt: now,
+			payload,
+		};
+		this.editor.command.execute({
+			command: new UpsertCreatorTemplateCommand(template),
+		});
+		return template.id;
+	}
+
+	insertComponentTemplate({
+		templateId,
+		startTime,
+		duration,
+	}: {
+		templateId: string;
+		startTime: number;
+		duration?: number;
+	}): { trackId: string; elementId: string }[] {
+		const template = this.editor.project.findTemplateById({ templateId });
+		if (!template || template.kind !== "component") {
+			throw new Error("Component template not found.");
+		}
+		const insertable = instantiateTemplateElements({
+			elements: template.payload.elements,
+			startTime,
+			duration,
+		});
+		for (const { element } of insertable) {
+			if (element.type === "image") {
+				const hasMedia = this.editor.media
+					.getAssets()
+					.some((asset) => asset.id === element.mediaId);
+				if (!hasMedia) {
+					throw new Error(
+						"This template depends on a media asset that is not available in the current workspace.",
+					);
+				}
+			}
+		}
+		const commands = insertable.map(
+			({ element, trackType }) =>
+				new InsertElementCommand({
+					element,
+					placement: {
+						mode: "auto",
+						trackType,
+					},
+				}),
+		);
+		const command = commands.length === 1 ? commands[0] : new BatchCommand(commands);
+		this.editor.command.execute({ command });
+		const inserted = commands
+			.map((insertCommand) => ({
+				trackId: insertCommand.getTrackId(),
+				elementId: insertCommand.getElementId(),
+			}))
+			.filter(
+				(candidate): candidate is { trackId: string; elementId: string } =>
+					typeof candidate.trackId === "string" && typeof candidate.elementId === "string",
 			);
 		if (inserted.length > 0) {
 			this.editor.selection.setSelectedElements({ elements: inserted });

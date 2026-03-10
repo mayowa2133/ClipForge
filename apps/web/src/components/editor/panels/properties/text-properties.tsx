@@ -176,6 +176,21 @@ function GraphicsSection({
 						>
 							Browse
 						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => {
+								const name = window.prompt("Component template name", `${element.name} Template`);
+								if (!name) return;
+								try {
+									editor.timeline.saveSelectionAsComponentTemplate({ name: name.trim() });
+								} catch (error) {
+									console.error("Failed to save component template:", error);
+								}
+							}}
+						>
+							Save as component
+						</Button>
 						{!element.overlayMeta ? (
 							<Button
 								variant="outline"
