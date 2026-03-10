@@ -17,6 +17,7 @@ import {
 	resolveStickerId,
 	type StickerItem as StickerData,
 } from "@/lib/stickers";
+import { BUNDLED_STICKERS } from "@/lib/library";
 import { useStickersStore } from "@/stores/stickers-store";
 import { cn } from "@/utils/ui";
 import {
@@ -151,6 +152,18 @@ function StickersContentView() {
 		return items;
 	}, [recentStickers]);
 
+	const bundledStickerItems = useMemo(
+		() =>
+			BUNDLED_STICKERS.map((item) => ({
+				id: item.id,
+				provider: "builtin",
+				name: item.label,
+				previewUrl: item.previewUrl ?? item.url,
+				metadata: {},
+			} satisfies StickerData)),
+		[],
+	);
+
 	return (
 		<div className="flex h-full flex-col gap-4">
 			{recentStickerItems.length > 0 && viewMode === "browse" && (
@@ -182,6 +195,19 @@ function StickersContentView() {
 						</TooltipProvider>
 					</div>
 					<StickerGrid items={recentStickerItems.slice(0, 12)} shouldCapSize />
+				</div>
+			)}
+
+			{viewMode === "browse" && bundledStickerItems.length > 0 && (
+				<div className="flex h-full flex-col gap-2">
+					<div className="flex items-center gap-2">
+						<HugeiconsIcon
+							icon={HappyIcon}
+							className="text-muted-foreground size-4"
+						/>
+						<span className="text-sm font-medium">Built-in</span>
+					</div>
+					<StickerGrid items={bundledStickerItems} shouldCapSize />
 				</div>
 			)}
 

@@ -1,0 +1,47 @@
+{
+  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "music": [
+    "clean-cruise",
+    "luxury-drift",
+    "upbeat-spark",
+    "energetic-bounce",
+    "minimal-glow",
+    "bold-pulse",
+    "vlog-daylight",
+    "talking-head-bed"
+  ],
+  "sfx": [
+    "whoosh-soft",
+    "whoosh-fast",
+    "riser-light",
+    "hit-soft",
+    "hit-hard",
+    "pop-clean",
+    "pop-bright",
+    "click-ui",
+    "click-soft",
+    "swipe-up",
+    "swipe-down",
+    "sparkle",
+    "accent-rise",
+    "accent-drop",
+    "tag-appear",
+    "marker-check",
+    "transition-air",
+    "tap-glass",
+    "thump-low",
+    "success-soft"
+  ],
+  "stickers": [
+    "arrow-up.svg",
+    "arrow-right.svg",
+    "check-badge.svg",
+    "spark-star.svg",
+    "circle-outline.svg",
+    "highlight-swoosh.svg",
+    "social-heart.svg",
+    "cta-plus.svg",
+    "tag-pill.svg",
+    "comment-bubble.svg"
+  ]
+}

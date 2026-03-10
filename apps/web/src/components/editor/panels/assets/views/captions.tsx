@@ -15,6 +15,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { TRANSCRIPTION_LANGUAGES } from "@/constants/transcription-constants";
 import { useEditor } from "@/hooks/use-editor";
+import { getBuiltInCaptionStyleLabel } from "@/lib/clipforge/caption-style-library";
 import type { CaptionSegmentView } from "@/types/clipforge";
 import type { TranscriptionLanguage } from "@/types/transcription";
 import { cn } from "@/utils/ui";
@@ -28,9 +29,6 @@ function formatSeconds(value: number): string {
 export function Captions() {
 	const [selectedLanguage, setSelectedLanguage] =
 		useState<TranscriptionLanguage>("auto");
-	const [selectedTemplate, setSelectedTemplate] = useState<
-		"clean-bottom" | "bold-center"
-	>("clean-bottom");
 	const [isProcessing, setIsProcessing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -47,6 +45,17 @@ export function Captions() {
 		);
 	}, [activeProject]);
 	const activeStyleId = activeProject?.clipforge?.activeCaptionStyleId ?? null;
+	const projectDefaultStyleId =
+		activeProject?.settings.libraryDefaults?.captionStyleId ??
+		activeStyleId ??
+		"clean-bottom";
+	const [selectedTemplate, setSelectedTemplate] = useState<string>(
+		projectDefaultStyleId,
+	);
+
+	useEffect(() => {
+		setSelectedTemplate(projectDefaultStyleId);
+	}, [projectDefaultStyleId]);
 
 	const handleLanguageChange = (value: string) => {
 		if (value === "auto") {
@@ -162,16 +171,17 @@ export function Captions() {
 							<Label>Style</Label>
 							<Select
 								value={selectedTemplate}
-								onValueChange={(value) =>
-									setSelectedTemplate(value as "clean-bottom" | "bold-center")
-								}
+								onValueChange={setSelectedTemplate}
 							>
 								<SelectTrigger>
 									<SelectValue placeholder="Style" />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="clean-bottom">Clean Bottom</SelectItem>
-									<SelectItem value="bold-center">Bold Center</SelectItem>
+									{styles.map((style) => (
+										<SelectItem key={style.style_id} value={style.style_id}>
+											{getBuiltInCaptionStyleLabel({ styleId: style.style_id })}
+										</SelectItem>
+									))}
 								</SelectContent>
 							</Select>
 						</div>
@@ -221,7 +231,9 @@ export function Captions() {
 									)}
 								>
 									<div>
-										<p className="text-sm font-medium">{style.style_id}</p>
+										<p className="text-sm font-medium">
+											{getBuiltInCaptionStyleLabel({ styleId: style.style_id })}
+										</p>
 										<p className="text-muted-foreground text-xs">
 											{style.position} · {style.highlight_mode} highlight
 										</p>

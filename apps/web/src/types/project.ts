@@ -34,6 +34,12 @@ export interface ProjectBrandKit {
 	logoMediaId?: string | null;
 }
 
+export interface ProjectLibraryDefaults {
+	captionStyleId: string;
+	titlePresetId: string;
+	musicMood: "clean" | "luxury" | "upbeat" | "energetic" | "minimal";
+}
+
 export type OverlayMotionPresetId =
 	| "fade-up"
 	| "slide-up"
@@ -78,6 +84,7 @@ export interface TProjectSettings {
 	background: TBackground;
 	audio?: ProjectAudioSettings;
 	brandKit?: ProjectBrandKit;
+	libraryDefaults?: ProjectLibraryDefaults;
 	overlayDefaults?: ProjectOverlayDefaults;
 	montageDefaults?: ProjectMontageDefaults;
 	versionPack?: ProjectVersionPack;

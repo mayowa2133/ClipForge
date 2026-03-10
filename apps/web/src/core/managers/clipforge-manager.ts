@@ -1014,7 +1014,7 @@ export class ClipForgeManager {
 		overwriteExisting,
 	}: {
 		language?: string;
-		template: "clean-bottom" | "bold-center";
+		template: string;
 		overwriteExisting: boolean;
 	}): { generated: number; trackId: string | null } {
 		const activeProject = this.editor.project.getActive();

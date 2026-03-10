@@ -18,6 +18,7 @@ import {
 	getVersionTargetLabel,
 } from "@/constants/project-constants";
 import { useEditor } from "@/hooks/use-editor";
+import { CREATIVE_LIBRARY_PACKS } from "@/lib/library";
 import { useEditorStore } from "@/stores/editor-store";
 import { dimensionToAspectRatio } from "@/utils/geometry";
 import {
@@ -63,6 +64,11 @@ export function SettingsView() {
 						</SectionContent>
 					</Section>
 				)}
+				<Section>
+					<SectionContent>
+						<CreativeLibraryContent />
+					</SectionContent>
+				</Section>
 				<Popover open={open} onOpenChange={setOpen}>
 					<Section className="cursor-pointer">
 						<PopoverTrigger asChild>
@@ -79,6 +85,40 @@ export function SettingsView() {
 				</Popover>
 			</div>
 		</PanelView>
+	);
+}
+
+function CreativeLibraryContent() {
+	return (
+		<div className="flex flex-col gap-4">
+			<div className="flex flex-col gap-1">
+				<Label>Creative library</Label>
+				<p className="text-muted-foreground text-xs">
+					Bundled starter packs are local, free-first, and licensed for redistribution.
+				</p>
+			</div>
+			<div className="space-y-3">
+				{CREATIVE_LIBRARY_PACKS.map((pack) => (
+					<div
+						key={pack.id}
+						className="flex items-center justify-between gap-3 rounded-md border p-3"
+					>
+						<div className="min-w-0">
+							<p className="text-sm font-medium">{pack.name}</p>
+							<p className="text-muted-foreground text-xs">
+								{pack.items.length} items · {pack.license}
+							</p>
+						</div>
+						<div className="text-muted-foreground text-xs uppercase tracking-wide">
+							{pack.kind}
+						</div>
+					</div>
+				))}
+			</div>
+			<p className="text-muted-foreground text-xs">
+				User-imported media still works normally. Bundled content is a starter library, not a closed platform.
+			</p>
+		</div>
 	);
 }
 

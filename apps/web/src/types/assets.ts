@@ -43,4 +43,5 @@ export interface MediaAsset
 	file: File;
 	url?: string;
 	derived?: DerivedMediaOrigin;
+	libraryItemId?: string;
 }

@@ -19,19 +19,24 @@
 2. Click `Import Clips` and select multiple video clips.
 3. ClipForge indexes imported clips in the background for captions and transcript-aware edits.
 4. Click `Auto Edit TikTok`.
-5. ClipForge builds a draft:
+5. Optionally use the bundled creative library first:
+   - `Graphics` for built-in title/overlay presets
+   - `Audio -> Songs` for built-in starter tracks
+   - `Audio -> Sound effects` for built-in SFX
+   - `Stickers` for built-in sticker/icon packs
+6. ClipForge builds a draft:
    - clips stitched in order
    - 9:16 aspect preset applied
    - silence-removal op pass applied using available silence metadata
-6. Timeline + preview update in the same OpenCut editor surface.
-7. Use normal OpenCut undo/redo to revert or refine.
-8. The preview toolbar shows a fidelity status for the current render graph:
+7. Timeline + preview update in the same OpenCut editor surface.
+8. Use normal OpenCut undo/redo to revert or refine.
+9. The preview toolbar shows a fidelity status for the current render graph:
    - `Checking`: sampled parity is still running
    - `Exact`: sampled preview and export frames match without fallback
    - `Approximate`: fallback rendering was needed but no mismatch is known
    - `Unsupported`: parity mismatch or legacy fallback means preview should not be trusted as exact export output
-9. If you need multiple publish formats, enable extra version targets in `Settings -> Version pack`, then switch the active preview target from the preview toolbar.
-10. Use `Auto reframe selection` and `Apply safe layout` per target so the same edit remains usable for `9:16`, `1:1`, and `16:9` without rewriting the base scene.
+10. If you need multiple publish formats, enable extra version targets in `Settings -> Version pack`, then switch the active preview target from the preview toolbar.
+11. Use `Auto reframe selection` and `Apply safe layout` per target so the same edit remains usable for `9:16`, `1:1`, and `16:9` without rewriting the base scene.
 
 ## Flow B: Chat-driven Edits
 

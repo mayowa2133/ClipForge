@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { BUNDLED_FONT_FAMILIES } from "@/lib/library";
 import {
 	getCachedFontAtlas,
 	loadFullFont,
@@ -29,8 +30,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { TextIcon } from "@hugeicons/core-free-icons";
 
 const FONT_TABS = [
+	{ key: "bundled", label: "Bundled" },
 	{ key: "all", label: "All fonts" },
-	{ key: "favorites", label: "Favorites" },
 	{ key: "my-fonts", label: "My fonts" },
 ] as const;
 
@@ -71,10 +72,14 @@ export function FontPicker({
 	}, [atlas]);
 
 	const filteredFonts = useMemo(() => {
-		if (!search) return fontNames;
+		const scopedFontNames =
+			activeTab === "bundled"
+				? fontNames.filter((name) => BUNDLED_FONT_FAMILIES.includes(name))
+				: fontNames;
+		if (!search) return scopedFontNames;
 		const query = search.toLowerCase();
-		return fontNames.filter((name) => name.toLowerCase().includes(query));
-	}, [fontNames, search]);
+		return scopedFontNames.filter((name) => name.toLowerCase().includes(query));
+	}, [activeTab, fontNames, search]);
 
 	const listHeight = Math.min(
 		MAX_LIST_HEIGHT,
@@ -112,7 +117,7 @@ export function FontPicker({
 	useEffect(() => {
 		if (!open) {
 			setSearch("");
-			setActiveTab("all");
+			setActiveTab("bundled");
 		}
 	}, [open]);
 

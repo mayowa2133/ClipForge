@@ -12,7 +12,10 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { DEFAULT_TEXT_ELEMENT } from "@/constants/text-constants";
+import { DEFAULT_PROJECT_LIBRARY_DEFAULTS } from "@/constants/project-constants";
 import { useEditor } from "@/hooks/use-editor";
+import { BUILT_IN_CAPTION_STYLES } from "@/lib/clipforge/caption-style-library";
+import { BUNDLED_MUSIC } from "@/lib/library";
 import { buildTextElement } from "@/lib/timeline/element-utils";
 import {
 	GRAPHICS_PRESETS,
@@ -75,6 +78,8 @@ export function TextView() {
 	const activeProject = editor.project.getActive();
 	const brandKit = resolveProjectBrandKit({ project: activeProject });
 	const overlayDefaults = resolveProjectOverlayDefaults({ project: activeProject });
+	const libraryDefaults =
+		activeProject?.settings.libraryDefaults ?? DEFAULT_PROJECT_LIBRARY_DEFAULTS;
 	const [motionPresetId, setMotionPresetId] = useState<GraphicsMotionPresetId>(overlayDefaults.motionPresetId);
 	const [overlayVariantId, setOverlayVariantId] = useState<OverlayStyleVariantId>(overlayDefaults.variantId);
 	const imageAssets = editor.media
@@ -145,6 +150,22 @@ export function TextView() {
 			},
 		});
 	};
+
+	const updateLibraryDefaults = (updates: Partial<typeof libraryDefaults>) => {
+		void editor.project.updateSettings({
+			settings: {
+				libraryDefaults: {
+					...libraryDefaults,
+					...updates,
+				},
+			},
+		});
+	};
+
+	const titlePresetOptions = GRAPHICS_PRESETS.filter((preset) => preset.kind === "title");
+	const musicMoodOptions = Array.from(
+		new Set(BUNDLED_MUSIC.map((item) => item.mood).filter(Boolean)),
+	) as Array<NonNullable<(typeof BUNDLED_MUSIC)[number]["mood"]>>;
 
 	return (
 		<PanelView title="Graphics">
@@ -337,6 +358,65 @@ export function TextView() {
 									{SAFE_MARGIN_OPTIONS.map((option) => (
 										<SelectItem key={option.value} value={option.value}>
 											{option.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</BrandField>
+						<BrandField label="Default caption style">
+							<Select
+								value={libraryDefaults.captionStyleId}
+								onValueChange={(value) =>
+									updateLibraryDefaults({ captionStyleId: value })
+								}
+							>
+								<SelectTrigger>
+									<SelectValue placeholder="Select default caption style" />
+								</SelectTrigger>
+								<SelectContent>
+									{BUILT_IN_CAPTION_STYLES.map((style) => (
+										<SelectItem key={style.id} value={style.id}>
+											{style.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</BrandField>
+						<BrandField label="Default title preset">
+							<Select
+								value={libraryDefaults.titlePresetId}
+								onValueChange={(value) =>
+									updateLibraryDefaults({ titlePresetId: value })
+								}
+							>
+								<SelectTrigger>
+									<SelectValue placeholder="Select default title preset" />
+								</SelectTrigger>
+								<SelectContent>
+									{titlePresetOptions.map((preset) => (
+										<SelectItem key={preset.id} value={preset.id}>
+											{preset.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</BrandField>
+						<BrandField label="Default music mood">
+							<Select
+								value={libraryDefaults.musicMood}
+								onValueChange={(value) =>
+									updateLibraryDefaults({
+										musicMood: value as typeof libraryDefaults.musicMood,
+									})
+								}
+							>
+								<SelectTrigger>
+									<SelectValue placeholder="Select default mood" />
+								</SelectTrigger>
+								<SelectContent>
+									{musicMoodOptions.map((mood) => (
+										<SelectItem key={mood} value={mood}>
+											{uppercase({ string: mood })}
 										</SelectItem>
 									))}
 								</SelectContent>

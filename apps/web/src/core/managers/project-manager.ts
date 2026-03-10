@@ -31,6 +31,7 @@ import {
 	DEFAULT_COLOR,
 	DEFAULT_PROJECT_AUDIO_SETTINGS,
 	DEFAULT_PROJECT_BRAND_KIT,
+	DEFAULT_PROJECT_LIBRARY_DEFAULTS,
 	DEFAULT_PROJECT_MONTAGE_DEFAULTS,
 	DEFAULT_PROJECT_OVERLAY_DEFAULTS,
 	buildDefaultProjectVersionPack,
@@ -119,6 +120,7 @@ export class ProjectManager {
 				},
 				audio: { ...DEFAULT_PROJECT_AUDIO_SETTINGS },
 				brandKit: { ...DEFAULT_PROJECT_BRAND_KIT },
+				libraryDefaults: { ...DEFAULT_PROJECT_LIBRARY_DEFAULTS },
 				overlayDefaults: { ...DEFAULT_PROJECT_OVERLAY_DEFAULTS },
 				montageDefaults: { ...DEFAULT_PROJECT_MONTAGE_DEFAULTS },
 				versionPack: buildDefaultProjectVersionPack({

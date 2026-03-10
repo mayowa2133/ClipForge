@@ -1,5 +1,6 @@
 import type { CaptionChunk, TranscriptionSegment } from "@/types/transcription";
 import type { CaptionStyleTemplate } from "@/types/clipforge";
+import { BUILT_IN_CAPTION_STYLE_MAP } from "./caption-style-library";
 
 export interface CaptionLineBreakOptions {
 	maxCharsPerLine?: number;
@@ -8,31 +9,15 @@ export interface CaptionLineBreakOptions {
 	maxWordsPerChunk?: number;
 }
 
-const CAPTION_TEMPLATES: Record<string, CaptionStyleTemplate> = {
-	"clean-bottom": {
-		style_id: "clean-bottom",
-		font: "Arial",
-		size: 56,
-		position: "bottom",
-		outline: false,
-		highlight_mode: "none",
-	},
-	"bold-center": {
-		style_id: "bold-center",
-		font: "Arial",
-		size: 74,
-		position: "center",
-		outline: true,
-		highlight_mode: "line",
-	},
-};
+const CAPTION_TEMPLATES: Record<string, CaptionStyleTemplate> =
+	BUILT_IN_CAPTION_STYLE_MAP;
 
 export function getCaptionTemplate({
 	styleId,
 }: {
-	styleId: "clean-bottom" | "bold-center";
+	styleId: string;
 }): CaptionStyleTemplate {
-	return CAPTION_TEMPLATES[styleId];
+	return CAPTION_TEMPLATES[styleId] ?? CAPTION_TEMPLATES["clean-bottom"];
 }
 
 export function generateCaptionChunks({

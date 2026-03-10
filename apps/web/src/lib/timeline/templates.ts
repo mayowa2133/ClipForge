@@ -1,6 +1,7 @@
 import {
 	DEFAULT_PROJECT_AUDIO_SETTINGS,
 	DEFAULT_PROJECT_BRAND_KIT,
+	DEFAULT_PROJECT_LIBRARY_DEFAULTS,
 	DEFAULT_PROJECT_MONTAGE_DEFAULTS,
 	DEFAULT_PROJECT_OVERLAY_DEFAULTS,
 } from "@/constants/project-constants";
@@ -130,6 +131,10 @@ export function buildProjectKitPayload({
 
 	return {
 		brandKit: includeBrand ? { ...DEFAULT_PROJECT_BRAND_KIT, ...(project.settings.brandKit ?? {}) } : null,
+		libraryDefaults: {
+			...DEFAULT_PROJECT_LIBRARY_DEFAULTS,
+			...(project.settings.libraryDefaults ?? {}),
+		},
 		overlayDefaults: includeOverlayDefaults
 			? { ...DEFAULT_PROJECT_OVERLAY_DEFAULTS, ...(project.settings.overlayDefaults ?? {}) }
 			: null,
@@ -156,6 +161,9 @@ export function applyProjectKitPayload({
 		settings: {
 			...project.settings,
 			...(payload.brandKit ? { brandKit: { ...payload.brandKit } } : {}),
+			...(payload.libraryDefaults
+				? { libraryDefaults: { ...payload.libraryDefaults } }
+				: {}),
 			...(payload.overlayDefaults
 				? { overlayDefaults: { ...payload.overlayDefaults } }
 				: {}),

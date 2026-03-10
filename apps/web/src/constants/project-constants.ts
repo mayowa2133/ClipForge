@@ -1,6 +1,7 @@
 import type {
 	ProjectAudioSettings,
 	ProjectBrandKit,
+	ProjectLibraryDefaults,
 	ProjectOverlayDefaults,
 	ProjectVersionPack,
 	ProjectVersionTarget,
@@ -45,9 +46,15 @@ export const DEFAULT_PROJECT_BRAND_KIT: ProjectBrandKit = {
 	primaryColor: "#FFFFFF",
 	secondaryColor: "#D7D9E0",
 	accentColor: "#1EA7FF",
-	titleFontFamily: "Arial",
-	bodyFontFamily: "Arial",
+	titleFontFamily: "Archivo Black",
+	bodyFontFamily: "DM Sans",
 	logoMediaId: null,
+};
+
+export const DEFAULT_PROJECT_LIBRARY_DEFAULTS: ProjectLibraryDefaults = {
+	captionStyleId: "clean-bottom",
+	titlePresetId: "title-clean",
+	musicMood: "clean",
 };
 
 export const DEFAULT_PROJECT_OVERLAY_DEFAULTS: ProjectOverlayDefaults = {

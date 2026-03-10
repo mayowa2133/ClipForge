@@ -35,6 +35,7 @@ export class MediaManager {
 		const newAsset: MediaAsset = {
 			...asset,
 			id: generateUUID(),
+			libraryItemId: asset.libraryItemId,
 			mimeType: asset.mimeType ?? asset.file.type ?? "",
 			compatibility: asset.compatibility ?? buildUnknownMediaCompatibilitySnapshot(),
 		};
@@ -135,6 +136,7 @@ export class MediaManager {
 				id: renamedAsset.id,
 				name: renamedAsset.name,
 				type: renamedAsset.type,
+				libraryItemId: renamedAsset.libraryItemId,
 				size: renamedAsset.file.size,
 				lastModified: renamedAsset.file.lastModified,
 				width: renamedAsset.width,
@@ -176,6 +178,7 @@ export class MediaManager {
 		const relinkedAsset: MediaAsset = {
 			...asset,
 			id,
+			libraryItemId: asset.libraryItemId,
 			mimeType: asset.mimeType ?? asset.file.type ?? "",
 			compatibility: buildUnknownMediaCompatibilitySnapshot(),
 		};
@@ -411,10 +414,11 @@ export class MediaManager {
 
 			try {
 			const metadata: MediaAssetData = {
-					id: nextAsset.id,
-					name: nextAsset.name,
-					type: nextAsset.type,
-					size: nextAsset.file.size,
+				id: nextAsset.id,
+				name: nextAsset.name,
+				type: nextAsset.type,
+				libraryItemId: nextAsset.libraryItemId,
+				size: nextAsset.file.size,
 					lastModified: nextAsset.file.lastModified,
 					width: nextAsset.width,
 					height: nextAsset.height,
@@ -477,11 +481,12 @@ export class MediaManager {
 		this.assets[index] = nextAsset;
 		this.notify();
 
-		const metadata: MediaAssetData = {
-			id: nextAsset.id,
-			name: nextAsset.name,
-			type: nextAsset.type,
-			size: nextAsset.file.size,
+			const metadata: MediaAssetData = {
+				id: nextAsset.id,
+				name: nextAsset.name,
+				type: nextAsset.type,
+				libraryItemId: nextAsset.libraryItemId,
+				size: nextAsset.file.size,
 			lastModified: nextAsset.file.lastModified,
 			width: nextAsset.width,
 			height: nextAsset.height,

@@ -279,7 +279,7 @@ export function createCaptionTextElements({
 	options = DEFAULT_CAPTION_OPTIONS,
 }: {
 	project: TProject;
-	styleId: "clean-bottom" | "bold-center";
+	styleId: string;
 	options?: CaptionLineBreakOptions;
 }): TextElement[] {
 	const timelineWords = buildTimelineTranscriptWords({ project }).map((word) => ({

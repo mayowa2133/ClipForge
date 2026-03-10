@@ -3,6 +3,7 @@ import type {
 	OverlayMotionPresetId,
 	ProjectAudioSettings,
 	ProjectBrandKit,
+	ProjectLibraryDefaults,
 	ProjectOverlayDefaults,
 } from "./project";
 import type {
@@ -28,6 +29,7 @@ export interface TemplateDefaultsPatch {
 
 export interface ProjectKitPayload {
 	brandKit?: ProjectBrandKit | null;
+	libraryDefaults?: ProjectLibraryDefaults | null;
 	overlayDefaults?: ProjectOverlayDefaults | null;
 	audio?: ProjectAudioSettings | null;
 	captionStyle?: CaptionStyleTemplate | null;

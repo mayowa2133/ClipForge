@@ -5,36 +5,18 @@ import type {
 } from "@/types/clipforge";
 import type { TProject } from "@/types/project";
 import { adoptLegacyCaptionTracks } from "./caption-studio";
+import { BUILT_IN_CAPTION_STYLE_MAP } from "./caption-style-library";
 
 export const CLIPFORGE_SCHEMA_VERSION = 4;
-
-const CLEAN_BOTTOM_STYLE: CaptionStyleTemplate = {
-	style_id: "clean-bottom",
-	font: "Arial",
-	size: 56,
-	position: "bottom",
-	outline: false,
-	highlight_mode: "none",
-};
-
-const BOLD_CENTER_STYLE: CaptionStyleTemplate = {
-	style_id: "bold-center",
-	font: "Arial",
-	size: 74,
-	position: "center",
-	outline: true,
-	highlight_mode: "line",
-};
 
 export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 	return {
 		schemaVersion: CLIPFORGE_SCHEMA_VERSION,
 		mediaMetadataById: {},
 		captionStylesById: {
-			[CLEAN_BOTTOM_STYLE.style_id]: CLEAN_BOTTOM_STYLE,
-			[BOLD_CENTER_STYLE.style_id]: BOLD_CENTER_STYLE,
+			...BUILT_IN_CAPTION_STYLE_MAP,
 		},
-		activeCaptionStyleId: CLEAN_BOTTOM_STYLE.style_id,
+		activeCaptionStyleId: "clean-bottom",
 		captionTrackIdsBySceneId: {},
 		sceneFootageIntelligenceBySceneId: {},
 		opsAudit: [],

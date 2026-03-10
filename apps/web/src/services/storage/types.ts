@@ -26,6 +26,7 @@ export interface MediaAssetData {
 	id: string;
 	name: string;
 	type: MediaType;
+	libraryItemId?: string;
 	size: number;
 	lastModified: number;
 	width?: number;

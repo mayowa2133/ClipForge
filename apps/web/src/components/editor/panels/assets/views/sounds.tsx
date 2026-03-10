@@ -25,11 +25,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEditor } from "@/hooks/use-editor";
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
 import { useSoundSearch } from "@/hooks/use-sound-search";
+import { ensureBundledAudioAsset } from "@/lib/library/bundled-media";
+import { BUNDLED_MUSIC, BUNDLED_SFX, getBundledMusicByMood } from "@/lib/library";
 import { buildUploadAudioElement } from "@/lib/timeline";
 import { formatTimeCode } from "@/lib/time";
 import { getProjectAudioSettings } from "@/lib/media/audio";
 import { useSoundsStore } from "@/stores/sounds-store";
 import type { MediaAsset } from "@/types/assets";
+import type { AudioLibraryItem } from "@/types/library";
 import type { SavedSound, SoundEffect } from "@/types/sounds";
 import { cn } from "@/utils/ui";
 import {
@@ -226,6 +229,7 @@ function VoiceoverView() {
 }
 
 function SoundEffectsView() {
+	const editor = useEditor();
 	const {
 		topSoundEffects,
 		isLoading,
@@ -311,6 +315,9 @@ function SoundEffectsView() {
 	}, [scrollPosition, scrollAreaRef]);
 
 	const displayedSounds = searchQuery ? searchResults : topSoundEffects;
+	const bundledEffects = BUNDLED_SFX.filter((item) =>
+		item.label.toLowerCase().includes(searchQuery.trim().toLowerCase()),
+	);
 
 	const playSound = ({ sound }: { sound: SoundEffect }) => {
 		if (playingId === sound.id) {
@@ -363,6 +370,22 @@ function SoundEffectsView() {
 					}}
 				>
 					<div className="flex flex-col gap-4">
+						<div className="space-y-3">
+							<div>
+								<p className="text-sm font-medium">Built-in starter SFX</p>
+								<p className="text-muted-foreground text-xs">
+									Free local accents for transitions, overlays, and UI motion.
+								</p>
+							</div>
+							{bundledEffects.map((item) => (
+								<BundledAudioItem
+									key={item.id}
+									item={item}
+									role="sfx"
+									editor={editor}
+								/>
+							))}
+						</div>
 						{isLoading && !searchQuery ? <div className="text-muted-foreground text-sm">Loading sounds...</div> : null}
 						{isSearching && searchQuery ? <div className="text-muted-foreground text-sm">Searching...</div> : null}
 						{searchError ? <div className="text-destructive text-sm">{searchError}</div> : null}
@@ -513,6 +536,8 @@ function SongsView() {
 		};
 	}, [editor]);
 	void version;
+	const activeProject = editor.project.getActive();
+	const preferredMood = activeProject?.settings.libraryDefaults?.musicMood ?? null;
 
 	const voiceoverAssetIds = useMemo(
 		() =>
@@ -539,26 +564,36 @@ function SongsView() {
 			editor.media
 				.getAssets()
 				.filter((asset) => asset.type === "audio")
+				.filter((asset) => !asset.libraryItemId)
 				.filter((asset) => !voiceoverAssetIds.has(asset.id))
 				.filter((asset) => asset.name.toLowerCase().includes(search.trim().toLowerCase())),
 		[editor, search, version, voiceoverAssetIds],
 	);
 	const beatState = editor.audio.getSceneBeatMarkers();
-	const activeBeatSource = audioAssets.find(
-		(asset) => asset.id === beatState.sourceMediaId,
+	const activeBeatSource =
+		audioAssets.find((asset) => asset.id === beatState.sourceMediaId) ??
+		BUNDLED_MUSIC.find((item) => item.id === beatState.sourceMediaId) ??
+		null;
+	const bundledMusic = getBundledMusicByMood({ mood: preferredMood }).filter((item) =>
+		item.label.toLowerCase().includes(search.trim().toLowerCase()),
 	);
 
 	return (
 		<div className="flex h-full flex-col gap-5">
 			<div className="space-y-2">
 				<p className="text-sm font-medium">Songs</p>
-				<p className="text-muted-foreground text-sm">Use imported audio assets as music beds. They insert at the playhead with the music role.</p>
-				<p className="text-muted-foreground text-xs">
-					Beat source: {activeBeatSource ? `${activeBeatSource.name}${beatState.bpm ? ` · ${beatState.bpm} BPM` : ""}` : "None selected"}
+				<p className="text-muted-foreground text-sm">
+					Built-in starter tracks come first. Imported audio stays available as custom music beds.
 				</p>
+				<p className="text-muted-foreground text-xs">
+					Beat source: {activeBeatSource ? `${"label" in activeBeatSource ? activeBeatSource.label : activeBeatSource.name}${beatState.bpm ? ` · ${beatState.bpm} BPM` : ""}` : "None selected"}
+				</p>
+				{preferredMood ? (
+					<p className="text-muted-foreground text-xs">Recommended mood: {preferredMood}</p>
+				) : null}
 			</div>
 			<Input
-				placeholder="Filter imported audio"
+				placeholder="Filter songs"
 				value={search}
 				onChange={({ currentTarget }) => setSearch(currentTarget.value)}
 				showClearIcon
@@ -566,19 +601,49 @@ function SongsView() {
 			/>
 			<ScrollArea className="h-full flex-1">
 				<div className="flex flex-col gap-3">
-					{audioAssets.map((asset) => (
-						<UploadedAudioItem
-							key={asset.id}
-							asset={asset}
-							role="music"
-							isBeatSource={asset.id === beatState.sourceMediaId}
-						/>
-					))}
-					{audioAssets.length === 0 ? (
-						<div className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
-							Import audio in the Media tab to use it as a song here.
+					<div className="space-y-3">
+						<div>
+							<p className="text-sm font-medium">Built-in starter tracks</p>
+							<p className="text-muted-foreground text-xs">
+								Free-first local music packs with BPM metadata and beat-marker support.
+							</p>
 						</div>
-					) : null}
+						{bundledMusic.map((item) => (
+							<BundledAudioItem
+								key={item.id}
+								item={item}
+								role="music"
+								editor={editor}
+								isBeatSource={item.id === beatState.sourceMediaId}
+							/>
+						))}
+						{bundledMusic.length === 0 ? (
+							<div className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
+								No built-in songs match that filter.
+							</div>
+						) : null}
+					</div>
+					<div className="space-y-3 pt-2">
+						<div>
+							<p className="text-sm font-medium">Imported audio</p>
+							<p className="text-muted-foreground text-xs">
+								User-imported audio stays available alongside the built-in library.
+							</p>
+						</div>
+						{audioAssets.map((asset) => (
+							<UploadedAudioItem
+								key={asset.id}
+								asset={asset}
+								role="music"
+								isBeatSource={asset.id === beatState.sourceMediaId}
+							/>
+						))}
+						{audioAssets.length === 0 ? (
+							<div className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
+								Import audio in the Media tab to use custom music beds here.
+							</div>
+						) : null}
+					</div>
 				</div>
 			</ScrollArea>
 		</div>
@@ -734,6 +799,137 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
 		<div className="rounded-lg border p-3">
 			<p className="text-muted-foreground text-xs uppercase tracking-wide">{label}</p>
 			<p className="mt-1 text-sm font-medium">{value}</p>
+		</div>
+	);
+}
+
+function BundledAudioItem({
+	item,
+	role,
+	editor,
+	isBeatSource = false,
+}: {
+	item: AudioLibraryItem;
+	role: "music" | "sfx";
+	editor: ReturnType<typeof useEditor>;
+	isBeatSource?: boolean;
+}) {
+	const [isImporting, setIsImporting] = useState(false);
+
+	const ensureAsset = async () =>
+		ensureBundledAudioAsset({
+			editor,
+			item,
+		});
+
+	const insertAsset = async () => {
+		try {
+			setIsImporting(true);
+			const asset = await ensureAsset();
+			const audioTrack = editor.timeline.getTracks().find((track) => track.type === "audio");
+			const trackId = audioTrack?.id ?? editor.timeline.addTrack({ type: "audio" });
+			const element = buildUploadAudioElement({
+				mediaId: asset.id,
+				name: asset.name,
+				duration: asset.duration ?? item.duration,
+				startTime: editor.playback.getCurrentTime(),
+			});
+			element.role = role;
+			editor.timeline.insertElement({ placement: { mode: "explicit", trackId }, element });
+			toast.success(`${role === "music" ? "Song" : "Sound effect"} added to timeline.`);
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Unable to load bundled audio.",
+			);
+		} finally {
+			setIsImporting(false);
+		}
+	};
+
+	const analyzeBeats = async () => {
+		try {
+			setIsImporting(true);
+			const asset = await ensureAsset();
+			const result = await editor.audio.analyzeBeatGrid({ mediaId: asset.id });
+			toast.success(
+				result.bpm ? `Beat grid ready at ${result.bpm} BPM.` : "Beat grid analyzed.",
+			);
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Beat analysis failed.",
+			);
+		} finally {
+			setIsImporting(false);
+		}
+	};
+
+	const useAsBeatSource = async () => {
+		try {
+			setIsImporting(true);
+			const asset = await ensureAsset();
+			editor.audio.setSelectedBeatSource({ mediaId: asset.id });
+			toast.success("Using built-in song for beat markers.");
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Unable to set beat source.",
+			);
+		} finally {
+			setIsImporting(false);
+		}
+	};
+
+	return (
+		<div className="group flex flex-col gap-3 rounded-lg border p-3">
+			<div className="flex items-center gap-3">
+				<div className="bg-accent flex size-11 shrink-0 items-center justify-center rounded-md">
+					<HugeiconsIcon icon={VolumeHighIcon} />
+				</div>
+				<div className="min-w-0 flex-1">
+					<p className="truncate text-sm font-medium">{item.label}</p>
+					<p className="text-muted-foreground text-xs">
+						{formatTimeCode({ timeInSeconds: item.duration })}
+						{item.kind === "music" && item.bpm ? ` · ${item.bpm} BPM` : ""}
+					</p>
+					<p className="text-muted-foreground text-xs">
+						Built-in · {item.license}
+						{isBeatSource ? " · Active markers" : ""}
+					</p>
+				</div>
+			</div>
+			<div className="flex flex-wrap items-center gap-2 pointer-events-auto">
+				{item.kind === "music" ? (
+					<>
+						<Button
+							size="sm"
+							variant="outline"
+							onPointerDown={(event) => event.stopPropagation()}
+							onClick={() => void analyzeBeats()}
+							disabled={isImporting}
+						>
+							Analyze beats
+						</Button>
+						<Button
+							size="sm"
+							variant={isBeatSource ? "secondary" : "outline"}
+							onPointerDown={(event) => event.stopPropagation()}
+							onClick={() => void useAsBeatSource()}
+							disabled={isImporting}
+						>
+							Use for beats
+						</Button>
+					</>
+				) : null}
+				<Button
+					size="sm"
+					variant="default"
+					onPointerDown={(event) => event.stopPropagation()}
+					onClick={() => void insertAsset()}
+					disabled={isImporting}
+				>
+					<HugeiconsIcon icon={PlusSignIcon} className="mr-1" />
+					Add to timeline
+				</Button>
+			</div>
 		</div>
 	);
 }

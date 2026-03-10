@@ -143,12 +143,17 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
 4. Use `Index All Clips`, `Index Clip`, or `Import SRT...` in the Assets panel if you need to re-run or override transcript metadata.
 5. Click `Auto Edit TikTok` to build a 9:16 draft timeline.
 6. Open `Captions` tab and generate captions using `Clean Bottom` or `Bold Center`.
-7. Open chat from the right panel toggle (or `Ctrl/Cmd + /`).
+7. ClipForge now ships a free-first starter library:
+   - bundled open-source fonts in the font picker
+   - built-in starter music and SFX in `Audio -> Songs` and `Audio -> Sound effects`
+   - built-in sticker/icon pack in `Stickers`
+   - bundled caption/graphics/overlay/motion presets in the existing creative surfaces
+8. Open chat from the right panel toggle (or `Ctrl/Cmd + /`).
    - Direct edit prompts (for example `trim this clip by 0.5s at the start`, `add text here that says "watch this"`, `replace "teh" with "the" in this caption`, or `trim the first clip by 0.5s and move it to 5s`) still produce deterministic JSON ops for review/apply.
    - High-level draft prompts (for example `make me a viral TikTok from this`, `luxury morning routine style`, or `make it shorter with bold captions`) now produce a structured `Draft recipe` card first.
    - The recipe shows target duration, section plan, caption/overlay style, version targets, and explicit build steps before you click `Build draft`.
-8. Use normal OpenCut `Undo/Redo` shortcuts.
-9. Click the top-right `Export` button:
+9. Use normal OpenCut `Undo/Redo` shortcuts.
+10. Click the top-right `Export` button:
    - The preview toolbar shows sampled preview/export fidelity before you export.
    - Preview now supports version-target switching for enabled publish targets (`9:16`, `1:1`, `16:9`) without mutating the base edit.
    - `Exact` means sampled frames matched export without fallback; `Approximate` means fallback was needed; `Unsupported` means sampled export parity is not trustworthy for the current graph.
@@ -216,6 +221,10 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
   - ranks strong early moments as hook candidates,
   - surfaces likely trims/cuts with explainable reasons,
   - and lets the creative-brief planner prefer those hook/keep-cut recommendations when available.
+- The free-first creative library is local and attribution-safe:
+  - `Graphics`, `Captions`, `Audio`, and `Stickers` now expose bundled starter content before remote/imported sources
+  - `Graphics -> Brand` now includes default bundled caption style, title preset, and music mood preferences
+  - `Settings` now shows the bundled library packs and their license labels
 
 ### Built-in demo project
 
