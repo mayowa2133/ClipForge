@@ -49,6 +49,7 @@ import type {
 	ExportPreflightResult,
 	ExportQuality,
 } from "@/types/export";
+import type { ProjectVersionTarget } from "@/types/project";
 import type { TProject } from "@/types/project";
 import type {
 	ChatPlannerContext,
@@ -747,10 +748,12 @@ export class ClipForgeManager {
 		format,
 		quality,
 		includeAudio,
+		targetVersionId = null,
 	}: {
 		format: ExportFormat;
 		quality: ExportQuality;
 		includeAudio: boolean;
+		targetVersionId?: ProjectVersionTarget | null;
 	}): ExportPreflightResult {
 		return evaluateExportPreflight({
 			project: this.editor.project.getActive(),
@@ -758,6 +761,7 @@ export class ClipForgeManager {
 			format,
 			quality,
 			includeAudio,
+			targetVersionId,
 		});
 	}
 

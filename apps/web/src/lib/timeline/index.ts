@@ -9,6 +9,7 @@ export * from "./motion";
 export * from "./finishing";
 export * from "./graphics";
 export * from "./templates";
+export * from "./versioning";
 
 export function calculateTotalDuration({
 	tracks,

@@ -1,4 +1,5 @@
 import { hasMediaId } from "@/lib/timeline/element-utils";
+import { resolveProjectVersionPack } from "@/lib/timeline";
 import { buildProjectAssembly } from "@/lib/scenes";
 import type { MediaAsset } from "@/types/assets";
 import type { TProject } from "@/types/project";
@@ -20,6 +21,17 @@ export function buildProjectHealthFingerprint({
 
 	const mediaTuple = buildMediaTuple({ mediaAssets });
 	const assembly = buildProjectAssembly({ scenes: project.scenes });
+	const versionPack = resolveProjectVersionPack({ project });
+	const versionTuple = versionPack.targets
+		.map((target) =>
+			[
+				target.id,
+				target.enabled ? "1" : "0",
+				target.canvasSize.width,
+				target.canvasSize.height,
+			].join(":"),
+		)
+		.join(",");
 
 	if (project.scenes.length === 0) {
 		return [
@@ -49,6 +61,23 @@ export function buildProjectHealthFingerprint({
 					duration: element.duration,
 					trimStart: element.trimStart,
 					trimEnd: element.trimEnd,
+					versionOverrides:
+						"versionOverrides" in element && element.versionOverrides
+							? Object.entries(element.versionOverrides)
+									.map(([targetId, override]) =>
+										[
+											targetId,
+											override?.hidden ? "1" : "0",
+											override?.transform?.scale ?? "none",
+											override?.transform?.position?.x ?? "none",
+											override?.transform?.position?.y ?? "none",
+											override?.transform?.rotate ?? "none",
+											override?.background?.color ?? "none",
+										].join(":"),
+									)
+									.sort()
+									.join(";")
+							: "none",
 				})),
 			);
 		})
@@ -70,6 +99,7 @@ export function buildProjectHealthFingerprint({
 				formatNumber(entry.duration),
 				formatNumber(entry.trimStart),
 				formatNumber(entry.trimEnd),
+				entry.versionOverrides,
 			].join(":"),
 		)
 		.join(",");
@@ -79,6 +109,8 @@ export function buildProjectHealthFingerprint({
 		`project:${project.metadata.id}`,
 		`sceneCount:${project.scenes.length}`,
 		`duration:${formatNumber(project.metadata.duration)}`,
+		`activeVersion:${versionPack.activeTargetId ?? "none"}`,
+		`versions:${versionTuple}`,
 		`elements:${elementTuple}`,
 		`media:${mediaTuple}`,
 	].join("|");
@@ -89,15 +121,18 @@ export function buildExportPreflightIssueId({
 	mediaId,
 	trackId,
 	segmentId,
+	targetVersionId,
 }: {
 	code: ExportPreflightCode;
 	mediaId?: string | null;
 	trackId?: string | null;
 	segmentId?: string | null;
+	targetVersionId?: string | null;
 }): string {
 	return [
 		ISSUE_SCHEMA_VERSION,
 		code,
+		targetVersionId ?? "none",
 		mediaId ?? "none",
 		trackId ?? "none",
 		segmentId ?? "none",

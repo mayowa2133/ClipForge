@@ -30,6 +30,8 @@
    - `Exact`: sampled preview and export frames match without fallback
    - `Approximate`: fallback rendering was needed but no mismatch is known
    - `Unsupported`: parity mismatch or legacy fallback means preview should not be trusted as exact export output
+9. If you need multiple publish formats, enable extra version targets in `Settings -> Version pack`, then switch the active preview target from the preview toolbar.
+10. Use `Auto reframe selection` and `Apply safe layout` per target so the same edit remains usable for `9:16`, `1:1`, and `16:9` without rewriting the base scene.
 
 ## Flow B: Chat-driven Edits
 
@@ -85,3 +87,4 @@ Example chat prompts:
    - `Download diagnostics` incident bundle JSON
 15. Every retry re-runs preflight before encoding starts.
 16. If export is unavailable or fails in an unsupported case, ClipForge can still generate a preview artifact JSON snapshot as a last-resort fallback with diagnostics (including preflight snapshot metadata when available).
+17. Export can now target the current active version or all enabled version-pack targets in one run, with target-specific suffixes on the output filenames.

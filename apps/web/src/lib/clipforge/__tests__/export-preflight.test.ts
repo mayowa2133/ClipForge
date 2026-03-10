@@ -120,7 +120,7 @@ describe("evaluateExportPreflight", () => {
 		expect(result.issues[0]?.code).toBe("no-active-project");
 		expect(result.issues[0]?.id).toContain("issue-v1|no-active-project");
 		expect(typeof result.computedAt).toBe("string");
-		expect(result.healthFingerprint).toBe("health-v1|no-project");
+		expect(result.healthFingerprint).toBe("health-v1|no-project|target:base");
 	});
 
 	test("returns blocked empty-project when timeline has no elements", () => {

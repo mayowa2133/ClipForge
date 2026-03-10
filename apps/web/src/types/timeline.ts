@@ -1,3 +1,4 @@
+import type { ProjectVersionTarget } from "./project";
 import type { BlendMode, Transform } from "./rendering";
 
 export interface Bookmark {
@@ -101,6 +102,12 @@ export interface OverlayMeta {
 	slot?: OverlayTextSlot;
 }
 
+export interface VisualVersionOverride {
+	transform?: Partial<Transform>;
+	background?: TextElement["background"] | null;
+	hidden?: boolean;
+}
+
 export interface VisualKeyframeMap {
 	positionX?: AnimatedPropertyKeyframe[];
 	positionY?: AnimatedPropertyKeyframe[];
@@ -184,6 +191,7 @@ export interface VideoElement extends BaseTimelineElement {
 	mediaId: string;
 	muted?: boolean;
 	hidden?: boolean;
+	versionOverrides?: Partial<Record<ProjectVersionTarget, VisualVersionOverride>> | null;
 	playbackRate?: number;
 	linkedGroupId?: string | null;
 	transitionIn?: ElementTransitionIn | null;
@@ -200,6 +208,7 @@ export interface ImageElement extends BaseTimelineElement {
 	mediaId: string;
 	overlayMeta?: OverlayMeta | null;
 	hidden?: boolean;
+	versionOverrides?: Partial<Record<ProjectVersionTarget, VisualVersionOverride>> | null;
 	linkedGroupId?: string | null;
 	transitionIn?: ElementTransitionIn | null;
 	keyframes?: VisualKeyframeMap | null;
@@ -215,6 +224,7 @@ export interface TextElement extends BaseTimelineElement {
 	role?: "text" | "caption";
 	captionTiming?: { words: CaptionWordTiming[] } | null;
 	overlayMeta?: OverlayMeta | null;
+	versionOverrides?: Partial<Record<ProjectVersionTarget, VisualVersionOverride>> | null;
 	content: string;
 	fontSize: number;
 	fontFamily: string;
@@ -246,6 +256,7 @@ export interface StickerElement extends BaseTimelineElement {
 	type: "sticker";
 	stickerId: string;
 	hidden?: boolean;
+	versionOverrides?: Partial<Record<ProjectVersionTarget, VisualVersionOverride>> | null;
 	linkedGroupId?: string | null;
 	transitionIn?: ElementTransitionIn | null;
 	keyframes?: VisualKeyframeMap | null;

@@ -147,6 +147,7 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
 8. Use normal OpenCut `Undo/Redo` shortcuts.
 9. Click the top-right `Export` button:
    - The preview toolbar shows sampled preview/export fidelity before you export.
+   - Preview now supports version-target switching for enabled publish targets (`9:16`, `1:1`, `16:9`) without mutating the base edit.
    - `Exact` means sampled frames matched export without fallback; `Approximate` means fallback was needed; `Unsupported` means sampled export parity is not trustworthy for the current graph.
    - Export now runs a deterministic preflight readiness check in the popover.
    - Preflight is now reactive while the popover is open and refreshes automatically as project/media/timeline state changes.
@@ -157,6 +158,12 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
    - Destructive missing-media cleanup is still available explicitly as `Remove Affected Segments` when relink is not possible.
    - One-click fixes are available for supported repair actions and preflight re-runs immediately after each fix.
    - Audio-only decode incompatibilities can be cleared deterministically by disabling export audio; visual decode incompatibilities remain relink/remove blockers.
+   - Multi-format publishing is now built in:
+     - enable additional version targets in `Settings -> Version pack`
+     - preview target-specific overrides in the preview toolbar
+     - auto reframe selected visuals and apply safe-layout adaptation for overlays/captions per target
+     - export the current active target or all enabled targets in one run
+     - exported filenames include deterministic target suffixes such as `_9x16`, `_1x1`, `_16x9`
    - Warning-only states (for example low quality, audio off, WebM compatibility) do not block export.
    - The export popover now also shows the same preview fidelity report as a non-blocking trust signal before render starts.
    - Runtime export still uses the existing binary pipeline and diagnostics once encoding begins.
@@ -206,6 +213,19 @@ ClipForge ships with a bundled demo project under `apps/web/public/clipforge-dem
 - It remains a normal editable project after it loads.
 
 The guided demo points users to the same top-right `Export` button used everywhere else.
+
+### Multi-format publishing workflow
+
+ClipForge now keeps one base edit as the source of truth and layers target-specific layout overrides on top.
+
+- Enable publish targets in `Settings -> Version pack`.
+- Switch the active preview target from the preview toolbar.
+- Use `Auto reframe selection` for video/image clips when moving from one aspect ratio to another.
+- Use `Apply safe layout` to keep lower thirds, overlays, titles, captions, and CTA cards inside target-specific safe margins.
+- Version-specific changes are non-destructive:
+  - the base scene stays unchanged
+  - target-specific transforms/background tweaks live in per-element version overrides
+- Export either the current active target or all enabled targets from the same top-right export flow.
 
 ### Self-Hosting with Docker
 

@@ -40,6 +40,15 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M32: Manual editing core with replace media, clip speed, separate audio, freeze frame, and audio properties.
 - [x] M33: Motion foundations with transitions, keyframes, and animated visual properties.
 - [x] M34: Visual finishing foundations with filters, effects, and color adjustment.
+- [x] M35: UX convention alignment for recent editing surfaces.
+- [x] M36: Project workflow foundations with multi-scene assembly, storyboard, and project-wide export.
+- [x] M37: Caption studio with transcript-first editing, timing, styling, and legacy caption adoption.
+- [x] M38: Audio studio foundations with voiceover, music workflow, ducking, and project mix controls.
+- [x] M39: Title and graphics studio with brand-aware presets and motion presets.
+- [x] M40: Social overlay system with timestamp cards, routine labels, chapter cards, and reusable style variants.
+- [x] M41: Music-paced editing with beat detection, beat markers, quantize, split-on-beats, and auto montage.
+- [x] M42: Reusable creator workflow with templates, scene recipes, and project kits.
+- [x] M43: Multi-format publishing with version packs, auto reframe, safe layout adaptation, and multi-version export.
 
 ## Working Rules
 
@@ -49,3 +58,6 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
   - `ENABLE_CLIPFORGE_AUTO_EDIT`
   - `ENABLE_CLIPFORGE_CHAT`
 - Keep changes modular for upstream rebasing.
+- Milestone tracker hygiene is mandatory:
+  - every shipped milestone must update this file in the same change
+  - `PLANS.md` should reflect shipped state, not just planned state

@@ -26,6 +26,11 @@ import { createTimelineAudioBuffer } from "@/lib/media/audio";
 import { formatTimeCode, getLastFrameTime } from "@/lib/time";
 import { downloadBlob } from "@/utils/browser";
 import { buildProjectAssemblyTracks, getProjectDurationFromScenes } from "@/lib/scenes";
+import {
+	applyVersionOverridesToTracks,
+	getActiveVersionTargetId,
+	getVersionCanvasSize,
+} from "@/lib/timeline";
 
 export class RendererManager {
 	private renderGraph: RenderGraph | null = null;
@@ -66,12 +71,15 @@ export class RendererManager {
 	getProjectRenderGraph(): RenderGraph | null {
 		const activeProject = this.editor.project.getActive();
 		if (!activeProject) return null;
+		const targetVersionId = getActiveVersionTargetId({ project: activeProject });
 
 		return buildProjectRenderGraph({
 			scenes: activeProject.scenes,
 			mediaAssets: this.editor.media.getAssets(),
 			canvasSize: activeProject.settings.canvasSize,
 			background: activeProject.settings.background,
+			targetVersionId,
+			project: activeProject,
 		});
 	}
 
@@ -123,7 +131,8 @@ export class RendererManager {
 				return { success: false, error: "Project is empty" };
 			}
 
-			const { canvasSize, fps } = activeProject.settings;
+			const { fps } = activeProject.settings;
+			const canvasSize = renderGraph.canvas;
 			const currentTime = this.editor.playback.getCurrentTime();
 			const lastFrameTime = getLastFrameTime({
 				duration: renderGraph.duration,
@@ -174,7 +183,15 @@ export class RendererManager {
 	}: {
 		options: ExportOptions;
 	}): Promise<ExportResult> {
-		const { format, quality, fps, includeAudio, onProgress, onCancel } = options;
+		const {
+			format,
+			quality,
+			fps,
+			includeAudio,
+			onProgress,
+			onCancel,
+			targetVersionId = null,
+		} = options;
 		let lastExportBackendUsed: "binary-canvas" | "legacy-canvas" = "binary-canvas";
 		let getLastExportBackendUsed = () => lastExportBackendUsed;
 
@@ -220,9 +237,15 @@ export class RendererManager {
 			}
 
 			const exportFps = fps || activeProject.settings.fps;
-			const canvasSize = activeProject.settings.canvasSize;
-			const tracks = buildProjectAssemblyTracks({
-				scenes: activeProject.scenes,
+			const canvasSize = getVersionCanvasSize({
+				project: activeProject,
+				targetVersionId,
+			});
+			const tracks = applyVersionOverridesToTracks({
+				tracks: buildProjectAssemblyTracks({
+					scenes: activeProject.scenes,
+				}),
+				targetVersionId,
 			});
 			let audioBuffer: AudioBuffer | null = null;
 			if (includeAudio) {
@@ -250,6 +273,8 @@ export class RendererManager {
 				mediaAssets,
 				canvasSize,
 				background: activeProject.settings.background,
+				targetVersionId,
+				project: activeProject,
 			});
 			this.assetRegistry.setAssets(mediaAssets);
 

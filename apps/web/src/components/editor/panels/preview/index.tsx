@@ -12,16 +12,30 @@ import { PreviewInteractionOverlay } from "./preview-interaction-overlay";
 import { BookmarkNoteOverlay } from "./bookmark-note-overlay";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { usePreviewStore } from "@/stores/preview-store";
+import {
+	applyVersionOverridesToTracks,
+	calculateTotalDuration,
+	getActiveVersionTargetId,
+	getVersionCanvasSize,
+} from "@/lib/timeline";
 import { PreviewContextMenu } from "./context-menu";
 import { PreviewToolbar } from "./toolbar";
 
 function usePreviewSize() {
 	const editor = useEditor();
 	const activeProject = editor.project.getActive();
+	if (!activeProject) {
+		return { width: 1920, height: 1080 };
+	}
+	const targetVersionId = getActiveVersionTargetId({ project: activeProject });
+	const canvasSize = getVersionCanvasSize({
+		project: activeProject,
+		targetVersionId,
+	});
 
 	return {
-		width: activeProject?.settings.canvasSize.width,
-		height: activeProject?.settings.canvasSize.height,
+		width: canvasSize.width,
+		height: canvasSize.height,
 	};
 }
 
@@ -56,6 +70,17 @@ function RenderGraphController() {
 	const mediaAssets = editor.media.getAssets();
 	const activeProject = editor.project.getActive();
 	const previewMode = usePreviewStore((state) => state.previewMode);
+	const targetVersionId = activeProject
+		? getActiveVersionTargetId({ project: activeProject })
+		: null;
+	const sceneTracks = useMemo(
+		() =>
+			applyVersionOverridesToTracks({
+				tracks,
+				targetVersionId,
+			}),
+		[tracks, targetVersionId],
+	);
 
 	const { width, height } = usePreviewSize();
 
@@ -67,14 +92,16 @@ function RenderGraphController() {
 					? buildProjectRenderGraph({
 						scenes,
 						mediaAssets,
-						canvasSize: { width, height },
+						canvasSize: activeProject.settings.canvasSize,
 						background: activeProject.settings.background,
 						isPreview: true,
+						targetVersionId,
+						project: activeProject,
 				  })
 				: buildRenderGraph({
-						tracks,
+						tracks: sceneTracks,
 						mediaAssets,
-						duration: editor.timeline.getTotalDuration(),
+						duration: calculateTotalDuration({ tracks: sceneTracks }),
 						canvasSize: { width, height },
 						background: activeProject.settings.background,
 						isPreview: true,
@@ -83,12 +110,14 @@ function RenderGraphController() {
 		editor.renderer.setRenderGraph({ renderGraph });
 	}, [
 		tracks,
+		sceneTracks,
 		scenes,
 		mediaAssets,
 		activeProject?.settings.background,
 		width,
 		height,
 		previewMode,
+		targetVersionId,
 		editor,
 	]);
 

@@ -9,8 +9,13 @@ import {
 	buildExportPreflightIssueId,
 	buildProjectHealthFingerprint,
 } from "@/lib/clipforge/project-health";
+import {
+	applyVersionOverridesToTracks,
+	collectVersionLayoutWarnings,
+	getVersionCanvasSize,
+} from "@/lib/timeline";
 import type { MediaAsset } from "@/types/assets";
-import type { TProject } from "@/types/project";
+import type { ProjectVersionTarget, TProject } from "@/types/project";
 import type { TimelineElement, TimelineTrack } from "@/types/timeline";
 import type {
 	ExportFormat,
@@ -51,17 +56,19 @@ export function evaluateExportPreflight({
 	format,
 	quality,
 	includeAudio,
+	targetVersionId = null,
 }: {
 	project: TProject | null;
 	mediaAssets: MediaAsset[];
 	format: ExportFormat;
 	quality: ExportQuality;
 	includeAudio: boolean;
+	targetVersionId?: ProjectVersionTarget | null;
 }): ExportPreflightResult {
-	const healthFingerprint = buildProjectHealthFingerprint({
+	const healthFingerprint = `${buildProjectHealthFingerprint({
 		project,
 		mediaAssets,
-	});
+	})}|target:${targetVersionId ?? "base"}`;
 
 	if (!project) {
 		const issues: ExportPreflightIssue[] = [
@@ -80,6 +87,7 @@ export function evaluateExportPreflight({
 		project,
 		mediaAssets,
 		includeAudio,
+		targetVersionId,
 	});
 	const issues = [...inspection.issues];
 
@@ -297,10 +305,12 @@ function inspectProjectForPreflight({
 	project,
 	mediaAssets,
 	includeAudio,
+	targetVersionId,
 }: {
 	project: TProject;
 	mediaAssets: MediaAsset[];
 	includeAudio: boolean;
+	targetVersionId?: ProjectVersionTarget | null;
 }): PreflightInspectionResult {
 	const issues: ExportPreflightIssue[] = [];
 	if (project.scenes.length === 0) {
@@ -320,7 +330,10 @@ function inspectProjectForPreflight({
 		};
 	}
 
-	const assembledTracks = buildProjectAssemblyTracks({ scenes: project.scenes });
+	const assembledTracks = applyVersionOverridesToTracks({
+		tracks: buildProjectAssemblyTracks({ scenes: project.scenes }),
+		targetVersionId,
+	});
 	const timelineDuration = calculateTotalDuration({
 		tracks: assembledTracks,
 	});
@@ -491,6 +504,35 @@ function inspectProjectForPreflight({
 		);
 	}
 
+	if (targetVersionId) {
+		const targetCanvasSize = getVersionCanvasSize({
+			project,
+			targetVersionId,
+		});
+		const safeMarginPreset =
+			project.settings.overlayDefaults?.safeMarginPreset ?? "standard";
+		const versionWarnings = collectVersionLayoutWarnings({
+			tracks: assembledTracks,
+			targetCanvasSize,
+			targetVersionId,
+			safeMarginPreset,
+		});
+		for (const warning of versionWarnings) {
+			issues.push(
+				createIssue({
+					code: warning.code,
+					severity: "warning",
+					message: warning.message,
+					actionable: false,
+					action: null,
+					trackId: warning.trackId ?? null,
+					segmentId: warning.segmentId ?? null,
+					targetVersionId,
+				}),
+			);
+		}
+	}
+
 	return {
 		issues,
 		segmentInspections: allSegments,
@@ -645,6 +687,7 @@ function createIssue({
 	mediaId,
 	trackId,
 	segmentId,
+	targetVersionId,
 	...rest
 }: Omit<ExportPreflightIssue, "id">): ExportPreflightIssue {
 	return {
@@ -653,11 +696,13 @@ function createIssue({
 			mediaId,
 			trackId,
 			segmentId,
+			targetVersionId,
 		}),
 		code,
 		mediaId,
 		trackId,
 		segmentId,
+		targetVersionId,
 		...rest,
 	};
 }

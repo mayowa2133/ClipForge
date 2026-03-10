@@ -12,7 +12,11 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { FPS_PRESETS } from "@/constants/project-constants";
+import {
+	FPS_PRESETS,
+	buildDefaultProjectVersionPack,
+	getVersionTargetLabel,
+} from "@/constants/project-constants";
 import { useEditor } from "@/hooks/use-editor";
 import { useEditorStore } from "@/stores/editor-store";
 import { dimensionToAspectRatio } from "@/utils/geometry";
@@ -28,10 +32,13 @@ import {
 	PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { fetchChatPlannerHealth } from "@/lib/clipforge/chat";
 import type { ChatPlannerHealth, ChatPlannerMode } from "@/lib/clipforge/chat";
 import { useClipForgeChatSettingsStore } from "@/stores/clipforge-chat-settings-store";
 import { useEffect, useState } from "react";
+import { resolveProjectVersionPack } from "@/lib/timeline";
+import type { ProjectVersionTarget } from "@/types/project";
 
 export function SettingsView() {
 	const [open, setOpen] = useState(false);
@@ -42,6 +49,11 @@ export function SettingsView() {
 				<Section hasBorderTop={false}>
 					<SectionContent>
 						<ProjectInfoContent />
+					</SectionContent>
+				</Section>
+				<Section>
+					<SectionContent>
+						<VersionPackContent />
 					</SectionContent>
 				</Section>
 				{ENABLE_CLIPFORGE_CHAT && (
@@ -67,6 +79,130 @@ export function SettingsView() {
 				</Popover>
 			</div>
 		</PanelView>
+	);
+}
+
+function VersionPackContent() {
+	const editor = useEditor();
+	const activeProject = editor.project.getActive();
+	const versionPack = resolveProjectVersionPack({ project: activeProject });
+	const activeTargetId = versionPack.activeTargetId;
+
+	const updateVersionPack = async ({
+		targetId,
+		enabled,
+	}: {
+		targetId: ProjectVersionTarget;
+		enabled: boolean;
+	}) => {
+		const currentlyEnabled = versionPack.targets.filter((target) => target.enabled);
+		if (!enabled && currentlyEnabled.length === 1 && currentlyEnabled[0]?.id === targetId) {
+			return;
+		}
+		const nextVersionPack = {
+			...versionPack,
+			targets: versionPack.targets.map((target) =>
+				target.id === targetId ? { ...target, enabled } : target,
+			),
+			activeTargetId: activeTargetId,
+		};
+		const nextEnabledTargets = nextVersionPack.targets.filter((target) => target.enabled);
+		nextVersionPack.activeTargetId =
+			nextEnabledTargets.find((target) => target.id === activeTargetId)?.id ??
+			nextEnabledTargets[0]?.id ??
+			targetId;
+		await editor.project.updateVersionPack({ versionPack: nextVersionPack });
+	};
+
+	return (
+		<div className="flex flex-col gap-4">
+			<div className="flex flex-col gap-1">
+				<Label>Version pack</Label>
+				<p className="text-muted-foreground text-xs">
+					Enable publish targets and apply target-specific adaptation without
+					changing the base edit.
+				</p>
+			</div>
+			<div className="space-y-3">
+				{versionPack.targets.map((target) => (
+					<div
+						key={target.id}
+						className="flex items-center justify-between gap-3 rounded-md border p-3"
+					>
+						<div className="flex flex-col gap-1">
+							<p className="text-sm font-medium">
+								{getVersionTargetLabel({ targetId: target.id })}
+							</p>
+							<p className="text-muted-foreground text-xs">
+								{target.canvasSize.width}x{target.canvasSize.height}
+							</p>
+						</div>
+						<div className="flex items-center gap-2">
+							<Checkbox
+								id={`version-target-${target.id}`}
+								checked={target.enabled}
+								onCheckedChange={(checked) =>
+									void updateVersionPack({
+										targetId: target.id,
+										enabled: !!checked,
+									})
+								}
+							/>
+							<Button
+								variant={activeTargetId === target.id ? "secondary" : "outline"}
+								size="sm"
+								onClick={() =>
+									void editor.project.setActiveVersionTarget({
+										targetId: target.id,
+									})
+								}
+							>
+								Preview
+							</Button>
+						</div>
+					</div>
+				))}
+			</div>
+			<div className="flex flex-wrap gap-2">
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={() => {
+						if (!activeTargetId) return;
+						editor.timeline.applyAutoReframeToSelection({
+							targetVersionId: activeTargetId,
+						});
+					}}
+				>
+					Auto reframe selection
+				</Button>
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={() => {
+						if (!activeTargetId) return;
+						editor.timeline.applySafeLayoutToScene({
+							targetVersionId: activeTargetId,
+						});
+					}}
+				>
+					Apply safe layout
+				</Button>
+				<Button
+					size="sm"
+					variant="ghost"
+					onClick={() => {
+						if (!activeTargetId) return;
+						editor.timeline.resetVersionOverrides({
+							targetVersionId: activeTargetId,
+							scope: "scene",
+						});
+					}}
+				>
+					Reset target
+				</Button>
+			</div>
+		</div>
 	);
 }
 
@@ -217,14 +353,22 @@ function ProjectInfoContent() {
 		if (value === originalPresetValue) {
 			const canvasSize = originalCanvasSize ?? currentCanvasSize;
 			editor.project.updateSettings({
-				settings: { canvasSize },
+				settings: {
+					canvasSize,
+					versionPack: buildDefaultProjectVersionPack({ canvasSize }),
+				},
 			});
 			return;
 		}
 		const index = parseInt(value, 10);
 		const preset = canvasPresets[index];
 		if (preset) {
-			editor.project.updateSettings({ settings: { canvasSize: preset } });
+			editor.project.updateSettings({
+				settings: {
+					canvasSize: preset,
+					versionPack: buildDefaultProjectVersionPack({ canvasSize: preset }),
+				},
+			});
 		}
 	};
 

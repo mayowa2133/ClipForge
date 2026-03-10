@@ -1,7 +1,7 @@
 import type { TScene, TimelineElement, TimelineTrack } from "@/types/timeline";
 import type { ProjectAssemblyScene } from "@/types/project";
 import { generateUUID } from "@/utils/id";
-import { calculateTotalDuration } from "@/lib/timeline";
+import { calculateTotalDuration, cloneVersionOverrides } from "@/lib/timeline";
 import { ensureMainTrack } from "@/lib/timeline/track-utils";
 
 export function getMainScene({ scenes }: { scenes: TScene[] }): TScene | null {
@@ -192,10 +192,24 @@ function cloneElementWithStartOffset({
 	element: TimelineElement;
 	startOffset: number;
 }): TimelineElement {
-	return {
+	const nextElement = {
 		...element,
 		startTime: element.startTime + startOffset,
 	};
+	if (
+		nextElement.type === "video" ||
+		nextElement.type === "image" ||
+		nextElement.type === "text" ||
+		nextElement.type === "sticker"
+	) {
+		return {
+			...nextElement,
+			versionOverrides: cloneVersionOverrides({
+				value: nextElement.versionOverrides,
+			}),
+		};
+	}
+	return nextElement;
 }
 
 function cloneElementWithFreshId({
@@ -227,6 +241,9 @@ function cloneElementWithFreshId({
 				: null,
 			adjustments: element.adjustments ? { ...element.adjustments } : null,
 			effects: element.effects?.map((effect) => ({ ...effect })),
+			versionOverrides: cloneVersionOverrides({
+				value: element.versionOverrides,
+			}),
 			transform: {
 				...element.transform,
 				position: { ...element.transform.position },
@@ -252,6 +269,9 @@ function cloneElementWithFreshId({
 				: null,
 			adjustments: element.adjustments ? { ...element.adjustments } : null,
 			effects: element.effects?.map((effect) => ({ ...effect })),
+			versionOverrides: cloneVersionOverrides({
+				value: element.versionOverrides,
+			}),
 			transform: {
 				...element.transform,
 				position: { ...element.transform.position },
@@ -275,6 +295,9 @@ function cloneElementWithFreshId({
 						opacity: element.keyframes.opacity?.map((keyframe) => ({ ...keyframe })),
 				  }
 				: null,
+			versionOverrides: cloneVersionOverrides({
+				value: element.versionOverrides,
+			}),
 			background: { ...element.background },
 			transform: {
 				...element.transform,
@@ -299,6 +322,9 @@ function cloneElementWithFreshId({
 						opacity: element.keyframes.opacity?.map((keyframe) => ({ ...keyframe })),
 				  }
 				: null,
+			versionOverrides: cloneVersionOverrides({
+				value: element.versionOverrides,
+			}),
 			transform: {
 				...element.transform,
 				position: { ...element.transform.position },

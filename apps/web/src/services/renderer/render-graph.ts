@@ -2,9 +2,15 @@ import type { TimelineTrack } from "@/types/timeline";
 import type { MediaAsset } from "@/types/assets";
 import type { TBackground, TCanvasSize } from "@/types/project";
 import { DEFAULT_BLUR_INTENSITY } from "@/constants/project-constants";
-import { getElementPlaybackRate, isMainTrack } from "@/lib/timeline";
+import {
+	applyVersionOverridesToTracks,
+	getElementPlaybackRate,
+	getVersionCanvasSize,
+	isMainTrack,
+} from "@/lib/timeline";
 import { buildProjectAssemblyTracks, getProjectDurationFromScenes } from "@/lib/scenes";
 import type { TScene } from "@/types/timeline";
+import type { ProjectVersionTarget, TProject } from "@/types/project";
 import { resolveStickerId } from "@/lib/stickers";
 import type { RenderGraph, RenderLayer } from "./types";
 
@@ -198,18 +204,29 @@ export function buildProjectRenderGraph({
 	canvasSize,
 	background,
 	isPreview = false,
+	targetVersionId = null,
+	project = null,
 }: {
 	scenes: TScene[];
 	mediaAssets: MediaAsset[];
 	canvasSize: TCanvasSize;
 	background: TBackground;
 	isPreview?: boolean;
+	targetVersionId?: ProjectVersionTarget | null;
+	project?: TProject | null;
 }): RenderGraph {
+	const targetCanvasSize =
+		project && targetVersionId
+			? getVersionCanvasSize({ project, targetVersionId })
+			: canvasSize;
 	return buildRenderGraph({
-		tracks: buildProjectAssemblyTracks({ scenes }),
+		tracks: applyVersionOverridesToTracks({
+			tracks: buildProjectAssemblyTracks({ scenes }),
+			targetVersionId,
+		}),
 		mediaAssets,
 		duration: getProjectDurationFromScenes({ scenes }),
-		canvasSize,
+		canvasSize: targetCanvasSize,
 		background,
 		isPreview,
 		scope: "project",

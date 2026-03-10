@@ -21,7 +21,19 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { OcSocialIcon } from "@opencut/ui/icons";
 import { Separator } from "@/components/ui/separator";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import type { PreviewFidelityReport, PreviewFidelityStatus } from "@/services/renderer/types";
+import {
+	getActiveVersionTargetId,
+	getEnabledVersionTargets,
+} from "@/lib/timeline";
+import { getVersionTargetLabel } from "@/constants/project-constants";
 
 export function PreviewToolbar({
 	isFullscreen,
@@ -33,6 +45,9 @@ export function PreviewToolbar({
 	const editor = useEditor();
 	const previewMode = usePreviewStore((state) => state.previewMode);
 	const setPreviewMode = usePreviewStore((state) => state.setPreviewMode);
+	const activeProject = editor.project.getActive();
+	const enabledVersionTargets = getEnabledVersionTargets({ project: activeProject });
+	const activeVersionTargetId = getActiveVersionTargetId({ project: activeProject });
 	const isPlaying = editor.playback.getIsPlaying();
 	const currentTime = editor.playback.getCurrentTime();
 	const totalDuration =
@@ -88,6 +103,27 @@ export function PreviewToolbar({
 						Project
 					</Button>
 				</div>
+				{enabledVersionTargets.length > 1 ? (
+					<Select
+						value={activeVersionTargetId}
+						onValueChange={(value) =>
+							void editor.project.setActiveVersionTarget({
+								targetId: value as typeof activeVersionTargetId,
+							})
+						}
+					>
+						<SelectTrigger className="h-7 w-[78px] text-[11px]">
+							<SelectValue placeholder="Version" />
+						</SelectTrigger>
+						<SelectContent>
+							{enabledVersionTargets.map((target) => (
+								<SelectItem key={target.id} value={target.id}>
+									{getVersionTargetLabel({ targetId: target.id })}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				) : null}
 			</div>
 
 			<Button

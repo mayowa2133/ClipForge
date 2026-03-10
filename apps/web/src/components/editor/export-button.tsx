@@ -49,6 +49,12 @@ import { usePreviewStore } from "@/stores/preview-store";
 import { DEFAULT_EXPORT_OPTIONS } from "@/constants/export-constants";
 import type { PreviewFidelityReport } from "@/services/renderer/types";
 import {
+	getActiveVersionTargetId,
+	getEnabledVersionTargets,
+} from "@/lib/timeline";
+import { getVersionTargetLabel } from "@/constants/project-constants";
+import type { ProjectVersionTarget } from "@/types/project";
+import {
 	formatPreviewFidelityStatusLabel,
 	getPreviewFidelityDetailLine,
 	getPreviewFidelityStatus,
@@ -111,6 +117,13 @@ function ExportPopover({
 	const editor = useEditor();
 	const previewMode = usePreviewStore((state) => state.previewMode);
 	const activeProject = editor.project.getActive();
+	const enabledVersionTargets = activeProject
+		? getEnabledVersionTargets({ project: activeProject })
+		: [];
+	const activeVersionTargetId = activeProject
+		? getActiveVersionTargetId({ project: activeProject })
+		: null;
+	const [exportScope, setExportScope] = useState<"current" | "all">("current");
 	const [format, setFormat] = useState<ExportFormat>(
 		DEFAULT_EXPORT_OPTIONS.format,
 	);
@@ -141,6 +154,7 @@ function ExportPopover({
 		format,
 		quality,
 		includeAudio,
+		targetVersionId: activeVersionTargetId,
 	});
 	const {
 		report: previewFidelityReport,
@@ -157,6 +171,7 @@ function ExportPopover({
 		setPendingRelinkIssue(null);
 		setIsRelinking(false);
 		setIsScanningCompatibility(false);
+		setExportScope("current");
 	}, [isOpen]);
 
 	const blockingFixActions = useMemo(
@@ -371,21 +386,26 @@ function ExportPopover({
 		attemptFormat = format,
 		attemptQuality = quality,
 		attemptIncludeAudio = includeAudio,
+		targetVersionId = activeVersionTargetId,
+		closeOnSuccess = true,
 	}: {
 		attemptFormat?: ExportFormat;
 		attemptQuality?: ExportQuality;
 		attemptIncludeAudio?: boolean;
-	} = {}) => {
+		targetVersionId?: ProjectVersionTarget | null;
+		closeOnSuccess?: boolean;
+	} = {}): Promise<ExportResult | null> => {
 		const currentProject = editor.project.getActive();
-		if (!currentProject) return;
+		if (!currentProject) return null;
 		const finalPreflight = editor.clipforge.runExportPreflight({
 			format: attemptFormat,
 			quality: attemptQuality,
 			includeAudio: attemptIncludeAudio,
+			targetVersionId,
 		});
 		if (!finalPreflight.ready) {
 			refreshPreflight();
-			return;
+			return null;
 		}
 
 		cancelRequestedRef.current = false;
@@ -400,6 +420,7 @@ function ExportPopover({
 				quality: attemptQuality,
 				fps: currentProject.settings.fps,
 				includeAudio: attemptIncludeAudio,
+				targetVersionId,
 				onProgress: ({ progress }) => setProgress(progress),
 				onCancel: () => cancelRequestedRef.current,
 			},
@@ -428,7 +449,7 @@ function ExportPopover({
 		if (result.cancelled) {
 			setExportResult(null);
 			setProgress(0);
-			return;
+			return result;
 		}
 
 		setExportResult(result);
@@ -438,24 +459,64 @@ function ExportPopover({
 			const extension = getExportFileExtension({ format: attemptFormat });
 			const blob = new Blob([result.buffer], { type: mimeType });
 			const url = URL.createObjectURL(blob);
+			const suffix = targetVersionId
+				? `_${getVersionTargetLabel({ targetId: targetVersionId }).replaceAll(":", "x")}`
+				: "";
 
 			const a = document.createElement("a");
 			a.href = url;
-			a.download = `${currentProject.metadata.name}${extension}`;
+			a.download = `${currentProject.metadata.name}${suffix}${extension}`;
 			document.body.appendChild(a);
 			a.click();
 			document.body.removeChild(a);
 			URL.revokeObjectURL(url);
 
+			if (closeOnSuccess) {
+				onOpenChange(false);
+				setExportResult(null);
+				setProgress(0);
+				setAttempts([]);
+			}
+		}
+		return result;
+	};
+
+	const handleExport = async () => {
+		if (exportScope === "all" && enabledVersionTargets.length > 0) {
+			for (const target of enabledVersionTargets) {
+				const finalPreflight = editor.clipforge.runExportPreflight({
+					format,
+					quality,
+					includeAudio,
+					targetVersionId: target.id,
+				});
+				if (!finalPreflight.ready) {
+					setPreflightMessages([
+						`Export blocked for ${getVersionTargetLabel({ targetId: target.id })}. Resolve its preflight issues first.`,
+					]);
+					refreshPreflight();
+					return;
+				}
+			}
+			for (const target of enabledVersionTargets) {
+				const result = await executeExportAttempt({
+					targetVersionId: target.id,
+					closeOnSuccess: false,
+				});
+				if (!result || !result.success) {
+					return;
+				}
+			}
 			onOpenChange(false);
 			setExportResult(null);
 			setProgress(0);
 			setAttempts([]);
+			return;
 		}
-	};
 
-	const handleExport = async () => {
-		await executeExportAttempt();
+		await executeExportAttempt({
+			targetVersionId: activeVersionTargetId,
+		});
 	};
 
 	const latestAttemptOptions =
@@ -651,6 +712,50 @@ function ExportPopover({
 												<Label htmlFor="include-audio">
 													Include audio in export
 												</Label>
+											</div>
+										</SectionContent>
+									</Section>
+
+									<Section>
+										<SectionHeader title="Version" />
+										<SectionContent>
+											<div className="space-y-2">
+												<p className="text-muted-foreground text-xs">
+													Current target:{" "}
+													{activeVersionTargetId
+														? getVersionTargetLabel({
+																targetId: activeVersionTargetId,
+														  })
+														: "Base canvas"}
+												</p>
+												<RadioGroup
+													value={exportScope}
+													onValueChange={(value) => {
+														if (value === "current" || value === "all") {
+															setExportScope(value);
+														}
+													}}
+												>
+													<div className="flex items-center space-x-2">
+														<RadioGroupItem value="current" id="export-current-version" />
+														<Label htmlFor="export-current-version">
+															Export current version
+														</Label>
+													</div>
+													<div className="flex items-center space-x-2">
+														<RadioGroupItem value="all" id="export-all-versions" />
+														<Label htmlFor="export-all-versions">
+															Export all enabled versions
+														</Label>
+													</div>
+												</RadioGroup>
+												{exportScope === "all" ? (
+													<p className="text-muted-foreground text-[10px]">
+														Exports {enabledVersionTargets.length} enabled target
+														{enabledVersionTargets.length === 1 ? "" : "s"} with
+														target-specific preflight checks.
+													</p>
+												) : null}
 											</div>
 										</SectionContent>
 									</Section>

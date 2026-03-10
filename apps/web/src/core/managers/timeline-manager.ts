@@ -86,7 +86,12 @@ import {
 	buildGraphicsPresetElements,
 	buildSocialOverlayPresetElements,
 	applyGraphicsMotionPreset,
+	cloneVersionOverrides,
+	createSafeLayoutOverrides,
+	createVersionOverrideForAutoReframe,
 	resolveProjectOverlayDefaults,
+	getActiveVersionTargetId,
+	getVersionCanvasSize,
 	buildComponentTemplatePayload,
 	instantiateTemplateElements,
 } from "@/lib/timeline";
@@ -1206,6 +1211,159 @@ export class TimelineManager {
 
 	getTotalDuration(): number {
 		return calculateTotalDuration({ tracks: this.getTracks() });
+	}
+
+	applyAutoReframeToSelection({
+		targetVersionId,
+	}: {
+		targetVersionId: import("@/types/project").ProjectVersionTarget;
+	}): void {
+		const activeProject = this.editor.project.getActive();
+		const selectedElements = this.editor.selection.getSelectedElements();
+		if (selectedElements.length === 0) {
+			throw new Error("Select one or more visual clips to auto reframe.");
+		}
+
+		const selectedSet = new Set(
+			selectedElements.map((element) => `${element.trackId}:${element.elementId}`),
+		);
+		const beforeTracks = this.getTracks();
+		const targetCanvasSize = getVersionCanvasSize({
+			project: activeProject,
+			targetVersionId,
+		});
+		const afterTracks = beforeTracks.map((track) => ({
+			...track,
+			elements: track.elements.map((element) => {
+				const key = `${track.id}:${element.id}`;
+				if (
+					!selectedSet.has(key) ||
+					(element.type !== "video" && element.type !== "image")
+				) {
+					return element;
+				}
+				return {
+					...element,
+					versionOverrides: {
+						...(cloneVersionOverrides({ value: element.versionOverrides }) ?? {}),
+						[targetVersionId]: createVersionOverrideForAutoReframe({
+							element,
+							targetCanvasSize,
+							baseCanvasSize: activeProject.settings.canvasSize,
+						}),
+					},
+				};
+			}),
+		})) as TimelineTrack[];
+
+		this.editor.command.execute({
+			command: new TracksSnapshotCommand(beforeTracks, afterTracks),
+		});
+	}
+
+	applySafeLayoutToScene({
+		targetVersionId,
+	}: {
+		targetVersionId: import("@/types/project").ProjectVersionTarget;
+	}): void {
+		const activeProject = this.editor.project.getActive();
+		const beforeTracks = this.getTracks();
+		const overlayDefaults = resolveProjectOverlayDefaults({ project: activeProject });
+		const targetCanvasSize = getVersionCanvasSize({
+			project: activeProject,
+			targetVersionId,
+		});
+		const overrides = createSafeLayoutOverrides({
+			tracks: beforeTracks,
+			targetCanvasSize,
+			targetVersionId,
+			safeMarginPreset: overlayDefaults.safeMarginPreset ?? "standard",
+		});
+		const afterTracks = beforeTracks.map((track) => ({
+			...track,
+			elements: track.elements.map((element) => {
+				if (
+					element.type !== "video" &&
+					element.type !== "image" &&
+					element.type !== "text" &&
+					element.type !== "sticker"
+				) {
+					return element;
+				}
+				const override = overrides.get(element.id);
+				if (!override) {
+					return element;
+				}
+				return {
+					...element,
+					versionOverrides: {
+						...(cloneVersionOverrides({ value: element.versionOverrides }) ?? {}),
+						[targetVersionId]: {
+							...(element.versionOverrides?.[targetVersionId] ?? {}),
+							...override,
+						},
+					},
+				};
+			}),
+		})) as TimelineTrack[];
+
+		this.editor.command.execute({
+			command: new TracksSnapshotCommand(beforeTracks, afterTracks),
+		});
+	}
+
+	resetVersionOverrides({
+		targetVersionId,
+		scope,
+	}: {
+		targetVersionId?: import("@/types/project").ProjectVersionTarget;
+		scope: "selection" | "scene";
+	}): void {
+		const activeProject = this.editor.project.getActive();
+		const resolvedTargetId = targetVersionId ?? getActiveVersionTargetId({ project: activeProject });
+		const selectedSet = new Set(
+			this.editor.selection
+				.getSelectedElements()
+				.map((element) => `${element.trackId}:${element.elementId}`),
+		);
+		const beforeTracks = this.getTracks();
+		const afterTracks = beforeTracks.map((track) => ({
+			...track,
+			elements: track.elements.map((element) => {
+				if (
+					element.type !== "video" &&
+					element.type !== "image" &&
+					element.type !== "text" &&
+					element.type !== "sticker"
+				) {
+					return element;
+				}
+				if (
+					scope === "selection" &&
+					!selectedSet.has(`${track.id}:${element.id}`)
+				) {
+					return element;
+				}
+				const nextOverrides = cloneVersionOverrides({
+					value: element.versionOverrides,
+				});
+				if (!nextOverrides?.[resolvedTargetId]) {
+					return element;
+				}
+				delete nextOverrides[resolvedTargetId];
+				return {
+					...element,
+					versionOverrides:
+						nextOverrides && Object.keys(nextOverrides).length > 0
+							? nextOverrides
+							: null,
+				};
+			}),
+		})) as TimelineTrack[];
+
+		this.editor.command.execute({
+			command: new TracksSnapshotCommand(beforeTracks, afterTracks),
+		});
 	}
 
 	getTrackById({ trackId }: { trackId: string }): TimelineTrack | null {

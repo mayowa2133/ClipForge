@@ -1,3 +1,5 @@
+import type { ProjectVersionTarget } from "./project";
+
 export const EXPORT_QUALITY_VALUES = [
 	"low",
 	"medium",
@@ -35,6 +37,9 @@ export type ExportPreflightCode =
 	| "audio-disabled-warning"
 	| "low-quality-warning"
 	| "webm-compat-warning"
+	| "version-safe-area-warning"
+	| "version-text-overflow-warning"
+	| "version-hidden-warning"
 	| "unknown";
 
 export type ExportPreflightAction =
@@ -67,6 +72,7 @@ export interface ExportPreflightIssue {
 		| null;
 	compatibilityReason?: string | null;
 	compatibilityCheckedAt?: string | null;
+	targetVersionId?: ProjectVersionTarget | null;
 }
 
 export interface ExportPreflightResult {
@@ -128,8 +134,19 @@ export interface ExportOptions {
 	quality: ExportQuality;
 	fps?: number;
 	includeAudio?: boolean;
+	targetVersionId?: ProjectVersionTarget | null;
 	onProgress?: ({ progress }: { progress: number }) => void;
 	onCancel?: () => boolean;
+}
+
+export interface ExportVersionSummary {
+	targetVersionId: ProjectVersionTarget;
+	success: boolean;
+	error?: string;
+}
+
+export interface ExportVersionPackSummary {
+	results: ExportVersionSummary[];
 }
 
 export interface ExportResult {

@@ -49,6 +49,19 @@ export interface ProjectOverlayDefaults {
 	safeMarginPreset?: OverlaySafeMarginPreset;
 }
 
+export type ProjectVersionTarget = "9:16" | "1:1" | "16:9";
+
+export interface ProjectVersionTargetConfig {
+	id: ProjectVersionTarget;
+	enabled: boolean;
+	canvasSize: TCanvasSize;
+}
+
+export interface ProjectVersionPack {
+	targets: ProjectVersionTargetConfig[];
+	activeTargetId: ProjectVersionTarget | null;
+}
+
 export interface TProjectMetadata {
 	id: string;
 	name: string;
@@ -67,6 +80,7 @@ export interface TProjectSettings {
 	brandKit?: ProjectBrandKit;
 	overlayDefaults?: ProjectOverlayDefaults;
 	montageDefaults?: ProjectMontageDefaults;
+	versionPack?: ProjectVersionPack;
 }
 
 export interface TTimelineViewState {

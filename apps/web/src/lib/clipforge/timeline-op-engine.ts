@@ -3,6 +3,7 @@ import {
 	DEFAULT_OPACITY,
 	DEFAULT_TRANSFORM,
 } from "@/constants/timeline-constants";
+import { buildDefaultProjectVersionPack } from "@/constants/project-constants";
 import { calculateTotalDuration } from "@/lib/timeline";
 import { wouldElementOverlap } from "@/lib/timeline/element-utils";
 import { buildTextElement } from "@/lib/timeline/element-utils";
@@ -574,6 +575,9 @@ function applySetAspectRatioOp({
 		...project.settings,
 		canvasSize: nextCanvasSize,
 		originalCanvasSize: project.settings.originalCanvasSize ?? project.settings.canvasSize,
+		versionPack: buildDefaultProjectVersionPack({
+			canvasSize: nextCanvasSize,
+		}),
 	};
 }
 

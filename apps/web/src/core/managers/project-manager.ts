@@ -1,5 +1,7 @@
 import type { EditorCore } from "@/core";
 import type {
+	ProjectVersionPack,
+	ProjectVersionTarget,
 	TProject,
 	TProjectMetadata,
 	TProjectSortKey,
@@ -31,6 +33,7 @@ import {
 	DEFAULT_PROJECT_BRAND_KIT,
 	DEFAULT_PROJECT_MONTAGE_DEFAULTS,
 	DEFAULT_PROJECT_OVERLAY_DEFAULTS,
+	buildDefaultProjectVersionPack,
 } from "@/constants/project-constants";
 import { buildDefaultScene, getProjectDurationFromScenes } from "@/lib/scenes";
 import { buildScene } from "@/services/renderer/scene-builder";
@@ -118,6 +121,9 @@ export class ProjectManager {
 				brandKit: { ...DEFAULT_PROJECT_BRAND_KIT },
 				overlayDefaults: { ...DEFAULT_PROJECT_OVERLAY_DEFAULTS },
 				montageDefaults: { ...DEFAULT_PROJECT_MONTAGE_DEFAULTS },
+				versionPack: buildDefaultProjectVersionPack({
+					canvasSize: DEFAULT_CANVAS_SIZE,
+				}),
 			},
 			version: CURRENT_PROJECT_VERSION,
 			clipforge: buildDefaultClipForgeProjectData(),
@@ -483,6 +489,37 @@ export class ProjectManager {
 		}
 
 		command.execute();
+	}
+
+	async setActiveVersionTarget({
+		targetId,
+	}: {
+		targetId: ProjectVersionTarget | null;
+	}): Promise<void> {
+		const activeProject = this.getActiveOrNull();
+		if (!activeProject) return;
+		const currentVersionPack = activeProject.settings.versionPack;
+		if (!currentVersionPack) return;
+		await this.updateSettings({
+			settings: {
+				versionPack: {
+					...currentVersionPack,
+					activeTargetId: targetId,
+				},
+			},
+		});
+	}
+
+	async updateVersionPack({
+		versionPack,
+	}: {
+		versionPack: ProjectVersionPack;
+	}): Promise<void> {
+		await this.updateSettings({
+			settings: {
+				versionPack,
+			},
+		});
 	}
 
 	getTemplateLibrary(): CreatorTemplate[] {

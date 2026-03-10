@@ -12,6 +12,7 @@ import type {
 	ExportPreflightResult,
 	ExportQuality,
 } from "@/types/export";
+import type { ProjectVersionTarget } from "@/types/project";
 
 export const EXPORT_PREFLIGHT_DEBOUNCE_MS = 120;
 
@@ -20,6 +21,7 @@ export interface UseExportPreflightInput {
 	format: ExportFormat;
 	quality: ExportQuality;
 	includeAudio: boolean;
+	targetVersionId?: ProjectVersionTarget | null;
 }
 
 export interface UseExportPreflightResult {
@@ -62,6 +64,7 @@ export function useExportPreflight({
 	format,
 	quality,
 	includeAudio,
+	targetVersionId = null,
 }: UseExportPreflightInput): UseExportPreflightResult {
 	const editor = useMemo(() => EditorCore.getInstance(), []);
 	const revisionRef = useRef(0);
@@ -107,12 +110,13 @@ export function useExportPreflight({
 				format,
 				quality,
 				includeAudio,
+				targetVersionId,
 			});
 			setResult(nextResult);
 			setLastComputedRevision(revisionValue);
 			return nextResult;
 		},
-		[editor, format, includeAudio, quality],
+		[editor, format, includeAudio, quality, targetVersionId],
 	);
 
 	const refresh = useCallback((): ExportPreflightResult | null => {
