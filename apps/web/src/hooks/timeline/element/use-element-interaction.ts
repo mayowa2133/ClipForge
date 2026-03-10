@@ -9,6 +9,7 @@ import {
 import { useEditor } from "@/hooks/use-editor";
 import { useShiftKey } from "@/hooks/use-shift-key";
 import { useElementSelection } from "@/hooks/timeline/element/use-element-selection";
+import { useTimelineStore } from "@/stores/timeline-store";
 import {
 	DRAG_THRESHOLD_PX,
 	TIMELINE_CONSTANTS,
@@ -163,6 +164,7 @@ export function useElementInteraction({
 }: UseElementInteractionProps) {
 	const editor = useEditor();
 	const isShiftHeldRef = useShiftKey();
+	const { snapToBeats } = useTimelineStore();
 	const tracks = editor.timeline.getTracks();
 	const {
 		isElementSelected,
@@ -224,6 +226,9 @@ export function useElementInteraction({
 
 			const elementDuration = movingElement.duration;
 			const playheadTime = editor.playback.getCurrentTime();
+			const beatMarkers = snapToBeats
+				? editor.audio.getSceneBeatMarkers().markers
+				: [];
 
 			const startSnap = snapElementEdge({
 				targetTime: frameSnappedTime,
@@ -233,6 +238,7 @@ export function useElementInteraction({
 				zoomLevel,
 				excludeElementId: movingElement.id,
 				snapToStart: true,
+				beatMarkers,
 			});
 
 			const endSnap = snapElementEdge({
@@ -243,6 +249,7 @@ export function useElementInteraction({
 				zoomLevel,
 				excludeElementId: movingElement.id,
 				snapToStart: false,
+				beatMarkers,
 			});
 
 			const snapResult =
@@ -256,7 +263,15 @@ export function useElementInteraction({
 				snapPoint: snapResult.snapPoint,
 			};
 		},
-		[snappingEnabled, editor.playback, tracks, zoomLevel, isShiftHeldRef],
+		[
+			snappingEnabled,
+			snapToBeats,
+			editor.playback,
+			editor.audio,
+			tracks,
+			zoomLevel,
+			isShiftHeldRef,
+		],
 	);
 
 	useEffect(() => {

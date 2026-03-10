@@ -4,7 +4,13 @@ import { BOOKMARK_TIME_EPSILON } from "@/lib/timeline/bookmarks";
 
 export interface SnapPoint {
 	time: number;
-	type: "element-start" | "element-end" | "playhead" | "bookmark";
+	type:
+		| "element-start"
+		| "element-end"
+		| "playhead"
+		| "bookmark"
+		| "beat"
+		| "downbeat";
 	elementId?: string;
 	trackId?: string;
 }
@@ -22,19 +28,23 @@ export function findSnapPoints({
 	playheadTime,
 	excludeElementId,
 	bookmarks = [],
+	beatMarkers = [],
 	excludeBookmarkTime,
 	enableElementSnapping = true,
 	enablePlayheadSnapping = true,
 	enableBookmarkSnapping = true,
+	enableBeatSnapping = true,
 }: {
 	tracks: Array<TimelineTrack>;
 	playheadTime: number;
 	excludeElementId?: string;
 	bookmarks?: Array<Bookmark>;
+	beatMarkers?: Array<{ time: number; kind: "beat" | "downbeat" }>;
 	excludeBookmarkTime?: number;
 	enableElementSnapping?: boolean;
 	enablePlayheadSnapping?: boolean;
 	enableBookmarkSnapping?: boolean;
+	enableBeatSnapping?: boolean;
 }): SnapPoint[] {
 	const snapPoints: SnapPoint[] = [];
 
@@ -73,6 +83,15 @@ export function findSnapPoints({
 				continue;
 			}
 			snapPoints.push({ time: bookmark.time, type: "bookmark" });
+		}
+	}
+
+	if (enableBeatSnapping) {
+		for (const beatMarker of beatMarkers) {
+			snapPoints.push({
+				time: beatMarker.time,
+				type: beatMarker.kind,
+			});
 		}
 	}
 
@@ -120,6 +139,7 @@ export function snapElementEdge({
 	excludeElementId,
 	snapToStart = true,
 	bookmarks = [],
+	beatMarkers = [],
 }: {
 	targetTime: number;
 	elementDuration: number;
@@ -129,12 +149,14 @@ export function snapElementEdge({
 	excludeElementId?: string;
 	snapToStart?: boolean;
 	bookmarks?: Array<Bookmark>;
+	beatMarkers?: Array<{ time: number; kind: "beat" | "downbeat" }>;
 }): SnapResult {
 	const snapPoints = findSnapPoints({
 		tracks,
 		playheadTime,
 		excludeElementId,
 		bookmarks,
+		beatMarkers,
 	});
 
 	const effectiveTargetTime = snapToStart

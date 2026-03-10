@@ -14,10 +14,11 @@ import { V11toV12Migration } from "./v11-to-v12";
 import { V12toV13Migration } from "./v12-to-v13";
 import { V13toV14Migration } from "./v13-to-v14";
 import { V14toV15Migration } from "./v14-to-v15";
+import { V15toV16Migration } from "./v15-to-v16";
 export { runStorageMigrations } from "./runner";
 export type { MigrationProgress } from "./runner";
 
-export const CURRENT_PROJECT_VERSION = 15;
+export const CURRENT_PROJECT_VERSION = 16;
 
 export const migrations = [
 	new V0toV1Migration(),
@@ -35,4 +36,5 @@ export const migrations = [
 	new V12toV13Migration(),
 	new V13toV14Migration(),
 	new V14toV15Migration(),
+	new V15toV16Migration(),
 ];

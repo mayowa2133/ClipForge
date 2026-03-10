@@ -1,4 +1,5 @@
 import { useEditor } from "@/hooks/use-editor";
+import { toast } from "sonner";
 import {
 	TooltipProvider,
 	Tooltip,
@@ -41,10 +42,16 @@ export function TimelineToolbar({
 	zoomLevel,
 	minZoom,
 	setZoomLevel,
+	beatState,
 }: {
 	zoomLevel: number;
 	minZoom: number;
 	setZoomLevel: ({ zoom }: { zoom: number }) => void;
+	beatState: {
+		sourceMediaId: string | null;
+		bpm: number | null;
+		markers: Array<{ time: number; kind: "beat" | "downbeat"; sourceMediaId: string }>;
+	};
 }) {
 	const handleZoom = ({ direction }: { direction: "in" | "out" }) => {
 		const newZoomLevel =
@@ -61,6 +68,7 @@ export function TimelineToolbar({
 		<ScrollArea className="scrollbar-hidden">
 			<div className="flex h-10 items-center justify-between border-b px-2 py-1">
 				<ToolbarLeftSection />
+				
 
 				<SceneSelector />
 
@@ -69,6 +77,7 @@ export function TimelineToolbar({
 					minZoom={minZoom}
 					onZoomChange={(zoom) => setZoomLevel({ zoom })}
 					onZoom={handleZoom}
+					beatState={beatState}
 				/>
 			</div>
 		</ScrollArea>
@@ -79,6 +88,7 @@ function ToolbarLeftSection() {
 	const editor = useEditor();
 	const currentTime = editor.playback.getCurrentTime();
 	const currentBookmarked = editor.scenes.isBookmarked({ time: currentTime });
+	const beatState = editor.audio.getSceneBeatMarkers();
 
 	const handleAction = ({
 		action,
@@ -150,6 +160,66 @@ function ToolbarLeftSection() {
 
 				<div className="bg-border mx-1 h-6 w-px" />
 
+				<ToolbarButton
+					icon={<HugeiconsIcon icon={MagnetIcon} />}
+					tooltip="Quantize selected clips to beats"
+					onClick={({ event }) => {
+						event.stopPropagation();
+						try {
+							editor.timeline.quantizeSelectedClipsToBeats({
+								mode: "clip-starts",
+							});
+							toast.success("Selected clips quantized to beats.");
+						} catch (error) {
+							toast.error("Quantize failed.", {
+								description:
+									error instanceof Error ? error.message : "Please try again.",
+							});
+						}
+					}}
+				/>
+
+				<ToolbarButton
+					icon={<HugeiconsIcon icon={ScissorIcon} />}
+					tooltip="Split selected clips on beats"
+					onClick={({ event }) => {
+						event.stopPropagation();
+						try {
+							editor.timeline.splitSelectedClipsOnBeats();
+							toast.success("Selected clips split on beats.");
+						} catch (error) {
+							toast.error("Split on beats failed.", {
+								description:
+									error instanceof Error ? error.message : "Please try again.",
+							});
+						}
+					}}
+				/>
+
+				<ToolbarButton
+					icon={<HugeiconsIcon icon={Layers01Icon} />}
+					tooltip="Build auto montage"
+					onClick={({ event }) => {
+						event.stopPropagation();
+						try {
+							if (!beatState.sourceMediaId) {
+								throw new Error("Choose a music beat source first.");
+							}
+							editor.timeline.buildAutoMontageFromSelection({
+								musicMediaId: beatState.sourceMediaId,
+								strategy: "one-cut-per-two-beats",
+								beatDivision: 2,
+							});
+							toast.success("Auto montage draft created.");
+						} catch (error) {
+							toast.error("Auto montage failed.", {
+								description:
+									error instanceof Error ? error.message : "Please try again.",
+							});
+						}
+					}}
+				/>
+
 				<Tooltip>
 					<ToolbarButton
 						icon={<HugeiconsIcon icon={Bookmark02Icon} />}
@@ -197,22 +267,50 @@ function ToolbarRightSection({
 	minZoom,
 	onZoomChange,
 	onZoom,
+	beatState,
 }: {
 	zoomLevel: number;
 	minZoom: number;
 	onZoomChange: (zoom: number) => void;
 	onZoom: (options: { direction: "in" | "out" }) => void;
+	beatState: {
+		sourceMediaId: string | null;
+		bpm: number | null;
+		markers: Array<{ time: number; kind: "beat" | "downbeat"; sourceMediaId: string }>;
+	};
 }) {
 	const {
 		snappingEnabled,
+		snapToBeats,
+		showBeatMarkers,
 		rippleEditingEnabled,
 		toggleSnapping,
+		setBeatSnapping,
+		setBeatMarkerVisibility,
 		toggleRippleEditing,
 	} = useTimelineStore();
 
 	return (
 		<div className="flex items-center gap-1">
 			<TooltipProvider delayDuration={500}>
+				<ToolbarButton
+					icon={<HugeiconsIcon icon={Bookmark02Icon} />}
+					isActive={showBeatMarkers}
+					tooltip="Show beats"
+					onClick={() => {
+						setBeatMarkerVisibility(!showBeatMarkers);
+					}}
+				/>
+
+				<ToolbarButton
+					icon={<HugeiconsIcon icon={MagnetIcon} className="scale-90" />}
+					isActive={snapToBeats}
+					tooltip="Snap to beats"
+					onClick={() => {
+						setBeatSnapping(!snapToBeats);
+					}}
+				/>
+
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={MagnetIcon} />}
 					isActive={snappingEnabled}
@@ -227,6 +325,18 @@ function ToolbarRightSection({
 					onClick={() => toggleRippleEditing()}
 				/>
 			</TooltipProvider>
+
+			<div className="bg-border mx-1 h-6 w-px" />
+
+			{beatState.sourceMediaId ? (
+				<div className="text-muted-foreground px-2 text-xs whitespace-nowrap">
+					Beats {beatState.bpm ? `${beatState.bpm} BPM` : "ready"} · {beatState.markers.length}
+				</div>
+			) : (
+				<div className="text-muted-foreground px-2 text-xs whitespace-nowrap">
+					No beat source
+				</div>
+			)}
 
 			<div className="bg-border mx-1 h-6 w-px" />
 

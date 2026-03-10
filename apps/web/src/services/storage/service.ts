@@ -322,6 +322,7 @@ class StorageService {
 			ephemeral: metadata.ephemeral,
 			mimeType: metadata.mimeType,
 			compatibility: metadata.compatibility,
+			beatAnalysis: metadata.beatAnalysis,
 			derived: metadata.derived,
 		};
 	}
@@ -345,6 +346,7 @@ class StorageService {
 			ephemeral: mediaAsset.ephemeral,
 			mimeType: mediaAsset.mimeType ?? mediaAsset.file.type ?? "",
 			compatibility: mediaAsset.compatibility,
+			beatAnalysis: mediaAsset.beatAnalysis,
 			derived: mediaAsset.derived,
 		};
 	}

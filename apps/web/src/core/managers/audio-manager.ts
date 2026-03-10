@@ -9,8 +9,10 @@ import {
 	getAudioEnvelopeGain,
 	getDuckingGainAtTime,
 } from "@/lib/media/audio";
+import { resolveSceneBeatMarkers } from "@/lib/media/beat-analysis";
 import { buildProjectAssemblyTracks, getProjectDurationFromScenes } from "@/lib/scenes";
 import { usePreviewStore } from "@/stores/preview-store";
+import { useTimelineStore } from "@/stores/timeline-store";
 import { buildUploadAudioElement } from "@/lib/timeline";
 import {
 	ALL_FORMATS,
@@ -46,6 +48,7 @@ export class AudioManager {
 	private recordingChunks: Blob[] = [];
 	private recordingInsertTime = 0;
 	private recordingStartedAtMs = 0;
+	private listeners = new Set<() => void>();
 
 	constructor(private editor: EditorCore) {
 		this.lastVolume = this.editor.playback.getVolume();
@@ -70,6 +73,7 @@ export class AudioManager {
 			window.removeEventListener("playback-seek", this.handleSeek);
 		}
 		this.disposeSinks();
+		this.listeners.clear();
 		if (this.audioContext) {
 			void this.audioContext.close();
 			this.audioContext = null;
@@ -117,6 +121,7 @@ export class AudioManager {
 
 	private handleTimelineChange = (): void => {
 		this.disposeSinks();
+		this.notify();
 
 		if (!this.editor.playback.getIsPlaying()) return;
 
@@ -427,6 +432,51 @@ export class AudioManager {
 		});
 	}
 
+	subscribe(listener: () => void): () => void {
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
+	}
+
+	private notify(): void {
+		this.listeners.forEach((listener) => listener());
+	}
+
+	async analyzeBeatGrid({
+		mediaId,
+	}: {
+		mediaId: string;
+	}): Promise<{ bpm: number | null; beatCount: number }> {
+		const asset = await this.editor.media.analyzeBeatGrid({ mediaId });
+		const beatAnalysis = asset?.beatAnalysis;
+		this.notify();
+		return {
+			bpm: beatAnalysis?.bpm ?? null,
+			beatCount: beatAnalysis?.beats.length ?? 0,
+		};
+	}
+
+	setSelectedBeatSource({
+		mediaId,
+	}: {
+		mediaId: string | null;
+	}): void {
+		useTimelineStore.getState().setSelectedBeatSourceMediaId(mediaId);
+		this.notify();
+	}
+
+	getSceneBeatMarkers(): {
+		sourceMediaId: string | null;
+		bpm: number | null;
+		markers: import("@/types/timeline").SceneBeatMarker[];
+	} {
+		const { selectedBeatSourceMediaId } = useTimelineStore.getState();
+		return resolveSceneBeatMarkers({
+			tracks: this.editor.timeline.getTracks(),
+			selectedBeatSourceMediaId,
+			mediaAssets: this.editor.media.getAssets(),
+		});
+	}
+
 	async normalizeElement({
 		trackId,
 		elementId,
@@ -602,6 +652,7 @@ export class AudioManager {
 			placement: { mode: "explicit", trackId },
 			element,
 		});
+		this.notify();
 
 		return {
 			mediaId: asset.id,

@@ -502,7 +502,16 @@ function SongsView() {
 	const [search, setSearch] = useState("");
 	const [version, setVersion] = useState(0);
 
-	useEffect(() => editor.media.subscribe(() => setVersion((value) => value + 1)), [editor]);
+	useEffect(() => {
+		const unsubscribers = [
+			editor.media.subscribe(() => setVersion((value) => value + 1)),
+			editor.timeline.subscribe(() => setVersion((value) => value + 1)),
+			editor.audio.subscribe(() => setVersion((value) => value + 1)),
+		];
+		return () => {
+			unsubscribers.forEach((unsubscribe) => unsubscribe());
+		};
+	}, [editor]);
 	void version;
 
 	const voiceoverAssetIds = useMemo(
@@ -534,12 +543,19 @@ function SongsView() {
 				.filter((asset) => asset.name.toLowerCase().includes(search.trim().toLowerCase())),
 		[editor, search, version, voiceoverAssetIds],
 	);
+	const beatState = editor.audio.getSceneBeatMarkers();
+	const activeBeatSource = audioAssets.find(
+		(asset) => asset.id === beatState.sourceMediaId,
+	);
 
 	return (
 		<div className="flex h-full flex-col gap-5">
 			<div className="space-y-2">
 				<p className="text-sm font-medium">Songs</p>
 				<p className="text-muted-foreground text-sm">Use imported audio assets as music beds. They insert at the playhead with the music role.</p>
+				<p className="text-muted-foreground text-xs">
+					Beat source: {activeBeatSource ? `${activeBeatSource.name}${beatState.bpm ? ` · ${beatState.bpm} BPM` : ""}` : "None selected"}
+				</p>
 			</div>
 			<Input
 				placeholder="Filter imported audio"
@@ -551,7 +567,12 @@ function SongsView() {
 			<ScrollArea className="h-full flex-1">
 				<div className="flex flex-col gap-3">
 					{audioAssets.map((asset) => (
-						<UploadedAudioItem key={asset.id} asset={asset} role="music" />
+						<UploadedAudioItem
+							key={asset.id}
+							asset={asset}
+							role="music"
+							isBeatSource={asset.id === beatState.sourceMediaId}
+						/>
 					))}
 					{audioAssets.length === 0 ? (
 						<div className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
@@ -717,8 +738,17 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
 	);
 }
 
-function UploadedAudioItem({ asset, role }: { asset: MediaAsset; role: "music" | "sfx" | "audio"; }) {
+function UploadedAudioItem({
+	asset,
+	role,
+	isBeatSource = false,
+}: {
+	asset: MediaAsset;
+	role: "music" | "sfx" | "audio";
+	isBeatSource?: boolean;
+}) {
 	const editor = useEditor();
+	const [isAnalyzing, setIsAnalyzing] = useState(false);
 	const insertAsset = () => {
 		const audioTrack = editor.timeline.getTracks().find((track) => track.type === "audio");
 		const trackId = audioTrack?.id ?? editor.timeline.addTrack({ type: "audio" });
@@ -731,22 +761,92 @@ function UploadedAudioItem({ asset, role }: { asset: MediaAsset; role: "music" |
 		element.role = role;
 		editor.timeline.insertElement({ placement: { mode: "explicit", trackId }, element });
 		toast.success(`${role === "music" ? "Song" : "Audio"} added to timeline.`);
+		if (role === "music" && !asset.beatAnalysis) {
+			void editor.audio.analyzeBeatGrid({ mediaId: asset.id }).catch(() => {
+				// background analysis is best effort
+			});
+		}
 	};
+	const analyzeBeats = async () => {
+		try {
+			setIsAnalyzing(true);
+			const result = await editor.audio.analyzeBeatGrid({ mediaId: asset.id });
+			toast.success(
+				result.bpm
+					? `Beat grid ready at ${result.bpm} BPM.`
+					: "Beat grid analyzed.",
+			);
+		} catch (error) {
+			toast.error("Beat analysis failed.", {
+				description:
+					error instanceof Error ? error.message : "Please try again.",
+			});
+		} finally {
+			setIsAnalyzing(false);
+		}
+	};
+	const useAsBeatSource = () => {
+		editor.audio.setSelectedBeatSource({ mediaId: asset.id });
+		toast.success("Using song for beat markers.");
+	};
+	const beatLabel = asset.beatAnalysis?.bpm ? `${asset.beatAnalysis.bpm} BPM` : null;
 
 	return (
-		<div className="group flex items-center gap-3 rounded-lg border p-3">
-			<div className="bg-accent flex size-11 shrink-0 items-center justify-center rounded-md">
-				<HugeiconsIcon icon={VolumeHighIcon} />
+		<div className="group flex flex-col gap-3 rounded-lg border p-3">
+			<div className="flex items-center gap-3">
+				<div className="bg-accent flex size-11 shrink-0 items-center justify-center rounded-md">
+					<HugeiconsIcon icon={VolumeHighIcon} />
+				</div>
+				<div className="min-w-0 flex-1">
+					<p className="truncate text-sm font-medium">{asset.name}</p>
+					<p className="text-muted-foreground text-xs">
+						{formatTimeCode({ timeInSeconds: asset.duration ?? 0 })}
+					</p>
+					{role === "music" ? (
+						<p className="text-muted-foreground text-xs">
+							{beatLabel ?? "Beat grid not analyzed"}
+							{isBeatSource ? " · Active markers" : ""}
+						</p>
+					) : null}
+				</div>
 			</div>
-			<div className="min-w-0 flex-1">
-				<p className="truncate text-sm font-medium">{asset.name}</p>
-				<p className="text-muted-foreground text-xs">
-					{formatTimeCode({ timeInSeconds: asset.duration ?? 0 })}
-				</p>
+			<div className="flex flex-wrap items-center gap-2 pointer-events-auto">
+				{role === "music" ? (
+					<>
+						<Button
+							size="sm"
+							variant="outline"
+							className="pointer-events-auto"
+							onPointerDown={(event) => event.stopPropagation()}
+							onClick={() => void analyzeBeats()}
+							disabled={isAnalyzing}
+						>
+							{asset.beatAnalysis ? "Re-analyze" : "Analyze beats"}
+						</Button>
+						<Button
+							size="sm"
+							variant={isBeatSource ? "secondary" : "outline"}
+							className="pointer-events-auto"
+							onPointerDown={(event) => event.stopPropagation()}
+							onClick={useAsBeatSource}
+							disabled={!asset.beatAnalysis}
+						>
+							Use for beats
+						</Button>
+					</>
+				) : null}
+				<Button
+					size="sm"
+					variant="default"
+					className="pointer-events-auto"
+					onPointerDown={(event) => event.stopPropagation()}
+					onClick={insertAsset}
+					title="Add to timeline"
+				>
+					<HugeiconsIcon icon={PlusSignIcon} className="mr-1" />
+					Add to timeline
+				</Button>
 			</div>
-			<Button size="icon" variant="text" onClick={insertAsset} title="Add to timeline">
-				<HugeiconsIcon icon={PlusSignIcon} />
-			</Button>
 		</div>
 	);
 }

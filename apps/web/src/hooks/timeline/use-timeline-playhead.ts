@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useEdgeAutoScroll } from "@/hooks/timeline/use-edge-auto-scroll";
 import { useEditor } from "../use-editor";
 import { useShiftKey } from "@/hooks/use-shift-key";
+import { useTimelineStore } from "@/stores/timeline-store";
 import {
 	findSnapPoints,
 	snapToNearestPoint,
@@ -31,6 +32,7 @@ export function useTimelinePlayhead({
 	const isPlaying = editor.playback.getIsPlaying();
 	const isScrubbing = editor.playback.getIsScrubbing();
 	const isShiftHeldRef = useShiftKey();
+	const { snapToBeats } = useTimelineStore();
 
 	const seek = useCallback(
 		({ time }: { time: number }) => editor.playback.seek({ time }),
@@ -92,7 +94,11 @@ export function useTimelinePlayhead({
 					tracks,
 					playheadTime: frameTime,
 					bookmarks,
+					beatMarkers: snapToBeats
+						? editor.audio.getSceneBeatMarkers().markers
+						: [],
 					enablePlayheadSnapping: false,
+					enableBeatSnapping: snapToBeats,
 				});
 				const snapResult = snapToNearestPoint({
 					targetTime: frameTime,

@@ -18,7 +18,7 @@ import {
 	ContextMenuTrigger,
 } from "../../../ui/context-menu";
 import { useTimelineZoom } from "@/hooks/timeline/use-timeline-zoom";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { TimelineTrackContent } from "./timeline-track";
 import { TimelinePlayhead } from "./timeline-playhead";
 import { SelectionBox } from "../../selection-box";
@@ -58,12 +58,22 @@ import { invokeAction } from "@/lib/actions";
 
 export function Timeline() {
 	const tracksContainerHeight = { min: 0, max: 800 };
-	const { snappingEnabled } = useTimelineStore();
+	const { snappingEnabled, showBeatMarkers } = useTimelineStore();
 	const { clearElementSelection, setElementSelection } = useElementSelection();
 	const editor = useEditor();
+	const [audioVersion, setAudioVersion] = useState(0);
 	const timeline = editor.timeline;
 	const tracks = timeline.getTracks();
 	const seek = (time: number) => editor.playback.seek({ time });
+	const beatState = editor.audio.getSceneBeatMarkers();
+	void audioVersion;
+
+	useEffect(() => {
+		const unsubscribe = editor.audio.subscribe(() =>
+			setAudioVersion((value) => value + 1),
+		);
+		return () => unsubscribe();
+	}, [editor]);
 
 	// refs
 	const timelineRef = useRef<HTMLDivElement>(null);
@@ -232,6 +242,7 @@ export function Timeline() {
 				zoomLevel={zoomLevel}
 				minZoom={minZoomLevel}
 				setZoomLevel={({ zoom }) => setZoomLevel(zoom)}
+				beatState={beatState}
 			/>
 
 			<div
@@ -406,6 +417,7 @@ export function Timeline() {
 										handleTimelineContentClick={handleRulerClick}
 										handleRulerTrackingMouseDown={handleRulerMouseDown}
 										handleRulerMouseDown={handlePlayheadRulerMouseDown}
+										beatMarkers={showBeatMarkers ? beatState.markers : []}
 									/>
 									<TimelineBookmarksRow
 										zoomLevel={zoomLevel}

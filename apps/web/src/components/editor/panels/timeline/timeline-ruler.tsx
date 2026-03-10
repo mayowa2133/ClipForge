@@ -5,6 +5,7 @@ import { useEditor } from "@/hooks/use-editor";
 import { getRulerConfig, shouldShowLabel } from "@/lib/timeline/ruler-utils";
 import { useScrollPosition } from "@/hooks/timeline/use-scroll-position";
 import { TimelineTick } from "./timeline-tick";
+import type { SceneBeatMarker } from "@/types/timeline";
 
 interface TimelineRulerProps {
 	zoomLevel: number;
@@ -15,6 +16,7 @@ interface TimelineRulerProps {
 	handleTimelineContentClick: (e: React.MouseEvent) => void;
 	handleRulerTrackingMouseDown: (e: React.MouseEvent) => void;
 	handleRulerMouseDown: (e: React.MouseEvent) => void;
+	beatMarkers?: SceneBeatMarker[];
 }
 
 export function TimelineRuler({
@@ -26,6 +28,7 @@ export function TimelineRuler({
 	handleTimelineContentClick,
 	handleRulerTrackingMouseDown,
 	handleRulerMouseDown,
+	beatMarkers = [],
 }: TimelineRulerProps) {
 	const editor = useEditor();
 	const duration = editor.timeline.getTotalDuration();
@@ -119,8 +122,25 @@ export function TimelineRuler({
 				}}
 				onMouseDown={handleRulerMouseDown}
 			>
+				{beatMarkers.map((marker) => (
+					<div
+						key={`${marker.kind}:${marker.sourceMediaId}:${marker.time.toFixed(4)}`}
+						className={
+							marker.kind === "downbeat"
+								? "bg-primary/70 absolute top-0 bottom-0 w-px"
+								: "bg-primary/30 absolute top-1 bottom-0 w-px"
+						}
+						style={{
+							left: `${timeToPixel(marker.time, zoomLevel)}px`,
+						}}
+					/>
+				))}
 				{timelineTicks}
 			</div>
 		</div>
 	);
+}
+
+function timeToPixel(time: number, zoomLevel: number): number {
+	return time * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel;
 }

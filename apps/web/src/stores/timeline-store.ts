@@ -10,6 +10,12 @@ import type { ClipboardItem } from "@/types/timeline";
 interface TimelineStore {
 	snappingEnabled: boolean;
 	toggleSnapping: () => void;
+	snapToBeats: boolean;
+	setBeatSnapping: (enabled: boolean) => void;
+	showBeatMarkers: boolean;
+	setBeatMarkerVisibility: (enabled: boolean) => void;
+	selectedBeatSourceMediaId: string | null;
+	setSelectedBeatSourceMediaId: (mediaId: string | null) => void;
 	rippleEditingEnabled: boolean;
 	toggleRippleEditing: () => void;
 	clipboard: {
@@ -31,6 +37,24 @@ export const useTimelineStore = create<TimelineStore>()(
 				set((state) => ({ snappingEnabled: !state.snappingEnabled }));
 			},
 
+			snapToBeats: false,
+
+			setBeatSnapping: (enabled) => {
+				set({ snapToBeats: enabled });
+			},
+
+			showBeatMarkers: true,
+
+			setBeatMarkerVisibility: (enabled) => {
+				set({ showBeatMarkers: enabled });
+			},
+
+			selectedBeatSourceMediaId: null,
+
+			setSelectedBeatSourceMediaId: (mediaId) => {
+				set({ selectedBeatSourceMediaId: mediaId });
+			},
+
 			rippleEditingEnabled: false,
 
 			toggleRippleEditing: () => {
@@ -49,6 +73,9 @@ export const useTimelineStore = create<TimelineStore>()(
 			name: "timeline-store",
 			partialize: (state) => ({
 				snappingEnabled: state.snappingEnabled,
+				snapToBeats: state.snapToBeats,
+				showBeatMarkers: state.showBeatMarkers,
+				selectedBeatSourceMediaId: state.selectedBeatSourceMediaId,
 				rippleEditingEnabled: state.rippleEditingEnabled,
 			}),
 		},

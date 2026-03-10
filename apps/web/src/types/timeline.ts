@@ -7,6 +7,12 @@ export interface Bookmark {
 	duration?: number;
 }
 
+export interface SceneBeatMarker {
+	time: number;
+	kind: "beat" | "downbeat";
+	sourceMediaId: string;
+}
+
 export interface TScene {
 	id: string;
 	name: string;

@@ -1,5 +1,6 @@
 import type { EditorCore } from "@/core";
 import type {
+	SceneBeatMarker,
 	TrackType,
 	TimelineTrack,
 	TimelineElement,
@@ -12,6 +13,7 @@ import type {
 	StickerElement,
 } from "@/types/timeline";
 import { calculateTotalDuration } from "@/lib/timeline";
+import { useTimelineStore } from "@/stores/timeline-store";
 import {
 	AddTrackCommand,
 	RemoveTrackCommand,
@@ -61,6 +63,7 @@ import {
 	findAdjacentVisualIncomingTransitionTarget,
 	getBasePropertyValue,
 	getElementLocalTime,
+	getElementPlaybackRate,
 	isVisualElementWithMotion,
 	isTransitionPreset,
 	removePropertyKeyframeValue,
@@ -80,6 +83,11 @@ import {
 	resolveProjectOverlayDefaults,
 } from "@/lib/timeline";
 import { mediaSupportsAudio } from "@/lib/media/media-utils";
+import {
+	buildAutoMontageWindows,
+	quantizeTimeToMarkers,
+	resolveSceneBeatMarkers,
+} from "@/lib/media/beat-analysis";
 import type { VisualAdjustments, VisualEffect, VisualEffectKind } from "@/types/timeline";
 import { generateUUID } from "@/utils/id";
 
@@ -156,6 +164,224 @@ export class TimelineManager {
 	}): void {
 		const command = new UpdateElementStartTimeCommand(elements, startTime);
 		this.editor.command.execute({ command });
+	}
+
+	setBeatSnapping({ enabled }: { enabled: boolean }): void {
+		useTimelineStore.getState().setBeatSnapping(enabled);
+	}
+
+	setBeatMarkerVisibility({ enabled }: { enabled: boolean }): void {
+		useTimelineStore.getState().setBeatMarkerVisibility(enabled);
+	}
+
+	getSceneBeatMarkers(): {
+		sourceMediaId: string | null;
+		bpm: number | null;
+		markers: SceneBeatMarker[];
+	} {
+		return this.editor.audio.getSceneBeatMarkers();
+	}
+
+	quantizeSelectedClipsToBeats({
+		mode,
+	}: {
+		mode: "clip-starts" | "cuts-only";
+	}): void {
+		const selectedElements = this.editor.selection.getSelectedElements();
+		if (selectedElements.length === 0) {
+			throw new Error("Select one or more clips to quantize.");
+		}
+
+		const { markers } = this.editor.audio.getSceneBeatMarkers();
+		if (markers.length === 0) {
+			throw new Error("Analyze a music bed before quantizing to beats.");
+		}
+
+		const selectedSet = new Set(
+			selectedElements.map((element) => `${element.trackId}:${element.elementId}`),
+		);
+		const beforeTracks = this.getTracks();
+		const afterTracks = beforeTracks.map((track) => {
+			const sortedTrackElements = [...track.elements].sort(
+				(a, b) => a.startTime - b.startTime,
+			);
+			return {
+				...track,
+				elements: track.elements.map((element) => {
+					const key = `${track.id}:${element.id}`;
+					if (!selectedSet.has(key)) {
+						return element;
+					}
+					if (mode === "cuts-only") {
+						const isFirstOnTrack =
+							sortedTrackElements.findIndex((candidate) => candidate.id === element.id) === 0;
+						if (isFirstOnTrack) {
+							return element;
+						}
+					}
+					const nextStartTime = quantizeTimeToMarkers({
+						time: element.startTime,
+						markers,
+					});
+					return {
+						...element,
+						startTime: Math.max(0, nextStartTime),
+					};
+				}),
+			} as TimelineTrack;
+		}) as TimelineTrack[];
+
+		this.editor.command.execute({
+			command: new TracksSnapshotCommand(beforeTracks, afterTracks),
+		});
+	}
+
+	splitSelectedClipsOnBeats(): void {
+		const selectedElements = this.editor.selection.getSelectedElements();
+		if (selectedElements.length === 0) {
+			throw new Error("Select one or more clips to split on beats.");
+		}
+
+		const { markers } = this.editor.audio.getSceneBeatMarkers();
+		if (markers.length === 0) {
+			throw new Error("Analyze a music bed before splitting on beats.");
+		}
+
+		const selectedSet = new Set(
+			selectedElements.map((element) => `${element.trackId}:${element.elementId}`),
+		);
+		const beforeTracks = this.getTracks();
+		const afterTracks = beforeTracks.map((track) => {
+			return {
+				...track,
+				elements: track.elements.flatMap((element) => {
+					const key = `${track.id}:${element.id}`;
+					if (!selectedSet.has(key)) {
+						return [element];
+					}
+					if (
+						element.type === "text" ||
+						element.type === "sticker" ||
+						element.duration <= 0
+					) {
+						return [element];
+					}
+
+					const clipStart = element.startTime;
+					const clipEnd = element.startTime + element.duration;
+					const splitMarkers = markers
+						.filter(
+							(marker) =>
+								marker.time > clipStart + 1e-4 && marker.time < clipEnd - 1e-4,
+						)
+						.map((marker) => marker.time);
+
+					if (splitMarkers.length === 0) {
+						return [element];
+					}
+
+					const boundaries = [clipStart, ...splitMarkers, clipEnd];
+					const playbackRate = getElementPlaybackRate({ element });
+					const segments: TimelineElement[] = [];
+
+					for (let index = 0; index < boundaries.length - 1; index += 1) {
+						const segmentStart = boundaries[index];
+						const segmentEnd = boundaries[index + 1];
+						const segmentDuration = segmentEnd - segmentStart;
+						if (segmentDuration <= 1e-4) {
+							continue;
+						}
+						const elapsedTimeline = segmentStart - clipStart;
+						const elapsedSource = elapsedTimeline * playbackRate;
+						segments.push({
+							...element,
+							id: index === 0 ? element.id : generateUUID(),
+							startTime: segmentStart,
+							duration: segmentDuration,
+							trimStart: element.trimStart + elapsedSource,
+							trimEnd:
+								element.trimStart +
+								elapsedSource +
+								segmentDuration * playbackRate,
+						});
+					}
+
+					return segments.length > 0 ? segments : [element];
+				}),
+			} as TimelineTrack;
+		}) as TimelineTrack[];
+
+		this.editor.command.execute({
+			command: new TracksSnapshotCommand(beforeTracks, afterTracks),
+		});
+	}
+
+	buildAutoMontageFromSelection({
+		musicMediaId,
+		strategy,
+		beatDivision,
+	}: {
+		musicMediaId: string;
+		strategy: "one-cut-per-beat" | "one-cut-per-two-beats";
+		beatDivision: number;
+	}): void {
+		const selectedElements = this.editor.selection.getSelectedElements();
+		const selectedVisuals = this.getElementsWithTracks({
+			elements: selectedElements,
+		})
+			.filter(({ element }) => element.type === "video" || element.type === "image")
+			.sort((a, b) => a.element.startTime - b.element.startTime);
+
+		if (selectedVisuals.length === 0) {
+			throw new Error("Select visual clips before building an auto montage.");
+		}
+
+		const { markers } = resolveSceneBeatMarkers({
+			tracks: this.getTracks(),
+			selectedBeatSourceMediaId: musicMediaId,
+			mediaAssets: this.editor.media.getAssets(),
+		});
+		if (markers.length < 2) {
+			throw new Error("Analyze a music bed with visible beats before building a montage.");
+		}
+
+		const effectiveDivision =
+			strategy === "one-cut-per-beat"
+				? 1
+				: strategy === "one-cut-per-two-beats"
+					? 2
+					: Math.max(1, beatDivision);
+		const windows = buildAutoMontageWindows({
+			markers,
+			beatDivision: effectiveDivision,
+		});
+		if (windows.length < selectedVisuals.length) {
+			throw new Error("Not enough beat windows are available for the selected clips.");
+		}
+
+		const beforeTracks = this.getTracks();
+		const windowByElementId = new Map(
+			selectedVisuals.map(({ element }, index) => [element.id, windows[index]]),
+		);
+		const afterTracks = beforeTracks.map((track) => ({
+			...track,
+			elements: track.elements.map((element) => {
+				const window = windowByElementId.get(element.id);
+				if (!window) return element;
+				if (element.duration + 1e-4 < window.duration) {
+					throw new Error("One or more selected clips are too short for the chosen beat density.");
+				}
+				return {
+					...element,
+					startTime: window.startTime,
+					duration: window.duration,
+				};
+			}),
+		})) as TimelineTrack[];
+
+		this.editor.command.execute({
+			command: new TracksSnapshotCommand(beforeTracks, afterTracks),
+		});
 	}
 
 	moveElement({

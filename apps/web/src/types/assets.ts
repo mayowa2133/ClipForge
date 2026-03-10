@@ -11,6 +11,14 @@ export interface MediaCompatibilitySnapshot {
 	version: 1;
 }
 
+export interface MediaBeatAnalysis {
+	bpm: number | null;
+	downbeats: number[];
+	beats: number[];
+	analyzedAt: string | null;
+	version: 1;
+}
+
 export interface DerivedMediaOrigin {
 	kind: "freeze-frame";
 	sourceMediaId: string;

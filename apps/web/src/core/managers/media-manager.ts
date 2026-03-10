@@ -11,6 +11,7 @@ import {
 	buildUnknownMediaCompatibilitySnapshot,
 	probeAssetCompatibility,
 } from "@/lib/media/media-compatibility";
+import { analyzeBeatGridFromFile } from "@/lib/media/beat-analysis";
 import { generateFreezeFrameFile } from "@/lib/media/processing";
 
 export class MediaManager {
@@ -143,6 +144,7 @@ export class MediaManager {
 				ephemeral: renamedAsset.ephemeral,
 				mimeType: renamedAsset.mimeType ?? renamedAsset.file.type ?? "",
 				compatibility: renamedAsset.compatibility,
+				beatAnalysis: renamedAsset.beatAnalysis,
 				derived: renamedAsset.derived,
 			};
 			await storageService.saveMediaAssetMetadata({
@@ -406,7 +408,7 @@ export class MediaManager {
 			this.notify();
 
 			try {
-				const metadata: MediaAssetData = {
+			const metadata: MediaAssetData = {
 					id: nextAsset.id,
 					name: nextAsset.name,
 					type: nextAsset.type,
@@ -420,6 +422,7 @@ export class MediaManager {
 					ephemeral: nextAsset.ephemeral,
 					mimeType: nextAsset.mimeType ?? nextAsset.file.type ?? "",
 					compatibility: nextAsset.compatibility,
+					beatAnalysis: nextAsset.beatAnalysis,
 					derived: nextAsset.derived,
 				};
 				await storageService.saveMediaAssetMetadata({
@@ -440,6 +443,60 @@ export class MediaManager {
 			updated,
 			failed,
 		};
+	}
+
+	async analyzeBeatGrid({
+		mediaId,
+	}: {
+		mediaId: string;
+	}): Promise<MediaAsset | null> {
+		const projectId =
+			this.currentProjectId ?? this.editor.project.getActive()?.metadata.id ?? null;
+		if (!projectId) {
+			throw new Error("Open a project before analyzing beats.");
+		}
+
+		const index = this.assets.findIndex((asset) => asset.id === mediaId);
+		if (index < 0) {
+			throw new Error("Music asset not found.");
+		}
+
+		const asset = this.assets[index] as MediaAsset;
+		if (asset.type !== "audio") {
+			throw new Error("Beat analysis currently supports imported audio assets.");
+		}
+
+		const beatAnalysis = await analyzeBeatGridFromFile({ file: asset.file });
+		const nextAsset: MediaAsset = {
+			...asset,
+			beatAnalysis,
+		};
+		this.assets[index] = nextAsset;
+		this.notify();
+
+		const metadata: MediaAssetData = {
+			id: nextAsset.id,
+			name: nextAsset.name,
+			type: nextAsset.type,
+			size: nextAsset.file.size,
+			lastModified: nextAsset.file.lastModified,
+			width: nextAsset.width,
+			height: nextAsset.height,
+			duration: nextAsset.duration,
+			fps: nextAsset.fps,
+			thumbnailUrl: nextAsset.thumbnailUrl,
+			ephemeral: nextAsset.ephemeral,
+			mimeType: nextAsset.mimeType ?? nextAsset.file.type ?? "",
+			compatibility: nextAsset.compatibility,
+			beatAnalysis: nextAsset.beatAnalysis,
+			derived: nextAsset.derived,
+		};
+		await storageService.saveMediaAssetMetadata({
+			projectId,
+			metadata,
+		});
+
+		return nextAsset;
 	}
 
 	scheduleMediaCompatibilityProbe({
