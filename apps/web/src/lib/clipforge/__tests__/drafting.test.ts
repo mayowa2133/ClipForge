@@ -140,6 +140,31 @@ describe("drafting helpers", () => {
 		expect(brief.versionTargets).toEqual(["9:16", "1:1", "16:9"]);
 	});
 
+	test("buildCreativeBriefFromPrompt resolves a saved trend reference when the prompt asks for that sound", () => {
+		const project = buildProjectFixture();
+		project.clipforge = {
+			...project.clipforge!,
+			trendSoundReferences: [
+				{
+					id: "trend-1",
+					label: "Morning Luxury Sound",
+					platform: "tiktok",
+					creator: "Creator",
+					sourceUrl: "https://tiktok.com/example",
+					notes: "Use this vibe for luxury pacing.",
+					createdAt: "2026-03-10T00:00:00.000Z",
+				},
+			],
+		};
+
+		const brief = buildCreativeBriefFromPrompt({
+			prompt: "make this feel like that TikTok sound",
+			project,
+		});
+
+		expect(brief.trendSoundReferenceId).toBe("trend-1");
+	});
+
 	test("planDraftRecipe includes core assembly steps and warnings when montage prerequisites are missing", () => {
 		const project = buildProjectFixture();
 		project.clipforge = {
@@ -206,6 +231,40 @@ describe("drafting helpers", () => {
 		const montageStep = recipe.operations.find((step) => step.kind === "auto-montage");
 		expect(montageStep?.params.musicMediaId).toBe("song-1");
 		expect(montageStep?.params.beatDivision).toBe(2);
+	});
+
+	test("planDraftRecipe surfaces a warning when a trend reference is used as a pacing cue only", () => {
+		const project = buildProjectFixture();
+		project.clipforge = {
+			...project.clipforge!,
+			trendSoundReferences: [
+				{
+					id: "trend-1",
+					label: "Morning Luxury Sound",
+					platform: "tiktok",
+					creator: "Creator",
+					sourceUrl: "https://tiktok.com/example",
+					notes: "Use this vibe for luxury pacing.",
+					createdAt: "2026-03-10T00:00:00.000Z",
+				},
+			],
+		};
+
+		const recipe = planDraftRecipe({
+			brief: buildCreativeBriefFromPrompt({
+				prompt: "make this feel like that TikTok sound",
+				project,
+			}),
+			project,
+			mediaAssets: [buildMediaAsset({ id: "video-1", type: "video", duration: 8 })],
+			beatSourceMediaId: null,
+			beatMarkerCount: 0,
+			projectKitTemplates: [],
+		});
+
+		expect(recipe.warnings).toContain(
+			'Using trend reference "Morning Luxury Sound" as a pacing/style cue only; you still need a valid bundled or imported audio track.',
+		);
 	});
 
 	test("planDraftRecipe matches a project kit deterministically from the brief", () => {

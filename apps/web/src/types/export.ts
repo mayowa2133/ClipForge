@@ -1,5 +1,11 @@
 import type { ProjectVersionTarget } from "./project";
 
+export type PublishDestination =
+	| "generic-export"
+	| "tiktok"
+	| "instagram"
+	| "youtube";
+
 export const EXPORT_QUALITY_VALUES = [
 	"low",
 	"medium",
@@ -40,6 +46,9 @@ export type ExportPreflightCode =
 	| "version-safe-area-warning"
 	| "version-text-overflow-warning"
 	| "version-hidden-warning"
+	| "music-rights-unknown-warning"
+	| "music-platform-limited-warning"
+	| "music-attribution-required-warning"
 	| "unknown";
 
 export type ExportPreflightAction =
@@ -73,6 +82,7 @@ export interface ExportPreflightIssue {
 	compatibilityReason?: string | null;
 	compatibilityCheckedAt?: string | null;
 	targetVersionId?: ProjectVersionTarget | null;
+	publishDestination?: PublishDestination | null;
 }
 
 export interface ExportPreflightResult {
@@ -135,6 +145,7 @@ export interface ExportOptions {
 	fps?: number;
 	includeAudio?: boolean;
 	targetVersionId?: ProjectVersionTarget | null;
+	publishDestination?: PublishDestination | null;
 	onProgress?: ({ progress }: { progress: number }) => void;
 	onCancel?: () => boolean;
 }

@@ -132,6 +132,7 @@ describe("audio mix helpers", () => {
 				activeCaptionStyleId: "clean-bottom",
 				captionTrackIdsBySceneId: {},
 				sceneFootageIntelligenceBySceneId: {},
+				trendSoundReferences: [],
 				opsAudit: [],
 			},
 		} as Partial<TProject>);

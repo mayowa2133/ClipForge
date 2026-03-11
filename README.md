@@ -148,6 +148,10 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
    - built-in starter music and SFX in `Audio -> Songs` and `Audio -> Sound effects`
    - built-in sticker/icon pack in `Stickers`
    - bundled caption/graphics/overlay/motion presets in the existing creative surfaces
+   - `Audio -> Songs` also separates:
+     - bundled starter music
+     - trend-sound references you save manually as style/pacing cues
+     - imported audio with explicit user-managed rights labels
 8. Open chat from the right panel toggle (or `Ctrl/Cmd + /`).
    - Direct edit prompts (for example `trim this clip by 0.5s at the start`, `add text here that says "watch this"`, `replace "teh" with "the" in this caption`, or `trim the first clip by 0.5s and move it to 5s`) still produce deterministic JSON ops for review/apply.
    - High-level draft prompts (for example `make me a viral TikTok from this`, `luxury morning routine style`, or `make it shorter with bold captions`) now produce a structured `Draft recipe` card first.
@@ -159,6 +163,7 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
    - `Exact` means sampled frames matched export without fallback; `Approximate` means fallback was needed; `Unsupported` means sampled export parity is not trustworthy for the current graph.
    - Export now runs a deterministic preflight readiness check in the popover.
    - Preflight is now reactive while the popover is open and refreshes automatically as project/media/timeline state changes.
+   - Export now also asks for a publish destination (`generic export`, `TikTok`, `Instagram`, `YouTube`) so music-rights warnings can be evaluated against the intended destination.
    - Blocking issues (for example missing media refs or invalid ranges) must be fixed before export starts.
    - Missing media now uses a relink-first recovery flow: relink the missing `mediaId` to a compatible file without rewriting timeline segment IDs/timing.
    - Export preflight now also hard-blocks referenced media with unresolved or incompatible decode capability (`media-compatibility-unverified`, `unsupported-media-codec`, `unsupported-audio-decode`).
@@ -173,6 +178,11 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
      - export the current active target or all enabled targets in one run
      - exported filenames include deterministic target suffixes such as `_9x16`, `_1x1`, `_16x9`
    - Warning-only states (for example low quality, audio off, WebM compatibility) do not block export.
+   - Music-rights issues are warning-first:
+     - bundled starter tracks are treated as universal starter-library assets
+     - imported tracks warn that rights are user-managed/unknown
+     - platform-limited or attribution-required tracks surface explicit destination/attribution warnings
+     - export remains allowed after acknowledgment because the app cannot authoritatively own the user's rights
    - The export popover now also shows the same preview fidelity report as a non-blocking trust signal before render starts.
    - Runtime export still uses the existing binary pipeline and diagnostics once encoding begins.
    - If runtime export fails, ClipForge now shows explicit deterministic retry options (`Retry same settings` and a recommended safe profile when available).
@@ -225,6 +235,10 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
   - `Graphics`, `Captions`, `Audio`, and `Stickers` now expose bundled starter content before remote/imported sources
   - `Graphics -> Brand` now includes default bundled caption style, title preset, and music mood preferences
   - `Settings` now shows the bundled library packs and their license labels
+- Music source handling is now explicit:
+  - bundled music = universal/free-first starter library
+  - imported audio = user-managed rights
+  - trend references = planning cues only, not playable/licensed audio assets
 
 ### Built-in demo project
 

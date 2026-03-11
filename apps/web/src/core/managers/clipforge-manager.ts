@@ -49,12 +49,14 @@ import type {
 	DraftImpactSummary,
 	DraftRecipe,
 	FootageIntelligenceReport,
+	TrendSoundReference,
 	TimelineDiffOp,
 	CutRangeOp,
 	TimelineDiffOpSource,
 } from "@/types/clipforge";
 import type {
 	ExportFormat,
+	PublishDestination,
 	ExportPreflightAction,
 	ExportPreflightResult,
 	ExportQuality,
@@ -478,6 +480,99 @@ export class ClipForgeManager {
 			prompt,
 			project: activeProject,
 		});
+	}
+
+	getTrendSoundReferences(): TrendSoundReference[] {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			return [];
+		}
+
+		return ensureClipForgeProjectData({ project: activeProject }).clipforge
+			.trendSoundReferences;
+	}
+
+	saveTrendSoundReference({
+		label,
+		platform,
+		creator,
+		sourceUrl,
+		notes,
+	}: {
+		label: string;
+		platform: TrendSoundReference["platform"];
+		creator?: string | null;
+		sourceUrl?: string | null;
+		notes?: string | null;
+	}): TrendSoundReference {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+
+		const normalizedLabel = label.trim();
+		if (!normalizedLabel) {
+			throw new Error("Trend sound label is required.");
+		}
+
+		const nextProject = ensureClipForgeProjectData({ project: activeProject });
+		const nextReference: TrendSoundReference = {
+			id: crypto.randomUUID(),
+			label: normalizedLabel,
+			platform,
+			creator: creator?.trim() ? creator.trim() : null,
+			sourceUrl: sourceUrl?.trim() ? sourceUrl.trim() : null,
+			notes: notes?.trim() ? notes.trim() : null,
+			createdAt: new Date().toISOString(),
+		};
+
+		this.editor.project.setActiveProject({
+			project: {
+				...nextProject,
+				metadata: {
+					...nextProject.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...nextProject.clipforge,
+					trendSoundReferences: [
+						nextReference,
+						...nextProject.clipforge.trendSoundReferences,
+					],
+				},
+			},
+		});
+		this.editor.save.markDirty();
+		return nextReference;
+	}
+
+	removeTrendSoundReference({
+		referenceId,
+	}: {
+		referenceId: string;
+	}): void {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+
+		const nextProject = ensureClipForgeProjectData({ project: activeProject });
+		this.editor.project.setActiveProject({
+			project: {
+				...nextProject,
+				metadata: {
+					...nextProject.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...nextProject.clipforge,
+					trendSoundReferences: nextProject.clipforge.trendSoundReferences.filter(
+						(reference) => reference.id !== referenceId,
+					),
+				},
+			},
+		});
+		this.editor.save.markDirty();
 	}
 
 	async analyzeSceneFootageIntelligence(): Promise<FootageIntelligenceReport> {
@@ -1272,11 +1367,13 @@ export class ClipForgeManager {
 		quality,
 		includeAudio,
 		targetVersionId = null,
+		publishDestination = "generic-export",
 	}: {
 		format: ExportFormat;
 		quality: ExportQuality;
 		includeAudio: boolean;
 		targetVersionId?: ProjectVersionTarget | null;
+		publishDestination?: PublishDestination;
 	}): ExportPreflightResult {
 		return evaluateExportPreflight({
 			project: this.editor.project.getActive(),
@@ -1285,6 +1382,7 @@ export class ClipForgeManager {
 			quality,
 			includeAudio,
 			targetVersionId,
+			publishDestination,
 		});
 	}
 

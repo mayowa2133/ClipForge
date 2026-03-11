@@ -108,6 +108,18 @@ export interface FootageIntelligenceReport {
 	warnings: string[];
 }
 
+export type TrendSoundPlatform = "tiktok" | "instagram" | "youtube";
+
+export interface TrendSoundReference {
+	id: string;
+	label: string;
+	platform: TrendSoundPlatform;
+	creator?: string | null;
+	sourceUrl?: string | null;
+	notes?: string | null;
+	createdAt: string;
+}
+
 export type CreativeBriefGoal =
 	| "viral-tiktok"
 	| "vlog"
@@ -131,6 +143,7 @@ export interface CreativeBrief {
 	motionPresetId: string | null;
 	beatDivision: 1 | 2 | 4 | null;
 	versionTargets: ProjectVersionTarget[];
+	trendSoundReferenceId?: string | null;
 	notes: string | null;
 }
 
@@ -324,6 +337,7 @@ export interface ClipForgeProjectData {
 	activeCaptionStyleId: string | null;
 	captionTrackIdsBySceneId: Record<string, string | null>;
 	sceneFootageIntelligenceBySceneId: Record<string, FootageIntelligenceReport | null>;
+	trendSoundReferences: TrendSoundReference[];
 	opsAudit: TimelineDiffAuditEntry[];
 }
 

@@ -33,6 +33,7 @@ import {
 	type ExportPreflightIssue,
 	type ExportPreflightResult,
 	type ExportQuality,
+	type PublishDestination,
 	type ExportRecoveryRecommendation,
 	type ExportResult,
 	type ExportRetryProfile,
@@ -53,6 +54,7 @@ import {
 	getEnabledVersionTargets,
 } from "@/lib/timeline";
 import { getVersionTargetLabel } from "@/constants/project-constants";
+import { formatPublishDestination } from "@/lib/library";
 import type { ProjectVersionTarget } from "@/types/project";
 import {
 	formatPreviewFidelityStatusLabel,
@@ -133,6 +135,8 @@ function ExportPopover({
 	const [includeAudio, setIncludeAudio] = useState<boolean>(
 		DEFAULT_EXPORT_OPTIONS.includeAudio ?? true,
 	);
+	const [publishDestination, setPublishDestination] =
+		useState<PublishDestination>("generic-export");
 	const [isExporting, setIsExporting] = useState(false);
 	const [preflightMessages, setPreflightMessages] = useState<string[]>([]);
 	const [progress, setProgress] = useState(0);
@@ -155,6 +159,7 @@ function ExportPopover({
 		quality,
 		includeAudio,
 		targetVersionId: activeVersionTargetId,
+		publishDestination,
 	});
 	const {
 		report: previewFidelityReport,
@@ -172,6 +177,7 @@ function ExportPopover({
 		setIsRelinking(false);
 		setIsScanningCompatibility(false);
 		setExportScope("current");
+		setPublishDestination("generic-export");
 	}, [isOpen]);
 
 	const blockingFixActions = useMemo(
@@ -387,12 +393,14 @@ function ExportPopover({
 		attemptQuality = quality,
 		attemptIncludeAudio = includeAudio,
 		targetVersionId = activeVersionTargetId,
+		attemptPublishDestination = publishDestination,
 		closeOnSuccess = true,
 	}: {
 		attemptFormat?: ExportFormat;
 		attemptQuality?: ExportQuality;
 		attemptIncludeAudio?: boolean;
 		targetVersionId?: ProjectVersionTarget | null;
+		attemptPublishDestination?: PublishDestination;
 		closeOnSuccess?: boolean;
 	} = {}): Promise<ExportResult | null> => {
 		const currentProject = editor.project.getActive();
@@ -402,6 +410,7 @@ function ExportPopover({
 			quality: attemptQuality,
 			includeAudio: attemptIncludeAudio,
 			targetVersionId,
+			publishDestination: attemptPublishDestination,
 		});
 		if (!finalPreflight.ready) {
 			refreshPreflight();
@@ -421,6 +430,7 @@ function ExportPopover({
 				fps: currentProject.settings.fps,
 				includeAudio: attemptIncludeAudio,
 				targetVersionId,
+				publishDestination: attemptPublishDestination,
 				onProgress: ({ progress }) => setProgress(progress),
 				onCancel: () => cancelRequestedRef.current,
 			},
@@ -489,6 +499,7 @@ function ExportPopover({
 					quality,
 					includeAudio,
 					targetVersionId: target.id,
+					publishDestination,
 				});
 				if (!finalPreflight.ready) {
 					setPreflightMessages([
@@ -713,6 +724,46 @@ function ExportPopover({
 													Include audio in export
 												</Label>
 											</div>
+										</SectionContent>
+									</Section>
+
+									<Section>
+										<SectionHeader title="Destination" />
+										<SectionContent>
+											<RadioGroup
+												value={publishDestination}
+												onValueChange={(value) => {
+													if (
+														value === "generic-export" ||
+														value === "tiktok" ||
+														value === "instagram" ||
+														value === "youtube"
+													) {
+														setPublishDestination(value);
+													}
+												}}
+											>
+												<div className="flex items-center space-x-2">
+													<RadioGroupItem value="generic-export" id="publish-generic-export" />
+													<Label htmlFor="publish-generic-export">Generic export</Label>
+												</div>
+												<div className="flex items-center space-x-2">
+													<RadioGroupItem value="tiktok" id="publish-tiktok" />
+													<Label htmlFor="publish-tiktok">TikTok</Label>
+												</div>
+												<div className="flex items-center space-x-2">
+													<RadioGroupItem value="instagram" id="publish-instagram" />
+													<Label htmlFor="publish-instagram">Instagram</Label>
+												</div>
+												<div className="flex items-center space-x-2">
+													<RadioGroupItem value="youtube" id="publish-youtube" />
+													<Label htmlFor="publish-youtube">YouTube</Label>
+												</div>
+											</RadioGroup>
+											<p className="text-muted-foreground text-[10px]">
+												Music rights warnings are checked against{" "}
+												{formatPublishDestination({ publishDestination })}.
+											</p>
 										</SectionContent>
 									</Section>
 

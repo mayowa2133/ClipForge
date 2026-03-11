@@ -2,6 +2,8 @@ import type {
 	DerivedMediaOrigin,
 	MediaBeatAnalysis,
 	MediaCompatibilitySnapshot,
+	MusicRightsProfile,
+	MusicSourceType,
 	MediaVisualAnalysis,
 	MediaType,
 } from "@/types/assets";
@@ -40,6 +42,15 @@ export interface MediaAssetData {
 	beatAnalysis?: MediaBeatAnalysis;
 	visualAnalysis?: MediaVisualAnalysis;
 	derived?: DerivedMediaOrigin;
+	musicSourceType?: MusicSourceType;
+	rightsProfile?: MusicRightsProfile;
+	allowedDestinations?:
+		| Array<"tiktok" | "instagram" | "youtube" | "generic-export">
+		| null;
+	attributionRequired?: boolean;
+	attributionText?: string | null;
+	sourceLabel?: string | null;
+	sourceUrl?: string | null;
 }
 
 export type SerializedScene = Omit<TScene, "createdAt" | "updatedAt"> & {

@@ -1,4 +1,5 @@
 import { buildUnknownMediaCompatibilitySnapshot } from "@/lib/media/media-compatibility";
+import { buildBundledMusicRights } from "@/lib/library/music-rights";
 import type { AudioLibraryItem } from "@/types/library";
 import type { MediaAsset, MediaBeatAnalysis } from "@/types/assets";
 import type { EditorCore } from "@/core";
@@ -72,6 +73,7 @@ export async function ensureBundledAudioAsset({
 			mimeType: file.type,
 			libraryItemId: item.id,
 			compatibility: buildUnknownMediaCompatibilitySnapshot(),
+			...buildBundledMusicRights({ item }),
 			beatAnalysis:
 				item.kind === "music" && typeof item.bpm === "number"
 					? buildBundledBeatAnalysis({

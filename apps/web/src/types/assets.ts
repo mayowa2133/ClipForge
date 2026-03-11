@@ -32,6 +32,14 @@ export interface MediaVisualAnalysis {
 	version: 1;
 }
 
+export type MusicSourceType =
+	| "bundled"
+	| "user-imported"
+	| "royalty-free-external"
+	| "trend-reference";
+
+export type MusicRightsProfile = "universal" | "platform-limited" | "unknown";
+
 export interface DerivedMediaOrigin {
 	kind: "freeze-frame";
 	sourceMediaId: string;
@@ -44,4 +52,13 @@ export interface MediaAsset
 	url?: string;
 	derived?: DerivedMediaOrigin;
 	libraryItemId?: string;
+	musicSourceType?: MusicSourceType;
+	rightsProfile?: MusicRightsProfile;
+	allowedDestinations?:
+		| Array<"tiktok" | "instagram" | "youtube" | "generic-export">
+		| null;
+	attributionRequired?: boolean;
+	attributionText?: string | null;
+	sourceLabel?: string | null;
+	sourceUrl?: string | null;
 }

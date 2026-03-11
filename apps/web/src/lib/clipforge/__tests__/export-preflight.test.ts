@@ -5,7 +5,7 @@ import {
 } from "@/lib/clipforge/export-preflight";
 import type { MediaAsset } from "@/types/assets";
 import type { TProject } from "@/types/project";
-import type { VideoTrack } from "@/types/timeline";
+import type { AudioTrack, VideoTrack } from "@/types/timeline";
 
 function buildMediaAssets(): MediaAsset[] {
 	return [
@@ -64,6 +64,46 @@ function buildVideoTrack({
 					rotate: 0,
 				},
 				opacity: 1,
+			},
+		],
+	};
+}
+
+function buildAudioTrack({
+	trackId = "track-audio-1",
+	segmentId = "segment-audio-1",
+	mediaId = "song-1",
+	role = "music",
+	duration = 4,
+	startTime = 0,
+}: {
+	trackId?: string;
+	segmentId?: string;
+	mediaId?: string;
+	role?: "audio" | "voiceover" | "music" | "sfx";
+	duration?: number;
+	startTime?: number;
+} = {}): AudioTrack {
+	return {
+		id: trackId,
+		name: "Audio",
+		type: "audio",
+		isMain: false,
+		muted: false,
+		hidden: false,
+		elements: [
+			{
+				id: segmentId,
+				name: "Audio clip",
+				type: "audio",
+				sourceType: "upload",
+				mediaId,
+				role,
+				duration,
+				startTime,
+				trimStart: 0,
+				trimEnd: 0,
+				volume: 1,
 			},
 		],
 	};
@@ -320,6 +360,81 @@ test("reports invalid ranges as actionable blocker", () => {
 		);
 		expect(result.ready).toBe(false);
 		expect(issue?.action).toBe("normalize-duration");
+	});
+
+	test("warns when imported music has unknown rights for the selected destination", () => {
+		const project = buildProject({
+			tracks: [buildVideoTrack({ duration: 4 }), buildAudioTrack()],
+			duration: 4,
+		});
+		const result = evaluateExportPreflight({
+			project,
+			mediaAssets: [
+				...buildMediaAssets(),
+				{
+					id: "song-1",
+					name: "Imported song",
+					type: "audio",
+					duration: 12,
+					file: new File(["audio"], "song.mp3", { type: "audio/mpeg" }),
+					musicSourceType: "user-imported",
+					rightsProfile: "unknown",
+					allowedDestinations: null,
+					attributionRequired: false,
+					attributionText: null,
+					sourceLabel: "Imported by user",
+					sourceUrl: null,
+				},
+			],
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "instagram",
+		});
+
+		const warning = result.issues.find(
+			(issue) => issue.code === "music-rights-unknown-warning",
+		);
+		expect(warning?.severity).toBe("warning");
+		expect(warning?.publishDestination).toBe("instagram");
+	});
+
+	test("warns when platform-limited music is exported to a different destination", () => {
+		const project = buildProject({
+			tracks: [buildVideoTrack({ duration: 4 }), buildAudioTrack()],
+			duration: 4,
+		});
+		const result = evaluateExportPreflight({
+			project,
+			mediaAssets: [
+				...buildMediaAssets(),
+				{
+					id: "song-1",
+					name: "TikTok-only song",
+					type: "audio",
+					duration: 12,
+					file: new File(["audio"], "song.mp3", { type: "audio/mpeg" }),
+					musicSourceType: "royalty-free-external",
+					rightsProfile: "platform-limited",
+					allowedDestinations: ["tiktok"],
+					attributionRequired: true,
+					attributionText: "Credit Example Artist",
+					sourceLabel: "Example Library",
+					sourceUrl: "https://example.com/song",
+				},
+			],
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "youtube",
+		});
+
+		expect(
+			result.issues.some((issue) => issue.code === "music-platform-limited-warning"),
+		).toBe(true);
+		expect(
+			result.issues.some((issue) => issue.code === "music-attribution-required-warning"),
+		).toBe(true);
 	});
 
 	test("returns ready when only warnings are present", () => {

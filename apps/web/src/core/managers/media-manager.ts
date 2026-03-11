@@ -14,6 +14,7 @@ import {
 import { analyzeBeatGridFromFile } from "@/lib/media/beat-analysis";
 import { analyzeVisualActivityFromFile } from "@/lib/media/visual-analysis";
 import { generateFreezeFrameFile } from "@/lib/media/processing";
+import { buildImportedMusicRights } from "@/lib/library/music-rights";
 
 export class MediaManager {
 	private assets: MediaAsset[] = [];
@@ -32,12 +33,17 @@ export class MediaManager {
 		projectId: string;
 		asset: Omit<MediaAsset, "id">;
 	}): Promise<MediaAsset | null> {
+		const inferredMusicRights =
+			asset.type === "audio" && !asset.musicSourceType
+				? buildImportedMusicRights()
+				: {};
 		const newAsset: MediaAsset = {
 			...asset,
 			id: generateUUID(),
 			libraryItemId: asset.libraryItemId,
 			mimeType: asset.mimeType ?? asset.file.type ?? "",
 			compatibility: asset.compatibility ?? buildUnknownMediaCompatibilitySnapshot(),
+			...inferredMusicRights,
 		};
 		this.currentProjectId = projectId;
 
@@ -150,6 +156,13 @@ export class MediaManager {
 				beatAnalysis: renamedAsset.beatAnalysis,
 				visualAnalysis: renamedAsset.visualAnalysis,
 				derived: renamedAsset.derived,
+				musicSourceType: renamedAsset.musicSourceType,
+				rightsProfile: renamedAsset.rightsProfile,
+				allowedDestinations: renamedAsset.allowedDestinations,
+				attributionRequired: renamedAsset.attributionRequired,
+				attributionText: renamedAsset.attributionText,
+				sourceLabel: renamedAsset.sourceLabel,
+				sourceUrl: renamedAsset.sourceUrl,
 			};
 			await storageService.saveMediaAssetMetadata({
 				projectId,
@@ -175,12 +188,17 @@ export class MediaManager {
 		id: string;
 		asset: Omit<MediaAsset, "id">;
 	}): Promise<MediaAsset | null> {
+		const inferredMusicRights =
+			asset.type === "audio" && !asset.musicSourceType
+				? buildImportedMusicRights()
+				: {};
 		const relinkedAsset: MediaAsset = {
 			...asset,
 			id,
 			libraryItemId: asset.libraryItemId,
 			mimeType: asset.mimeType ?? asset.file.type ?? "",
 			compatibility: buildUnknownMediaCompatibilitySnapshot(),
+			...inferredMusicRights,
 		};
 		this.currentProjectId = projectId;
 		const previousAssets = this.assets;

@@ -21,7 +21,7 @@
 4. Click `Auto Edit TikTok`.
 5. Optionally use the bundled creative library first:
    - `Graphics` for built-in title/overlay presets
-   - `Audio -> Songs` for built-in starter tracks
+   - `Audio -> Songs` for built-in starter tracks, trend references, and imported audio
    - `Audio -> Sound effects` for built-in SFX
    - `Stickers` for built-in sticker/icon packs
 6. ClipForge builds a draft:
@@ -107,3 +107,21 @@ Example chat prompts:
 15. Every retry re-runs preflight before encoding starts.
 16. If export is unavailable or fails in an unsupported case, ClipForge can still generate a preview artifact JSON snapshot as a last-resort fallback with diagnostics (including preflight snapshot metadata when available).
 17. Export can now target the current active version or all enabled version-pack targets in one run, with target-specific suffixes on the output filenames.
+18. Export is destination-aware for music usage:
+   - choose `generic export`, `TikTok`, `Instagram`, or `YouTube`
+   - bundled starter music exports without music-rights warnings
+   - imported tracks surface user-managed rights warnings
+   - platform-limited or attribution-required tracks surface explicit warnings
+   - warnings are non-blocking, but the export review makes the risk clear before render starts
+
+## Flow D: Rights-Safe Music Workflow
+
+1. Open `Audio -> Songs`.
+2. Built-in starter music appears first and is labeled as the universal starter library.
+3. Use `Add reference` in the `Trend sounds` section to save a TikTok/Instagram/YouTube sound as a planning cue.
+4. Imported audio appears in its own section and is labeled as user-managed rights.
+5. Trend references are not playable audio assets:
+   - they exist so M44/M45 can use them as vibe/pacing context
+   - they do not promise the app has rights to the actual song
+6. When exporting, pick a publish destination in the export popover.
+7. If the project uses imported or restricted audio, ClipForge shows warning-first rights guidance instead of pretending the track is universally safe.

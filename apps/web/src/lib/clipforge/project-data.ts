@@ -7,7 +7,7 @@ import type { TProject } from "@/types/project";
 import { adoptLegacyCaptionTracks } from "./caption-studio";
 import { BUILT_IN_CAPTION_STYLE_MAP } from "./caption-style-library";
 
-export const CLIPFORGE_SCHEMA_VERSION = 4;
+export const CLIPFORGE_SCHEMA_VERSION = 5;
 
 export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 	return {
@@ -19,6 +19,7 @@ export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 		activeCaptionStyleId: "clean-bottom",
 		captionTrackIdsBySceneId: {},
 		sceneFootageIntelligenceBySceneId: {},
+		trendSoundReferences: [],
 		opsAudit: [],
 	};
 }
@@ -163,6 +164,41 @@ function normalizeFootageReport({
 	};
 }
 
+function normalizeTrendSoundReferences({
+	references,
+}: {
+	references: unknown;
+}): import("@/types/clipforge").TrendSoundReference[] {
+	if (!Array.isArray(references)) {
+		return [];
+	}
+
+	return references.flatMap((reference) => {
+		if (
+			typeof reference?.id !== "string" ||
+			typeof reference?.label !== "string" ||
+			(reference?.platform !== "tiktok" &&
+				reference?.platform !== "instagram" &&
+				reference?.platform !== "youtube") ||
+			typeof reference?.createdAt !== "string"
+		) {
+			return [];
+		}
+
+		return [
+			{
+				id: reference.id,
+				label: reference.label,
+				platform: reference.platform,
+				creator: typeof reference.creator === "string" ? reference.creator : null,
+				sourceUrl: typeof reference.sourceUrl === "string" ? reference.sourceUrl : null,
+				notes: typeof reference.notes === "string" ? reference.notes : null,
+				createdAt: reference.createdAt,
+			},
+		];
+	});
+}
+
 export function normalizeClipForgeProjectData({
 	clipforge,
 }: {
@@ -198,6 +234,9 @@ export function normalizeClipForgeProjectData({
 				([sceneId, report]) => [sceneId, normalizeFootageReport({ report })],
 			),
 		),
+		trendSoundReferences: normalizeTrendSoundReferences({
+			references: source.trendSoundReferences,
+		}),
 		opsAudit: source.opsAudit ?? [],
 	};
 }

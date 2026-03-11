@@ -13,6 +13,7 @@ import type {
 	DraftRecipe,
 	DraftSectionPlan,
 	FootageIntelligenceReport,
+	TrendSoundReference,
 } from "@/types/clipforge";
 import type { ProjectVersionTarget, TProject } from "@/types/project";
 import type { ProjectKitTemplate, SceneRecipePresetId } from "@/types/templates";
@@ -101,6 +102,10 @@ export function buildCreativeBriefFromPrompt({
 	};
 	const tone = inferTone({ prompt: normalizedPrompt });
 	const goal = inferGoal({ prompt: normalizedPrompt });
+	const trendSoundReference = resolveTrendSoundReference({
+		prompt: normalizedPrompt,
+		references: project.clipforge?.trendSoundReferences ?? [],
+	});
 	const captionStyleId = inferCaptionStyleId({
 		prompt: normalizedPrompt,
 		project,
@@ -124,6 +129,7 @@ export function buildCreativeBriefFromPrompt({
 			overlayDefaults.motionPresetId,
 		beatDivision: inferBeatDivision({ prompt: normalizedPrompt }) ?? montageDefaults.beatDivision,
 		versionTargets,
+		trendSoundReferenceId: trendSoundReference?.id ?? null,
 		notes: prompt.trim() || null,
 	};
 }
@@ -243,6 +249,17 @@ export function planDraftRecipe({
 		});
 	} else {
 		warnings.push("No analyzed beat source is active, so beat-paced montage may be skipped.");
+	}
+	if (brief.trendSoundReferenceId) {
+		const trendReference =
+			project.clipforge?.trendSoundReferences.find(
+				(reference) => reference.id === brief.trendSoundReferenceId,
+			) ?? null;
+		if (trendReference) {
+			warnings.push(
+				`Using trend reference "${trendReference.label}" as a pacing/style cue only; you still need a valid bundled or imported audio track.`,
+			);
+		}
 	}
 	for (const footageWarning of footageIntelligenceReport?.warnings ?? []) {
 		warnings.push(footageWarning);
@@ -431,6 +448,32 @@ function inferVersionTargets({
 		targets.add("16:9");
 	}
 	return targets.size > 0 ? [...targets] : [activeTarget];
+}
+
+function resolveTrendSoundReference({
+	prompt,
+	references,
+}: {
+	prompt: string;
+	references: TrendSoundReference[];
+}): TrendSoundReference | null {
+	if (!/\b(sound|song|audio|trend)\b/i.test(prompt)) {
+		return null;
+	}
+	if (
+		!/\b(tiktok|instagram|youtube|that sound|this sound|trend(?:ing)? sound)\b/i.test(
+			prompt,
+		)
+	) {
+		return null;
+	}
+	const exact = references.find((reference) =>
+		prompt.includes(reference.label.toLowerCase()),
+	);
+	if (exact) {
+		return exact;
+	}
+	return references[0] ?? null;
 }
 
 function parseDurationTarget({ prompt }: { prompt: string }): number | null {

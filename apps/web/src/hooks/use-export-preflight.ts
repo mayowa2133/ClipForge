@@ -9,6 +9,7 @@ import {
 import { EditorCore } from "@/core";
 import type {
 	ExportFormat,
+	PublishDestination,
 	ExportPreflightResult,
 	ExportQuality,
 } from "@/types/export";
@@ -22,6 +23,7 @@ export interface UseExportPreflightInput {
 	quality: ExportQuality;
 	includeAudio: boolean;
 	targetVersionId?: ProjectVersionTarget | null;
+	publishDestination?: PublishDestination;
 }
 
 export interface UseExportPreflightResult {
@@ -65,6 +67,7 @@ export function useExportPreflight({
 	quality,
 	includeAudio,
 	targetVersionId = null,
+	publishDestination = "generic-export",
 }: UseExportPreflightInput): UseExportPreflightResult {
 	const editor = useMemo(() => EditorCore.getInstance(), []);
 	const revisionRef = useRef(0);
@@ -111,12 +114,13 @@ export function useExportPreflight({
 				quality,
 				includeAudio,
 				targetVersionId,
+				publishDestination,
 			});
 			setResult(nextResult);
 			setLastComputedRevision(revisionValue);
 			return nextResult;
 		},
-		[editor, format, includeAudio, quality, targetVersionId],
+		[editor, format, includeAudio, publishDestination, quality, targetVersionId],
 	);
 
 	const refresh = useCallback((): ExportPreflightResult | null => {

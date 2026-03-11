@@ -20,19 +20,33 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useEditor } from "@/hooks/use-editor";
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
 import { useSoundSearch } from "@/hooks/use-sound-search";
 import { ensureBundledAudioAsset } from "@/lib/library/bundled-media";
 import { BUNDLED_MUSIC, BUNDLED_SFX, getBundledMusicByMood } from "@/lib/library";
+import {
+	formatPublishDestination,
+	getDestinationCompatibilityLabel,
+	getMusicRightsLabel,
+} from "@/lib/library";
 import { buildUploadAudioElement } from "@/lib/timeline";
 import { formatTimeCode } from "@/lib/time";
 import { getProjectAudioSettings } from "@/lib/media/audio";
 import { useSoundsStore } from "@/stores/sounds-store";
 import type { MediaAsset } from "@/types/assets";
 import type { AudioLibraryItem } from "@/types/library";
+import type { TrendSoundReference } from "@/types/clipforge";
 import type { SavedSound, SoundEffect } from "@/types/sounds";
 import { cn } from "@/utils/ui";
 import {
@@ -42,6 +56,7 @@ import {
 	PauseIcon,
 	PlayIcon,
 	PlusSignIcon,
+	Link04Icon,
 	VoiceIcon,
 	VolumeHighIcon,
 } from "@hugeicons/core-free-icons";
@@ -524,12 +539,20 @@ function SongsView() {
 	const editor = useEditor();
 	const [search, setSearch] = useState("");
 	const [version, setVersion] = useState(0);
+	const [isTrendDialogOpen, setIsTrendDialogOpen] = useState(false);
+	const [trendLabel, setTrendLabel] = useState("");
+	const [trendPlatform, setTrendPlatform] =
+		useState<TrendSoundReference["platform"]>("tiktok");
+	const [trendCreator, setTrendCreator] = useState("");
+	const [trendSourceUrl, setTrendSourceUrl] = useState("");
+	const [trendNotes, setTrendNotes] = useState("");
 
 	useEffect(() => {
 		const unsubscribers = [
 			editor.media.subscribe(() => setVersion((value) => value + 1)),
 			editor.timeline.subscribe(() => setVersion((value) => value + 1)),
 			editor.audio.subscribe(() => setVersion((value) => value + 1)),
+			editor.project.subscribe(() => setVersion((value) => value + 1)),
 		];
 		return () => {
 			unsubscribers.forEach((unsubscribe) => unsubscribe());
@@ -538,6 +561,7 @@ function SongsView() {
 	void version;
 	const activeProject = editor.project.getActive();
 	const preferredMood = activeProject?.settings.libraryDefaults?.musicMood ?? null;
+	const trendReferences = activeProject?.clipforge?.trendSoundReferences ?? [];
 
 	const voiceoverAssetIds = useMemo(
 		() =>
@@ -577,13 +601,47 @@ function SongsView() {
 	const bundledMusic = getBundledMusicByMood({ mood: preferredMood }).filter((item) =>
 		item.label.toLowerCase().includes(search.trim().toLowerCase()),
 	);
+	const filteredTrendReferences = trendReferences.filter((reference) =>
+		[
+			reference.label,
+			reference.creator ?? "",
+			reference.notes ?? "",
+			reference.platform,
+		]
+			.join(" ")
+			.toLowerCase()
+			.includes(search.trim().toLowerCase()),
+	);
+
+	const handleSaveTrendReference = () => {
+		try {
+			editor.clipforge.saveTrendSoundReference({
+				label: trendLabel,
+				platform: trendPlatform,
+				creator: trendCreator,
+				sourceUrl: trendSourceUrl,
+				notes: trendNotes,
+			});
+			setTrendLabel("");
+			setTrendCreator("");
+			setTrendSourceUrl("");
+			setTrendNotes("");
+			setTrendPlatform("tiktok");
+			setIsTrendDialogOpen(false);
+			toast.success("Trend sound reference saved.");
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Unable to save trend reference.",
+			);
+		}
+	};
 
 	return (
 		<div className="flex h-full flex-col gap-5">
 			<div className="space-y-2">
 				<p className="text-sm font-medium">Songs</p>
 				<p className="text-muted-foreground text-sm">
-					Built-in starter tracks come first. Imported audio stays available as custom music beds.
+					Built-in starter tracks come first. Trend references stay separate from actual audio, and imported audio stays available as custom music beds.
 				</p>
 				<p className="text-muted-foreground text-xs">
 					Beat source: {activeBeatSource ? `${"label" in activeBeatSource ? activeBeatSource.label : activeBeatSource.name}${beatState.bpm ? ` · ${beatState.bpm} BPM` : ""}` : "None selected"}
@@ -624,10 +682,100 @@ function SongsView() {
 						) : null}
 					</div>
 					<div className="space-y-3 pt-2">
+						<div className="flex items-start justify-between gap-3">
+							<div>
+								<p className="text-sm font-medium">Trend sounds</p>
+								<p className="text-muted-foreground text-xs">
+									Save TikTok, Instagram, or YouTube sound references as style and pacing notes. These do not provide the audio itself.
+								</p>
+							</div>
+							<Dialog open={isTrendDialogOpen} onOpenChange={setIsTrendDialogOpen}>
+								<DialogTrigger asChild>
+									<Button size="sm" variant="outline">Add reference</Button>
+								</DialogTrigger>
+								<DialogContent>
+									<DialogHeader>
+										<DialogTitle>Add trend sound reference</DialogTitle>
+										<DialogDescription>
+											Save a sound link or title as a planning reference. You still need a valid bundled or imported audio track for export.
+										</DialogDescription>
+									</DialogHeader>
+									<div className="space-y-3">
+										<Input
+											placeholder="Sound title"
+											value={trendLabel}
+											onChange={({ currentTarget }) => setTrendLabel(currentTarget.value)}
+										/>
+										<Select
+											value={trendPlatform}
+											onValueChange={(value) => {
+												if (
+													value === "tiktok" ||
+													value === "instagram" ||
+													value === "youtube"
+												) {
+													setTrendPlatform(value);
+												}
+											}}
+										>
+											<SelectTrigger>
+												<SelectValue placeholder="Platform" />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="tiktok">TikTok</SelectItem>
+												<SelectItem value="instagram">Instagram</SelectItem>
+												<SelectItem value="youtube">YouTube</SelectItem>
+											</SelectContent>
+										</Select>
+										<Input
+											placeholder="Creator (optional)"
+											value={trendCreator}
+											onChange={({ currentTarget }) => setTrendCreator(currentTarget.value)}
+										/>
+										<Input
+											placeholder="Source URL (optional)"
+											value={trendSourceUrl}
+											onChange={({ currentTarget }) => setTrendSourceUrl(currentTarget.value)}
+										/>
+										<Textarea
+											placeholder="Notes like use this vibe, pacing, or hook"
+											value={trendNotes}
+											onChange={({ currentTarget }) => setTrendNotes(currentTarget.value)}
+											rows={3}
+										/>
+									</div>
+									<DialogFooter>
+										<Button variant="text" onClick={() => setIsTrendDialogOpen(false)}>
+											Cancel
+										</Button>
+										<Button onClick={handleSaveTrendReference}>Save reference</Button>
+									</DialogFooter>
+								</DialogContent>
+							</Dialog>
+						</div>
+						{filteredTrendReferences.map((reference) => (
+							<TrendSoundReferenceItem
+								key={reference.id}
+								reference={reference}
+								onRemove={() => {
+									editor.clipforge.removeTrendSoundReference({
+										referenceId: reference.id,
+									});
+									toast.success("Trend sound reference removed.");
+								}}
+							/>
+						))}
+						{filteredTrendReferences.length === 0 ? (
+							<div className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
+								Save a trend reference to keep a TikTok or Reels audio vibe attached to the project.
+							</div>
+						) : null}
+					</div>
+					<div className="space-y-3 pt-2">
 						<div>
 							<p className="text-sm font-medium">Imported audio</p>
 							<p className="text-muted-foreground text-xs">
-								User-imported audio stays available alongside the built-in library.
+								User-imported audio stays available alongside the built-in library. You are responsible for any usage rights on imported tracks.
 							</p>
 						</div>
 						{audioAssets.map((asset) => (
@@ -644,8 +792,55 @@ function SongsView() {
 							</div>
 						) : null}
 					</div>
+					<div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+						<p className="font-medium text-foreground">Music rights</p>
+						<p className="mt-1">Bundled tracks are free-first starter music and safe for generic export.</p>
+						<p className="mt-1">Imported tracks are user-managed. ClipForge warns about unknown or destination-limited rights but does not hard-block export.</p>
+						<p className="mt-1">Trend references are planning cues only. They do not include playable or licensed audio.</p>
+					</div>
 				</div>
 			</ScrollArea>
+		</div>
+	);
+}
+
+function TrendSoundReferenceItem({
+	reference,
+	onRemove,
+}: {
+	reference: TrendSoundReference;
+	onRemove: () => void;
+}) {
+	return (
+		<div className="rounded-lg border p-3">
+			<div className="flex items-start justify-between gap-3">
+				<div className="min-w-0">
+					<div className="flex items-center gap-2">
+						<HugeiconsIcon icon={Link04Icon} className="size-4 text-muted-foreground" />
+						<p className="truncate text-sm font-medium">{reference.label}</p>
+					</div>
+					<p className="text-muted-foreground mt-1 text-xs">
+						{formatPublishDestination({ publishDestination: reference.platform })}
+						{reference.creator ? ` · ${reference.creator}` : ""}
+					</p>
+					{reference.notes ? (
+						<p className="text-muted-foreground mt-2 text-xs">{reference.notes}</p>
+					) : null}
+					{reference.sourceUrl ? (
+						<a
+							href={reference.sourceUrl}
+							target="_blank"
+							rel="noreferrer"
+							className="mt-2 inline-block text-xs text-primary underline-offset-2 hover:underline"
+						>
+							Open source
+						</a>
+					) : null}
+				</div>
+				<Button variant="text" size="sm" onClick={onRemove}>
+					Delete
+				</Button>
+			</div>
 		</div>
 	);
 }
@@ -891,7 +1086,13 @@ function BundledAudioItem({
 						{item.kind === "music" && item.bpm ? ` · ${item.bpm} BPM` : ""}
 					</p>
 					<p className="text-muted-foreground text-xs">
-						Built-in · {item.license}
+						{getMusicRightsLabel({
+							asset: {
+								musicSourceType: "bundled",
+								rightsProfile: "universal",
+							} as MediaAsset,
+						})}{" "}
+						· {item.license}
 						{isBeatSource ? " · Active markers" : ""}
 					</p>
 				</div>
@@ -986,6 +1187,11 @@ function UploadedAudioItem({
 		toast.success("Using song for beat markers.");
 	};
 	const beatLabel = asset.beatAnalysis?.bpm ? `${asset.beatAnalysis.bpm} BPM` : null;
+	const rightsLabel = getMusicRightsLabel({ asset });
+	const compatibilityLabel = getDestinationCompatibilityLabel({
+		asset,
+		publishDestination: "generic-export",
+	});
 
 	return (
 		<div className="group flex flex-col gap-3 rounded-lg border p-3">
@@ -1002,6 +1208,15 @@ function UploadedAudioItem({
 						<p className="text-muted-foreground text-xs">
 							{beatLabel ?? "Beat grid not analyzed"}
 							{isBeatSource ? " · Active markers" : ""}
+						</p>
+					) : null}
+					<p className="text-muted-foreground text-xs">
+						{asset.sourceLabel ?? "Imported by user"} · {rightsLabel}
+						{compatibilityLabel ? ` · ${compatibilityLabel}` : ""}
+					</p>
+					{asset.attributionRequired && asset.attributionText ? (
+						<p className="text-muted-foreground text-[10px]">
+							Attribution: {asset.attributionText}
 						</p>
 					) : null}
 				</div>

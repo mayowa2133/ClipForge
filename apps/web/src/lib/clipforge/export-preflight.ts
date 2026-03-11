@@ -9,6 +9,7 @@ import {
 	buildExportPreflightIssueId,
 	buildProjectHealthFingerprint,
 } from "@/lib/clipforge/project-health";
+import { collectMusicRightsWarnings } from "@/lib/library";
 import {
 	applyVersionOverridesToTracks,
 	collectVersionLayoutWarnings,
@@ -22,6 +23,7 @@ import type {
 	ExportPreflightAction,
 	ExportPreflightIssue,
 	ExportPreflightResult,
+	PublishDestination,
 	ExportQuality,
 } from "@/types/export";
 
@@ -57,6 +59,7 @@ export function evaluateExportPreflight({
 	quality,
 	includeAudio,
 	targetVersionId = null,
+	publishDestination = "generic-export",
 }: {
 	project: TProject | null;
 	mediaAssets: MediaAsset[];
@@ -64,6 +67,7 @@ export function evaluateExportPreflight({
 	quality: ExportQuality;
 	includeAudio: boolean;
 	targetVersionId?: ProjectVersionTarget | null;
+	publishDestination?: PublishDestination;
 }): ExportPreflightResult {
 	const healthFingerprint = `${buildProjectHealthFingerprint({
 		project,
@@ -88,6 +92,7 @@ export function evaluateExportPreflight({
 		mediaAssets,
 		includeAudio,
 		targetVersionId,
+		publishDestination,
 	});
 	const issues = [...inspection.issues];
 
@@ -152,13 +157,14 @@ export function applyExportPreflightActions({
 
 	for (const action of dedupedActions) {
 		switch (action) {
-			case "remove-missing-segments": {
-				const snapshotProject = getProject() ?? project;
-				const inspection = inspectProjectForPreflight({
-					project: snapshotProject,
-					mediaAssets,
-					includeAudio: true,
-				});
+				case "remove-missing-segments": {
+					const snapshotProject = getProject() ?? project;
+					const inspection = inspectProjectForPreflight({
+						project: snapshotProject,
+						mediaAssets,
+						includeAudio: true,
+						publishDestination: "generic-export",
+					});
 				const targetIds = inspection.segmentInspections
 					.filter((segment) => segment.hasMissingAsset)
 					.map((segment) => segment.segmentId);
@@ -184,13 +190,14 @@ export function applyExportPreflightActions({
 				}
 				continue;
 			}
-			case "remove-invalid-ranges": {
-				const snapshotProject = getProject() ?? project;
-				const inspection = inspectProjectForPreflight({
-					project: snapshotProject,
-					mediaAssets,
-					includeAudio: true,
-				});
+				case "remove-invalid-ranges": {
+					const snapshotProject = getProject() ?? project;
+					const inspection = inspectProjectForPreflight({
+						project: snapshotProject,
+						mediaAssets,
+						includeAudio: true,
+						publishDestination: "generic-export",
+					});
 				const targetIds = inspection.segmentInspections
 					.filter((segment) => segment.hasInvalidRange)
 					.map((segment) => segment.segmentId);
@@ -306,11 +313,13 @@ function inspectProjectForPreflight({
 	mediaAssets,
 	includeAudio,
 	targetVersionId,
+	publishDestination,
 }: {
 	project: TProject;
 	mediaAssets: MediaAsset[];
 	includeAudio: boolean;
 	targetVersionId?: ProjectVersionTarget | null;
+	publishDestination: PublishDestination;
 }): PreflightInspectionResult {
 	const issues: ExportPreflightIssue[] = [];
 	if (project.scenes.length === 0) {
@@ -487,6 +496,37 @@ function inspectProjectForPreflight({
 		}
 	}
 
+	const warnedMusicIds = new Set<string>();
+	for (const track of assembledTracks) {
+		if (track.type !== "audio") continue;
+		for (const element of track.elements) {
+			if (element.type !== "audio") continue;
+			if ((element.role ?? "audio") !== "music") continue;
+			if (element.sourceType !== "upload") continue;
+			const asset = mediaAssets.find((candidate) => candidate.id === element.mediaId) ?? null;
+			if (!asset || warnedMusicIds.has(asset.id)) continue;
+			warnedMusicIds.add(asset.id);
+			for (const warning of collectMusicRightsWarnings({
+				asset,
+				publishDestination,
+			})) {
+				issues.push(
+					createIssue({
+						code: warning.code,
+						severity: "warning",
+						message: warning.message,
+						actionable: false,
+						action: null,
+						trackId: track.id,
+						segmentId: element.id,
+						mediaId: asset.id,
+						publishDestination,
+					}),
+				);
+			}
+		}
+	}
+
 	if (
 		Number.isFinite(project.metadata.duration) &&
 		Math.abs(project.metadata.duration - timelineDuration) >
@@ -528,6 +568,7 @@ function inspectProjectForPreflight({
 					trackId: warning.trackId ?? null,
 					segmentId: warning.segmentId ?? null,
 					targetVersionId,
+					publishDestination,
 				}),
 			);
 		}

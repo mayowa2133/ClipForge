@@ -354,6 +354,13 @@ class StorageService {
 			beatAnalysis: metadata.beatAnalysis,
 			visualAnalysis: metadata.visualAnalysis,
 			derived: metadata.derived,
+			musicSourceType: metadata.musicSourceType,
+			rightsProfile: metadata.rightsProfile,
+			allowedDestinations: metadata.allowedDestinations,
+			attributionRequired: metadata.attributionRequired,
+			attributionText: metadata.attributionText,
+			sourceLabel: metadata.sourceLabel,
+			sourceUrl: metadata.sourceUrl,
 		};
 	}
 
@@ -380,6 +387,13 @@ class StorageService {
 			beatAnalysis: mediaAsset.beatAnalysis,
 			visualAnalysis: mediaAsset.visualAnalysis,
 			derived: mediaAsset.derived,
+			musicSourceType: mediaAsset.musicSourceType,
+			rightsProfile: mediaAsset.rightsProfile,
+			allowedDestinations: mediaAsset.allowedDestinations,
+			attributionRequired: mediaAsset.attributionRequired,
+			attributionText: mediaAsset.attributionText,
+			sourceLabel: mediaAsset.sourceLabel,
+			sourceUrl: mediaAsset.sourceUrl,
 		};
 	}
 

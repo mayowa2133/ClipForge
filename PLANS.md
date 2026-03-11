@@ -52,6 +52,7 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M44: AI creative director with brief-to-draft TikTok recipe planning and deterministic draft assembly.
 - [x] M45: Footage intelligence with hook selection, moment scoring, and keep/cut ranking.
 - [x] M46: Creative library foundations with free-first bundled fonts, music, sound effects, stickers, presets, and attribution-safe starter packs.
+- [ ] M47: Rights-safe music workflow with free library expansion, trend references, rights labeling, and destination-aware export warnings.
 
 ## Working Rules
 
