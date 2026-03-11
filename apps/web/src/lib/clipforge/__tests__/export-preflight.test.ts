@@ -88,9 +88,7 @@ function buildAudioTrack({
 		id: trackId,
 		name: "Audio",
 		type: "audio",
-		isMain: false,
 		muted: false,
-		hidden: false,
 		elements: [
 			{
 				id: segmentId,

@@ -16,7 +16,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { TRANSCRIPTION_LANGUAGES } from "@/constants/transcription-constants";
 import { useEditor } from "@/hooks/use-editor";
 import { getBuiltInCaptionStyleLabel } from "@/lib/clipforge/caption-style-library";
+import { getAnimationSfxPairingsForTarget } from "@/lib/timeline";
 import type { CaptionSegmentView } from "@/types/clipforge";
+import type { AnimationSfxPresetId } from "@/types/timeline";
 import type { TranscriptionLanguage } from "@/types/transcription";
 import { cn } from "@/utils/ui";
 
@@ -313,6 +315,20 @@ export function Captions() {
 										}
 										: null
 								}
+								onApplySoundSync={(pairingId) => {
+									void editor.timeline.applyAnimationSfxPairing({
+										pairingId,
+										targetElementIds: [segment.elementId],
+									});
+									toast.success("Caption sound sync applied.");
+								}}
+								onClearSoundSync={() => {
+									editor.timeline.clearAnimationSfxPairing({
+										targetElementIds: [segment.elementId],
+										expectedKind: "caption",
+									});
+									toast.success("Caption sound sync cleared.");
+								}}
 							/>
 						))
 					)}
@@ -330,6 +346,8 @@ function CaptionRow({
 	onRetime,
 	onSplit,
 	onMergeWithNext,
+	onApplySoundSync,
+	onClearSoundSync,
 }: {
 	segment: CaptionSegmentView;
 	isSelected: boolean;
@@ -338,10 +356,25 @@ function CaptionRow({
 	onRetime: (next: { startTime: number; duration: number }) => void;
 	onSplit: (() => void) | null;
 	onMergeWithNext: (() => void) | null;
+	onApplySoundSync: (pairingId: AnimationSfxPresetId) => void;
+	onClearSoundSync: () => void;
 }) {
+	const editor = useEditor();
 	const [textDraft, setTextDraft] = useState(segment.text);
 	const [startDraft, setStartDraft] = useState(formatSeconds(segment.startTime));
 	const [durationDraft, setDurationDraft] = useState(formatSeconds(segment.duration));
+	const captionTrack = editor.timeline.getTrackById({ trackId: segment.trackId });
+	const captionElement =
+		captionTrack?.type === "text"
+			? (captionTrack.elements.find(
+					(candidate) =>
+						candidate.type === "text" && candidate.id === segment.elementId,
+				) ?? null)
+			: null;
+	const soundSyncOptions = getAnimationSfxPairingsForTarget({
+		targetKind: "caption",
+		element: captionElement,
+	});
 
 	useEffect(() => {
 		setTextDraft(segment.text);
@@ -406,6 +439,33 @@ function CaptionRow({
 					}}
 					size="sm"
 				/>
+			</div>
+			<div
+				className="mb-3 flex items-end gap-2"
+				onClick={(event) => event.stopPropagation()}
+			>
+				<div className="flex-1 space-y-1.5">
+					<Label>Sound sync</Label>
+					<Select
+						onValueChange={(value) =>
+							onApplySoundSync(value as AnimationSfxPresetId)
+						}
+					>
+						<SelectTrigger>
+							<SelectValue placeholder="Choose a caption sound cue" />
+						</SelectTrigger>
+						<SelectContent>
+							{soundSyncOptions.map((option) => (
+								<SelectItem key={option.id} value={option.id}>
+									{option.label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</div>
+				<Button variant="outline" size="sm" onClick={onClearSoundSync}>
+					Clear
+				</Button>
 			</div>
 			<div className="grid grid-cols-2 gap-3" onClick={(event) => event.stopPropagation()}>
 				<div className="flex flex-col gap-1.5">

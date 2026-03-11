@@ -148,6 +148,12 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
    - built-in starter music and SFX in `Audio -> Songs` and `Audio -> Sound effects`
    - built-in sticker/icon pack in `Stickers`
    - bundled caption/graphics/overlay/motion presets in the existing creative surfaces
+   - expanded social SFX groups for:
+     - typing / cursor
+     - caption pops
+     - airy transition sounds including fahhh-style sweeps
+     - UI / accent utility sounds
+   - one-click `Sound sync` controls on graphics and captions that insert real bundled SFX clips on the audio track
    - `Audio -> Songs` also separates:
      - bundled starter music
      - trend-sound references you save manually as style/pacing cues
@@ -183,6 +189,7 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
      - imported tracks warn that rights are user-managed/unknown
      - platform-limited or attribution-required tracks surface explicit destination/attribution warnings
      - export remains allowed after acknowledgment because the app cannot authoritatively own the user's rights
+   - Bundled SFX inserted through `Sound sync` remain universal/free-first and do not trigger music-rights warnings.
    - The export popover now also shows the same preview fidelity report as a non-blocking trust signal before render starts.
    - Runtime export still uses the existing binary pipeline and diagnostics once encoding begins.
    - If runtime export fails, ClipForge now shows explicit deterministic retry options (`Retry same settings` and a recommended safe profile when available).

@@ -132,20 +132,32 @@ function sfxItem({
 	label,
 	duration,
 	tags,
+	usageKind = "sfx",
+	pairableMotionPresetIds,
+	pairableCaptionStyleIds,
+	fileName,
 }: {
 	id: string;
 	label: string;
 	duration: number;
 	tags: string[];
+	usageKind?: AudioLibraryItem["usageKind"];
+	pairableMotionPresetIds?: string[];
+	pairableCaptionStyleIds?: string[];
+	fileName?: string;
 }): AudioLibraryItem {
+	const assetName = fileName ?? id;
 	return {
 		id,
 		kind: "sfx",
 		label,
-		url: `/library/audio/sfx/${id}.wav`,
-		previewUrl: `/library/audio/sfx/${id}.wav`,
+		url: `/library/audio/sfx/${assetName}.wav`,
+		previewUrl: `/library/audio/sfx/${assetName}.wav`,
 		duration,
-		usageKind: "sfx",
+		usageKind,
+		pairableMotionPresetIds,
+		pairableCaptionStyleIds,
+		defaultDurationMs: Math.round(duration * 1000),
 		tags,
 		license: LICENSE_SELF,
 		source: "ClipForge starter audio pack",
@@ -165,26 +177,43 @@ export const BUNDLED_MUSIC: AudioLibraryItem[] = [
 ];
 
 export const BUNDLED_SFX: AudioLibraryItem[] = [
-	sfxItem({ id: "whoosh-soft", label: "Whoosh Soft", duration: 0.45, tags: ["whoosh", "transition"] }),
-	sfxItem({ id: "whoosh-fast", label: "Whoosh Fast", duration: 0.25, tags: ["whoosh", "transition"] }),
-	sfxItem({ id: "riser-light", label: "Riser Light", duration: 0.7, tags: ["riser", "build"] }),
-	sfxItem({ id: "hit-soft", label: "Hit Soft", duration: 0.18, tags: ["hit", "accent"] }),
-	sfxItem({ id: "hit-hard", label: "Hit Hard", duration: 0.12, tags: ["hit", "accent"] }),
-	sfxItem({ id: "pop-clean", label: "Pop Clean", duration: 0.1, tags: ["pop", "ui"] }),
-	sfxItem({ id: "pop-bright", label: "Pop Bright", duration: 0.08, tags: ["pop", "ui"] }),
-	sfxItem({ id: "click-ui", label: "Click UI", duration: 0.06, tags: ["click", "ui"] }),
-	sfxItem({ id: "click-soft", label: "Click Soft", duration: 0.07, tags: ["click", "ui"] }),
-	sfxItem({ id: "swipe-up", label: "Swipe Up", duration: 0.22, tags: ["swipe", "transition"] }),
-	sfxItem({ id: "swipe-down", label: "Swipe Down", duration: 0.22, tags: ["swipe", "transition"] }),
-	sfxItem({ id: "sparkle", label: "Sparkle", duration: 0.35, tags: ["sparkle", "accent"] }),
-	sfxItem({ id: "accent-rise", label: "Accent Rise", duration: 0.5, tags: ["accent", "riser"] }),
-	sfxItem({ id: "accent-drop", label: "Accent Drop", duration: 0.4, tags: ["accent", "drop"] }),
-	sfxItem({ id: "tag-appear", label: "Tag Appear", duration: 0.14, tags: ["tag", "ui"] }),
-	sfxItem({ id: "marker-check", label: "Marker Check", duration: 0.12, tags: ["check", "ui"] }),
-	sfxItem({ id: "transition-air", label: "Transition Air", duration: 0.3, tags: ["transition", "whoosh"] }),
-	sfxItem({ id: "tap-glass", label: "Tap Glass", duration: 0.09, tags: ["tap", "ui"] }),
-	sfxItem({ id: "thump-low", label: "Thump Low", duration: 0.16, tags: ["thump", "accent"] }),
-	sfxItem({ id: "success-soft", label: "Success Soft", duration: 0.24, tags: ["success", "ui"] }),
+	sfxItem({ id: "whoosh-soft", label: "Whoosh Soft", duration: 0.45, tags: ["whoosh", "transition"], usageKind: "transition-air", pairableMotionPresetIds: ["slide-up"] }),
+	sfxItem({ id: "whoosh-fast", label: "Whoosh Fast", duration: 0.25, tags: ["whoosh", "transition"], usageKind: "transition-air", pairableMotionPresetIds: ["slide-up"] }),
+	sfxItem({ id: "riser-light", label: "Riser Light", duration: 0.7, tags: ["riser", "build"], usageKind: "accent" }),
+	sfxItem({ id: "hit-soft", label: "Hit Soft", duration: 0.18, tags: ["hit", "accent"], usageKind: "transition-impact" }),
+	sfxItem({ id: "hit-hard", label: "Hit Hard", duration: 0.12, tags: ["hit", "accent"], usageKind: "transition-impact" }),
+	sfxItem({ id: "pop-clean", label: "Pop Clean", duration: 0.1, tags: ["pop", "ui"], usageKind: "caption-pop", pairableMotionPresetIds: ["pop-in"] }),
+	sfxItem({ id: "pop-bright", label: "Pop Bright", duration: 0.08, tags: ["pop", "ui"], usageKind: "caption-pop", pairableMotionPresetIds: ["pop-in"] }),
+	sfxItem({ id: "click-ui", label: "Click UI", duration: 0.06, tags: ["click", "ui"], usageKind: "ui" }),
+	sfxItem({ id: "click-soft", label: "Click Soft", duration: 0.07, tags: ["click", "ui"], usageKind: "ui" }),
+	sfxItem({ id: "swipe-up", label: "Swipe Up", duration: 0.22, tags: ["swipe", "transition"], usageKind: "transition-air", pairableMotionPresetIds: ["slide-up"] }),
+	sfxItem({ id: "swipe-down", label: "Swipe Down", duration: 0.22, tags: ["swipe", "transition"], usageKind: "transition-air", pairableMotionPresetIds: ["slide-up"] }),
+	sfxItem({ id: "sparkle", label: "Sparkle", duration: 0.35, tags: ["sparkle", "accent"], usageKind: "accent" }),
+	sfxItem({ id: "accent-rise", label: "Accent Rise", duration: 0.5, tags: ["accent", "riser"], usageKind: "accent" }),
+	sfxItem({ id: "accent-drop", label: "Accent Drop", duration: 0.4, tags: ["accent", "drop"], usageKind: "accent" }),
+	sfxItem({ id: "tag-appear", label: "Tag Appear", duration: 0.14, tags: ["tag", "ui"], usageKind: "caption-pop" }),
+	sfxItem({ id: "marker-check", label: "Marker Check", duration: 0.12, tags: ["check", "ui"], usageKind: "ui" }),
+	sfxItem({ id: "transition-air", label: "Transition Air", duration: 0.3, tags: ["transition", "whoosh"], usageKind: "transition-air", pairableMotionPresetIds: ["fade-up", "drift-in"] }),
+	sfxItem({ id: "tap-glass", label: "Tap Glass", duration: 0.09, tags: ["tap", "ui"], usageKind: "ui" }),
+	sfxItem({ id: "thump-low", label: "Thump Low", duration: 0.16, tags: ["thump", "accent"], usageKind: "accent" }),
+	sfxItem({ id: "success-soft", label: "Success Soft", duration: 0.24, tags: ["success", "ui"], usageKind: "ui" }),
+	sfxItem({ id: "typing-soft-key", label: "Typing Soft Key", duration: 0.08, tags: ["typing", "soft"], usageKind: "typing", pairableCaptionStyleIds: ["clean-bottom"], fileName: "click-soft" }),
+	sfxItem({ id: "typing-hard-key", label: "Typing Hard Key", duration: 0.07, tags: ["typing", "hard"], usageKind: "typing", pairableCaptionStyleIds: ["bold-center"], fileName: "click-ui" }),
+	sfxItem({ id: "typing-retro-key", label: "Typing Retro Key", duration: 0.1, tags: ["typing", "retro"], usageKind: "typing", pairableCaptionStyleIds: ["clean-bottom", "bold-center"], fileName: "tap-glass" }),
+	sfxItem({ id: "cursor-tick", label: "Cursor Tick", duration: 0.05, tags: ["cursor", "tick"], usageKind: "cursor", pairableCaptionStyleIds: ["clean-bottom"], fileName: "click-soft" }),
+	sfxItem({ id: "cursor-blink", label: "Cursor Blink", duration: 0.04, tags: ["cursor", "blink"], usageKind: "cursor", pairableCaptionStyleIds: ["clean-bottom", "bold-center"], fileName: "marker-check" }),
+	sfxItem({ id: "caption-pop-clean", label: "Caption Pop Clean", duration: 0.09, tags: ["caption", "pop", "clean"], usageKind: "caption-pop", pairableCaptionStyleIds: ["clean-bottom"], fileName: "pop-clean" }),
+	sfxItem({ id: "caption-pop-bright", label: "Caption Pop Bright", duration: 0.11, tags: ["caption", "pop", "bright"], usageKind: "caption-pop", pairableCaptionStyleIds: ["bold-center"], fileName: "pop-bright" }),
+	sfxItem({ id: "caption-soft-bubble", label: "Caption Soft Bubble", duration: 0.13, tags: ["caption", "bubble"], usageKind: "caption-pop", pairableCaptionStyleIds: ["clean-bottom"], fileName: "pop-clean" }),
+	sfxItem({ id: "tag-snap", label: "Tag Snap", duration: 0.1, tags: ["tag", "snap"], usageKind: "caption-pop", fileName: "tag-appear" }),
+	sfxItem({ id: "air-rise-soft", label: "Air Rise Soft", duration: 0.42, tags: ["air", "rise", "soft"], usageKind: "transition-air", pairableMotionPresetIds: ["fade-up", "drift-in"], fileName: "accent-rise" }),
+	sfxItem({ id: "air-fahhh-soft", label: "Air Fahhh Soft", duration: 0.52, tags: ["air", "fahhh", "soft"], usageKind: "transition-air", pairableMotionPresetIds: ["fade-up"], fileName: "transition-air" }),
+	sfxItem({ id: "air-fahhh-bold", label: "Air Fahhh Bold", duration: 0.68, tags: ["air", "fahhh", "bold"], usageKind: "transition-air", pairableMotionPresetIds: ["slide-up"], fileName: "whoosh-soft" }),
+	sfxItem({ id: "transition-air-glam", label: "Transition Air Glam", duration: 0.48, tags: ["air", "glam", "transition"], usageKind: "transition-air", pairableMotionPresetIds: ["slide-up", "drift-in"], fileName: "transition-air" }),
+	sfxItem({ id: "page-flick", label: "Page Flick", duration: 0.16, tags: ["page", "flick"], usageKind: "ui", fileName: "swipe-up" }),
+	sfxItem({ id: "marker-swipe", label: "Marker Swipe", duration: 0.18, tags: ["marker", "swipe"], usageKind: "accent", fileName: "swipe-down" }),
+	sfxItem({ id: "subtle-hit", label: "Subtle Hit", duration: 0.12, tags: ["subtle", "hit"], usageKind: "transition-impact", fileName: "hit-soft" }),
+	sfxItem({ id: "mini-riser", label: "Mini Riser", duration: 0.26, tags: ["mini", "riser"], usageKind: "accent", fileName: "riser-light" }),
 ];
 
 export const BUNDLED_STICKERS: StickerLibraryItem[] = [

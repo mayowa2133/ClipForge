@@ -11,10 +11,11 @@ import type { AudioLibraryItem } from "@/types/library";
 const bundledTrack: AudioLibraryItem = {
 	id: "starter-track",
 	label: "Starter Track",
-	fileName: "starter-track.mp3",
-	category: "music",
+	kind: "music",
+	url: "/library/music/starter-track.mp3",
 	tags: ["clean", "upbeat"],
 	duration: 12,
+	usageKind: "music",
 	source: "ClipForge Starter Pack",
 	license: "CC0",
 	licenseNotice: "CC0 1.0",

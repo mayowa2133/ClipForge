@@ -22,7 +22,7 @@
 5. Optionally use the bundled creative library first:
    - `Graphics` for built-in title/overlay presets
    - `Audio -> Songs` for built-in starter tracks, trend references, and imported audio
-   - `Audio -> Sound effects` for built-in SFX
+   - `Audio -> Sound effects` for built-in SFX, including typing/cursor, caption pops, airy transitions, and UI/accent groups
    - `Stickers` for built-in sticker/icon packs
 6. ClipForge builds a draft:
    - clips stitched in order
@@ -37,6 +37,10 @@
    - `Unsupported`: parity mismatch or legacy fallback means preview should not be trusted as exact export output
 10. If you need multiple publish formats, enable extra version targets in `Settings -> Version pack`, then switch the active preview target from the preview toolbar.
 11. Use `Auto reframe selection` and `Apply safe layout` per target so the same edit remains usable for `9:16`, `1:1`, and `16:9` without rewriting the base scene.
+12. For graphics or captions, use `Sound sync` to apply a bundled animation/SFX pairing.
+    - Pairings insert real SFX clips on the audio track.
+    - Reapplying a pairing replaces the prior pairing-generated SFX for that target.
+    - Clearing a pairing removes only those generated SFX clips.
 
 ## Flow B: Chat-driven Edits
 
@@ -123,5 +127,14 @@ Example chat prompts:
 5. Trend references are not playable audio assets:
    - they exist so M44/M45 can use them as vibe/pacing context
    - they do not promise the app has rights to the actual song
-6. When exporting, pick a publish destination in the export popover.
-7. If the project uses imported or restricted audio, ClipForge shows warning-first rights guidance instead of pretending the track is universally safe.
+6. `Audio -> Sound effects` now ships grouped social SFX:
+   - `Typing`
+   - `Cursor`
+   - `Caption pops`
+   - `Air transitions`
+   - `UI / Accent`
+   - `Built-in utility`
+7. Graphics and caption workflows can apply explicit `Sound sync` presets that insert bundled SFX clips on the timeline.
+8. Bundled SFX are universal/free-first assets and do not trigger export music-rights warnings.
+9. When exporting, pick a publish destination in the export popover.
+10. If the project uses imported or restricted audio, ClipForge shows warning-first rights guidance instead of pretending the track is universally safe.

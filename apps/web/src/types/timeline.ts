@@ -14,6 +14,22 @@ export interface SceneBeatMarker {
 	sourceMediaId: string;
 }
 
+export type AnimationSfxPresetId =
+	| "typing-clean"
+	| "typing-soft"
+	| "cursor-blink"
+	| "caption-pop-clean"
+	| "caption-pop-bright"
+	| "air-fahhh-soft"
+	| "air-fahhh-bold"
+	| "whoosh-pop";
+
+export interface AnimationSfxSyncMeta {
+	pairingId: AnimationSfxPresetId;
+	targetAnchorId: string;
+	targetKind: "graphics" | "caption";
+}
+
 export interface TScene {
 	id: string;
 	name: string;
@@ -163,6 +179,7 @@ interface BaseAudioElement extends BaseTimelineElement {
 	fadeInDuration?: number;
 	fadeOutDuration?: number;
 	linkedGroupId?: string | null;
+	animationSfxSync?: AnimationSfxSyncMeta | null;
 }
 
 export interface UploadAudioElement extends BaseAudioElement {

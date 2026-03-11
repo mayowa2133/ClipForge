@@ -29,7 +29,19 @@ export interface AudioLibraryItem extends LibraryItem {
 	duration: number;
 	mood?: LibraryMusicMood;
 	bpm?: number | null;
-	usageKind: "music" | "sfx";
+	usageKind:
+		| "music"
+		| "sfx"
+		| "typing"
+		| "cursor"
+		| "caption-pop"
+		| "transition-air"
+		| "transition-impact"
+		| "ui"
+		| "accent";
+	pairableMotionPresetIds?: string[];
+	pairableCaptionStyleIds?: string[];
+	defaultDurationMs?: number | null;
 	license: string;
 	source: string;
 }

@@ -1,6 +1,11 @@
 import { Textarea } from "@/components/ui/textarea";
 import { FontPicker } from "@/components/ui/font-picker";
-import type { OverlayStyleVariantId, OverlayTextSlot, TextElement } from "@/types/timeline";
+import type {
+	AnimationSfxPresetId,
+	OverlayStyleVariantId,
+	OverlayTextSlot,
+	TextElement,
+} from "@/types/timeline";
 import { NumberField } from "@/components/ui/number-field";
 import { useMemo, useRef } from "react";
 import { Section, SectionContent, SectionField, SectionFields, SectionHeader } from "./section";
@@ -24,6 +29,7 @@ import {
 	OVERLAY_STYLE_VARIANTS,
 	resolveProjectOverlayDefaults,
 	resolveProjectBrandKit,
+	getAnimationSfxPairingsForTarget,
 	type GraphicsMotionPresetId,
 } from "@/lib/timeline";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -154,6 +160,11 @@ function GraphicsSection({
 	const overlayVariantId =
 		element.overlayMeta?.variantId ?? overlayDefaults.variantId;
 	const overlayElementIds = overlayElements.map((candidate) => candidate.id);
+	const soundSyncTargetIds = element.overlayMeta ? overlayElementIds : [element.id];
+	const soundSyncOptions = useMemo(
+		() => getAnimationSfxPairingsForTarget({ targetKind: "graphics", element }),
+		[element],
+	);
 
 	return (
 		<Section collapsible sectionKey="text:graphics">
@@ -302,6 +313,40 @@ function GraphicsSection({
 								}}
 							>
 								Reset motion
+							</Button>
+						</div>
+					</SectionField>
+					<SectionField label="Sound sync">
+						<div className="flex items-center gap-2">
+							<Select
+								onValueChange={(value) => {
+									void editor.timeline.applyAnimationSfxPairing({
+										pairingId: value as AnimationSfxPresetId,
+										targetElementIds: soundSyncTargetIds,
+									});
+								}}
+							>
+								<SelectTrigger className="w-44">
+									<SelectValue placeholder="Apply" />
+								</SelectTrigger>
+								<SelectContent>
+									{soundSyncOptions.map((option) => (
+										<SelectItem key={option.id} value={option.id}>
+											{option.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() =>
+									editor.timeline.clearAnimationSfxPairing({
+										targetElementIds: soundSyncTargetIds,
+									})
+								}
+							>
+								Clear
 							</Button>
 						</div>
 					</SectionField>

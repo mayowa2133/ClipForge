@@ -63,6 +63,43 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 
+const BUNDLED_SFX_GROUPS: Array<{
+	keys: AudioLibraryItem["usageKind"][];
+	label: string;
+	description: string;
+}> = [
+	{
+		keys: ["typing"],
+		label: "Typing",
+		description: "Soft key and typewriter-style accents for text and caption reveals.",
+	},
+	{
+		keys: ["cursor"],
+		label: "Cursor",
+		description: "Cursor ticks and blink sounds for typing-style cues.",
+	},
+	{
+		keys: ["caption-pop"],
+		label: "Caption pops",
+		description: "Short pops and snaps for caption and overlay entrances.",
+	},
+	{
+		keys: ["transition-air"],
+		label: "Air transitions",
+		description: "Airy whooshes, sweeps, and fahhh-style transition sounds.",
+	},
+	{
+		keys: ["ui"],
+		label: "UI / Accent",
+		description: "Clicks, taps, and interface-style punctuation sounds.",
+	},
+	{
+		keys: ["accent", "transition-impact"],
+		label: "Built-in utility",
+		description: "Risers, hits, drops, and utility accents for short-form pacing.",
+	},
+];
+
 export function SoundsView() {
 	return (
 		<div className="flex h-full flex-col">
@@ -333,6 +370,12 @@ function SoundEffectsView() {
 	const bundledEffects = BUNDLED_SFX.filter((item) =>
 		item.label.toLowerCase().includes(searchQuery.trim().toLowerCase()),
 	);
+	const groupedBundledEffects = BUNDLED_SFX_GROUPS.map((group) => ({
+		...group,
+		items: bundledEffects.filter((item) =>
+			group.keys.includes(item.usageKind),
+		),
+	})).filter((group) => group.items.length > 0);
 
 	const playSound = ({ sound }: { sound: SoundEffect }) => {
 		if (playingId === sound.id) {
@@ -389,16 +432,28 @@ function SoundEffectsView() {
 							<div>
 								<p className="text-sm font-medium">Built-in starter SFX</p>
 								<p className="text-muted-foreground text-xs">
-									Free local accents for transitions, overlays, and UI motion.
+									Free local accents for transitions, overlays, captions, and UI motion.
 								</p>
 							</div>
-							{bundledEffects.map((item) => (
-								<BundledAudioItem
-									key={item.id}
-									item={item}
-									role="sfx"
-									editor={editor}
-								/>
+							{groupedBundledEffects.map((group) => (
+								<div key={group.label} className="space-y-2">
+									<div>
+										<p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											{group.label}
+										</p>
+										<p className="text-muted-foreground text-[11px]">
+											{group.description}
+										</p>
+									</div>
+									{group.items.map((item) => (
+										<BundledAudioItem
+											key={item.id}
+											item={item}
+											role="sfx"
+											editor={editor}
+										/>
+									))}
+								</div>
 							))}
 						</div>
 						{isLoading && !searchQuery ? <div className="text-muted-foreground text-sm">Loading sounds...</div> : null}

@@ -33,6 +33,8 @@ export function AudioProperties({
 			: null;
 	const audioBuffer =
 		element.sourceType === "library" ? element.buffer : undefined;
+	const audioFile =
+		element.sourceType === "upload" ? mediaAsset?.file : undefined;
 	const audioUrl =
 		element.sourceType === "library"
 			? element.sourceUrl
@@ -44,6 +46,7 @@ export function AudioProperties({
 				element={element}
 				trackId={trackId}
 				audioBuffer={audioBuffer}
+				audioFile={audioFile}
 				audioUrl={audioUrl}
 			/>
 			<AudioMixSection element={element} trackId={trackId} />
@@ -56,11 +59,13 @@ function SourceSection({
 	element,
 	trackId,
 	audioBuffer,
+	audioFile,
 	audioUrl,
 }: {
 	element: AudioElement;
 	trackId: string;
 	audioBuffer?: AudioBuffer;
+	audioFile?: File;
 	audioUrl?: string;
 }) {
 	const { fileInputProps, openReplaceMediaPicker, isReplacing } = useReplaceMedia({
@@ -77,6 +82,7 @@ function SourceSection({
 						<div className="rounded-md border px-3 py-2">
 							<AudioWaveform
 								audioBuffer={audioBuffer}
+								audioFile={audioFile}
 								audioUrl={audioUrl}
 								height={48}
 								className="w-full"

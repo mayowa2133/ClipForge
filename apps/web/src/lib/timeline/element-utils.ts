@@ -336,6 +336,7 @@ export function buildUploadAudioElement({
 		fadeInDuration: 0,
 		fadeOutDuration: 0,
 		linkedGroupId: null,
+		animationSfxSync: null,
 	};
 	if (buffer) {
 		element.buffer = buffer;
@@ -404,6 +405,7 @@ export function buildLibraryAudioElement({
 		fadeInDuration: 0,
 		fadeOutDuration: 0,
 		linkedGroupId: null,
+		animationSfxSync: null,
 	};
 	if (buffer) {
 		element.buffer = buffer;

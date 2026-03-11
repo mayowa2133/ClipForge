@@ -4,6 +4,7 @@ import type {
 	TrackType,
 	TimelineTrack,
 	TimelineElement,
+	AudioElement,
 	ClipboardItem,
 	OverlayMeta,
 	OverlayStyleVariantId,
@@ -12,6 +13,7 @@ import type {
 	TextElement,
 	StickerElement,
 	ImageElement,
+	AnimationSfxPresetId,
 } from "@/types/timeline";
 import type { ComponentTemplate } from "@/types/templates";
 import { calculateTotalDuration } from "@/lib/timeline";
@@ -94,7 +96,11 @@ import {
 	getVersionCanvasSize,
 	buildComponentTemplatePayload,
 	instantiateTemplateElements,
+	buildUploadAudioElement,
+	getAnimationSfxPairingById,
 } from "@/lib/timeline";
+import { BUNDLED_SFX } from "@/lib/library";
+import { ensureBundledAudioAsset } from "@/lib/library/bundled-media";
 import { mediaSupportsAudio } from "@/lib/media/media-utils";
 import {
 	buildAutoMontageWindows,
@@ -1162,6 +1168,126 @@ export class TimelineManager {
 		});
 	}
 
+	async applyAnimationSfxPairing({
+		pairingId,
+		targetElementIds,
+	}: {
+		pairingId: AnimationSfxPresetId;
+		targetElementIds: string[];
+	}): Promise<void> {
+		const pairing = getAnimationSfxPairingById({ pairingId });
+		if (!pairing) {
+			throw new Error("Sound sync preset not found.");
+		}
+
+		const targets = this.resolveAnimationSfxTargets({
+			targetElementIds,
+			expectedKind: pairing.targetKind,
+		});
+		if (targets.length === 0) {
+			throw new Error("Select a supported graphic or caption before applying sound sync.");
+		}
+
+		this.clearAnimationSfxPairing({
+			targetElementIds,
+			expectedKind: pairing.targetKind,
+		});
+
+		const audioTrackId =
+			this.getTracks().find((track) => track.type === "audio")?.id ??
+			this.addTrack({ type: "audio" });
+		const bundledAssets = new Map<string, Awaited<ReturnType<typeof ensureBundledAudioAsset>>>();
+		const commands: InsertElementCommand[] = [];
+
+		for (const target of targets) {
+			for (const sequenceItem of pairing.sfxSequence) {
+				const libraryItem =
+					BUNDLED_SFX.find((item) => item.id === sequenceItem.libraryItemId) ?? null;
+				if (!libraryItem) {
+					throw new Error(`Bundled sound effect ${sequenceItem.libraryItemId} is missing.`);
+				}
+				let asset = bundledAssets.get(sequenceItem.libraryItemId) ?? null;
+				if (!asset) {
+					asset = await ensureBundledAudioAsset({
+						editor: this.editor,
+						item: libraryItem,
+					});
+					bundledAssets.set(sequenceItem.libraryItemId, asset);
+				}
+				const element = buildUploadAudioElement({
+					mediaId: asset.id,
+					name: asset.name,
+					duration: asset.duration ?? libraryItem.duration,
+					startTime: Number(
+						Math.max(0, target.startTime + sequenceItem.offsetMs / 1000).toFixed(3),
+					),
+				});
+				element.role = "sfx";
+				element.animationSfxSync = {
+					pairingId,
+					targetAnchorId: target.anchorId,
+					targetKind: target.targetKind,
+				};
+				if (typeof sequenceItem.gainDb === "number") {
+					element.volume = Number(
+						Math.max(0, Math.min(2, Math.pow(10, sequenceItem.gainDb / 20))).toFixed(3),
+					);
+				}
+				commands.push(
+					new InsertElementCommand({
+						element,
+						placement: {
+							mode: "explicit",
+							trackId: audioTrackId,
+						},
+					}),
+				);
+			}
+		}
+
+		if (commands.length === 0) {
+			return;
+		}
+		const command = commands.length === 1 ? commands[0] : new BatchCommand(commands);
+		this.editor.command.execute({ command });
+	}
+
+	clearAnimationSfxPairing({
+		targetElementIds,
+		expectedKind,
+	}: {
+		targetElementIds: string[];
+		expectedKind?: "graphics" | "caption";
+	}): void {
+		const targets = this.resolveAnimationSfxTargets({
+			targetElementIds,
+			expectedKind,
+		});
+		if (targets.length === 0) {
+			return;
+		}
+		const targetAnchorIds = new Set(targets.map((target) => target.anchorId));
+		const deletions = this.getTracks()
+			.filter((track): track is Extract<TimelineTrack, { type: "audio" }> => track.type === "audio")
+			.flatMap((track) =>
+				track.elements
+					.filter(
+						(element): element is AudioElement =>
+							element.type === "audio" &&
+							Boolean(element.animationSfxSync) &&
+							targetAnchorIds.has(element.animationSfxSync?.targetAnchorId ?? ""),
+					)
+					.map((element) => ({
+						trackId: track.id,
+						elementId: element.id,
+					})),
+			);
+		if (deletions.length === 0) {
+			return;
+		}
+		this.deleteElements({ elements: deletions });
+	}
+
 	findTrackIdForElement({ elementId }: { elementId: string }): string | null {
 		for (const track of this.getTracks()) {
 			if (track.elements.some((element) => element.id === elementId)) {
@@ -1419,6 +1545,74 @@ export class TimelineManager {
 					(element.type === "text" || element.type === "image") &&
 					Boolean((element as { overlayMeta?: OverlayMeta | null }).overlayMeta),
 			);
+	}
+
+	private resolveAnimationSfxTargets({
+		targetElementIds,
+		expectedKind,
+	}: {
+		targetElementIds: string[];
+		expectedKind?: "graphics" | "caption";
+	}): Array<{
+		anchorId: string;
+		targetKind: "graphics" | "caption";
+		startTime: number;
+		elementIds: string[];
+	}> {
+		const resolvedTargets = new Map<
+			string,
+			{ anchorId: string; targetKind: "graphics" | "caption"; startTime: number; elementIds: Set<string> }
+		>();
+		for (const elementId of targetElementIds) {
+			const trackId = this.findTrackIdForElement({ elementId });
+			const track = trackId ? this.getTrackById({ trackId }) : null;
+			const element = track?.elements.find((candidate) => candidate.id === elementId);
+			if (!element || element.type !== "text") {
+				continue;
+			}
+			const targetKind =
+				element.role === "caption" ? "caption" : "graphics";
+			if (expectedKind && targetKind !== expectedKind) {
+				continue;
+			}
+			if (targetKind === "graphics" && element.overlayMeta) {
+				const overlayElements = this.getOverlayElements({
+					anchorElementId: element.id,
+					linkedGroupId: element.linkedGroupId ?? null,
+					elementIds: targetElementIds,
+				}).filter((candidate): candidate is TextElement => candidate.type === "text");
+				const anchorId = element.linkedGroupId ?? element.id;
+				const existing =
+					resolvedTargets.get(anchorId) ?? {
+						anchorId,
+						targetKind,
+						startTime: Math.min(...overlayElements.map((candidate) => candidate.startTime)),
+						elementIds: new Set<string>(),
+					};
+				for (const candidate of overlayElements) {
+					existing.elementIds.add(candidate.id);
+				}
+				resolvedTargets.set(anchorId, existing);
+				continue;
+			}
+			const anchorId = element.id;
+			const existing =
+				resolvedTargets.get(anchorId) ?? {
+					anchorId,
+					targetKind,
+					startTime: element.startTime,
+					elementIds: new Set<string>(),
+				};
+			existing.elementIds.add(element.id);
+			resolvedTargets.set(anchorId, existing);
+		}
+
+		return [...resolvedTargets.values()].map((target) => ({
+			anchorId: target.anchorId,
+			targetKind: target.targetKind,
+			startTime: target.startTime,
+			elementIds: [...target.elementIds],
+		}));
 	}
 
 	pasteAtTime({

@@ -8,6 +8,7 @@ export * from "./manual-editing";
 export * from "./motion";
 export * from "./finishing";
 export * from "./graphics";
+export * from "./animation-sfx";
 export * from "./templates";
 export * from "./versioning";
 

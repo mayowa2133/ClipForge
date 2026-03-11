@@ -4,6 +4,7 @@ import WaveSurfer from "wavesurfer.js";
 interface AudioWaveformProps {
 	audioUrl?: string;
 	audioBuffer?: AudioBuffer;
+	audioFile?: File;
 	height?: number;
 	className?: string;
 }
@@ -42,6 +43,7 @@ function extractPeaks({
 export function AudioWaveform({
 	audioUrl,
 	audioBuffer,
+	audioFile,
 	height = 32,
 	className = "",
 }: AudioWaveformProps) {
@@ -53,9 +55,13 @@ export function AudioWaveform({
 	useEffect(() => {
 		let mounted = true;
 		const ws = wavesurfer.current;
+		const AudioContextClass =
+			window.AudioContext ||
+			// @ts-expect-error webkit fallback for Safari
+			window.webkitAudioContext;
 
 		const initWaveSurfer = async () => {
-			if (!waveformRef.current || (!audioUrl && !audioBuffer)) return;
+			if (!waveformRef.current || (!audioUrl && !audioBuffer && !audioFile)) return;
 
 			try {
 				if (ws) {
@@ -101,6 +107,16 @@ export function AudioWaveform({
 				if (audioBuffer) {
 					const peaks = extractPeaks({ buffer: audioBuffer });
 					newWaveSurfer.load("", peaks, audioBuffer.duration);
+				} else if (audioFile && AudioContextClass) {
+					const arrayBuffer = await audioFile.arrayBuffer();
+					const audioContext = new AudioContextClass();
+					try {
+						const decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+						const peaks = extractPeaks({ buffer: decoded });
+						newWaveSurfer.load("", peaks, decoded.duration);
+					} finally {
+						void audioContext.close().catch(() => {});
+					}
 				} else if (audioUrl) {
 					await newWaveSurfer.load(audioUrl);
 				}
@@ -144,7 +160,7 @@ export function AudioWaveform({
 				});
 			}
 		};
-	}, [audioUrl, audioBuffer, height]);
+	}, [audioUrl, audioBuffer, audioFile, height]);
 
 	if (error) {
 		return (
