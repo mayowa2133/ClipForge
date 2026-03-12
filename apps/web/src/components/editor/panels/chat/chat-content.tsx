@@ -831,6 +831,103 @@ export function ChatContent() {
 							))}
 						</ul>
 					</div>
+					{draftRecipe.retentionShape && (
+						<div className="rounded-md border px-3 py-2">
+							<p className="text-sm font-medium">Story shape</p>
+							<div className="text-muted-foreground mt-2 space-y-2 text-xs">
+								<div>
+									<p className="font-medium text-foreground">Recommended opener</p>
+									{(() => {
+										const candidate =
+											sceneFootageIntelligence?.hookCandidates.find(
+												(item) => item.id === draftRecipe.retentionShape?.hookCandidateId,
+											) ?? null;
+										if (!candidate) {
+											return (
+												<p>
+													Hook-first shaping will follow the current opener because no
+													scored opener beat was available.
+												</p>
+											);
+										}
+										return (
+											<p>
+												{formatSeconds(candidate.startTime)} to{" "}
+												{formatSeconds(candidate.endTime)} ·{" "}
+												{candidate.reasons[0] ?? "Strong early hook moment."}
+											</p>
+										);
+									})()}
+								</div>
+								<div>
+									<p className="font-medium text-foreground">Retention beats</p>
+									<ul className="mt-1 space-y-1">
+										{draftRecipe.retentionShape.beats.map((beat) => (
+											<li key={`${beat.kind}-${beat.startTime}-${beat.endTime}`}>
+												{formatRetentionBeatKind({ kind: beat.kind })}:{" "}
+												{formatSeconds(beat.startTime)} to {formatSeconds(beat.endTime)} ·{" "}
+												{formatDraftSectionStrategy({ strategy: beat.strategy })}
+											</li>
+										))}
+									</ul>
+								</div>
+								{draftRecipe.retentionShape.steps.filter(
+									(step) =>
+										step.kind === "trim-setup" ||
+										step.kind === "delay-context" ||
+										step.kind === "compress-body",
+								).length > 0 && (
+									<div>
+										<p className="font-medium text-foreground">Likely setup trims</p>
+										<ul className="mt-1 space-y-1">
+											{draftRecipe.retentionShape.steps
+												.filter(
+													(step) =>
+														step.kind === "trim-setup" ||
+														step.kind === "delay-context" ||
+														step.kind === "compress-body",
+												)
+												.slice(0, 3)
+												.map((step, index) => (
+													<li key={`${step.kind}-${index}`}>
+														{formatRetentionStepLabel({ kind: step.kind })} ·{" "}
+														{step.reasons[0] ?? "Trim weaker context before the body."}
+													</li>
+												))}
+										</ul>
+									</div>
+								)}
+								{draftRecipe.retentionShape.payoffMomentIds?.length ? (
+									<div>
+										<p className="font-medium text-foreground">Payoff anchor</p>
+										{(() => {
+											const payoffMoment = sceneFootageIntelligence?.momentScores.find(
+												(moment) =>
+													draftRecipe.retentionShape?.payoffMomentIds?.includes(moment.id),
+											);
+											return (
+												<p>
+													{payoffMoment
+														? `${formatSeconds(payoffMoment.startTime)} to ${formatSeconds(payoffMoment.endTime)} · ${payoffMoment.reasons[0] ?? "Strong later moment."}`
+														: "A later payoff beat is reserved for the reveal or result."}
+												</p>
+											);
+										})()}
+									</div>
+								) : null}
+								{draftRecipe.retentionShape.warnings.length > 0 && (
+									<div>
+										<p className="font-medium text-foreground">Structure warnings</p>
+										<ul className="mt-1 space-y-1">
+											{draftRecipe.retentionShape.warnings.map((warning, index) => (
+												<li key={`${warning}-${index}`}>{warning}</li>
+											))}
+										</ul>
+									</div>
+								)}
+							</div>
+						</div>
+					)}
 					{sceneFootageIntelligence && (
 						<div className="rounded-md border px-3 py-2">
 							<p className="text-sm font-medium">Footage insights</p>
@@ -1182,6 +1279,46 @@ function formatDraftSectionStrategy({
 			return "caption-led";
 		case "overlay-led":
 			return "overlay-led";
+	}
+}
+
+function formatRetentionBeatKind({
+	kind,
+}: {
+	kind: NonNullable<DraftRecipe["retentionShape"]>["beats"][number]["kind"];
+}): string {
+	switch (kind) {
+		case "hook":
+			return "Hook";
+		case "setup":
+			return "Setup";
+		case "body":
+			return "Body";
+		case "payoff":
+			return "Payoff";
+		case "cta":
+			return "CTA";
+	}
+}
+
+function formatRetentionStepLabel({
+	kind,
+}: {
+	kind: NonNullable<DraftRecipe["retentionShape"]>["steps"][number]["kind"];
+}): string {
+	switch (kind) {
+		case "promote-hook":
+			return "Promote opener";
+		case "trim-setup":
+			return "Trim setup";
+		case "compress-body":
+			return "Compress body";
+		case "delay-context":
+			return "Delay context";
+		case "insert-payoff":
+			return "Anchor payoff";
+		case "reserve-cta":
+			return "Reserve CTA";
 	}
 }
 

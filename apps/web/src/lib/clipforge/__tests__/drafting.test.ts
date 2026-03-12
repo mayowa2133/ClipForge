@@ -191,7 +191,7 @@ describe("drafting helpers", () => {
 			"No transcript metadata is available, so caption generation may be skipped.",
 		);
 		expect(recipe.warnings).toContain(
-			"Hook scoring is unavailable, so opener selection falls back to clip order.",
+			"Retention shaping is unavailable, so structure falls back to clip order and basic duration tightening.",
 		);
 		expect(recipe.warnings).toContain(
 			"No analyzed beat source is active, so beat-paced montage may be skipped.",
@@ -341,6 +341,137 @@ describe("drafting helpers", () => {
 
 		expect(recipe.operations.map((step) => step.kind)).not.toContain("auto-edit");
 		expect(recipe.hookCandidateId).toBe("hook:video-1:0.000:1.200");
+		expect(recipe.retentionShape?.beats.map((beat) => beat.kind)).toEqual([
+			"hook",
+			"setup",
+			"body",
+			"payoff",
+		]);
 		expect(recipe.keepCutRecommendationIds).toEqual(["keep-cut:video-1"]);
+	});
+
+	test("planDraftRecipe attaches a hook/body/payoff retention plan without a CTA by default", () => {
+		const project = buildProjectFixture();
+		const recipe = planDraftRecipe({
+			brief: buildCreativeBriefFromPrompt({
+				prompt: "make me a viral TikTok from this",
+				project,
+			}),
+			project,
+			mediaAssets: [buildMediaAsset({ id: "video-1", type: "video", duration: 8 })],
+			beatSourceMediaId: "song-1",
+			beatMarkerCount: 12,
+			projectKitTemplates: [],
+			footageIntelligenceReport: {
+				generatedAt: "2026-03-10T00:00:00.000Z",
+				hookCandidates: [
+					{
+						id: "hook-1",
+						trackId: "video-track-1",
+						elementId: "video-1",
+						startTime: 0.6,
+						endTime: 2.1,
+						score: 4.2,
+						reasons: ["Starts early in the scene.", "Dense transcript in the opener."],
+					},
+				],
+				momentScores: [
+					{
+						id: "moment-hook",
+						trackId: "video-track-1",
+						elementId: "video-1",
+						startTime: 0.6,
+						endTime: 2.1,
+						totalScore: 4.2,
+						reasons: ["Strong opener."],
+					},
+					{
+						id: "moment-payoff",
+						trackId: "video-track-1",
+						elementId: "video-1",
+						startTime: 18,
+						endTime: 21.4,
+						totalScore: 4.8,
+						reasons: ["High later payoff.", "Strong visual change."],
+					},
+				],
+				keepCutRecommendations: [
+					{
+						id: "trim-setup-1",
+						trackId: "video-track-1",
+						elementId: "video-1",
+						action: "trim",
+						startTime: 1.8,
+						endTime: 3.3,
+						score: 1.8,
+						reasons: ["Opening lacks forward motion."],
+					},
+				],
+				warnings: [],
+			},
+		});
+
+		expect(recipe.retentionShape?.hookCandidateId).toBe("hook-1");
+		expect(recipe.retentionShape?.beats.map((beat) => beat.kind)).toEqual([
+			"hook",
+			"setup",
+			"body",
+			"payoff",
+		]);
+		expect(recipe.retentionShape?.payoffMomentIds).toEqual(["moment-payoff"]);
+		expect(recipe.retentionShape?.steps.some((step) => step.kind === "reserve-cta")).toBe(false);
+		expect(
+			recipe.operations.find((step) => step.kind === "insert-overlay")?.params.startTime,
+		).toBe(0.25);
+	});
+
+	test("planDraftRecipe reserves a CTA only when the brief implies one", () => {
+		const project = buildProjectFixture();
+		const recipe = planDraftRecipe({
+			brief: buildCreativeBriefFromPrompt({
+				prompt: "make me a product highlight TikTok and add a CTA at the end",
+				project,
+			}),
+			project,
+			mediaAssets: [buildMediaAsset({ id: "video-1", type: "video", duration: 8 })],
+			beatSourceMediaId: null,
+			beatMarkerCount: 0,
+			projectKitTemplates: [],
+			footageIntelligenceReport: {
+				generatedAt: "2026-03-10T00:00:00.000Z",
+				hookCandidates: [],
+				momentScores: [],
+				keepCutRecommendations: [],
+				warnings: [],
+			},
+		});
+
+		expect(recipe.retentionShape?.steps.some((step) => step.kind === "reserve-cta")).toBe(true);
+		expect(recipe.retentionShape?.beats.at(-1)?.kind).toBe("cta");
+		const outroStep = recipe.operations.find((step) => step.kind === "insert-scene-recipe");
+		expect(outroStep?.params.recipeId).toBe("cta-outro");
+	});
+
+	test("planDraftRecipe falls back cleanly when no footage report is available", () => {
+		const project = buildProjectFixture();
+		const recipe = planDraftRecipe({
+			brief: buildCreativeBriefFromPrompt({
+				prompt: "make me a viral TikTok from this",
+				project,
+			}),
+			project,
+			mediaAssets: [buildMediaAsset({ id: "video-1", type: "video", duration: 8 })],
+			beatSourceMediaId: null,
+			beatMarkerCount: 0,
+			projectKitTemplates: [],
+			footageIntelligenceReport: null,
+		});
+
+		expect(recipe.retentionShape?.warnings).toContain(
+			"Retention shaping is unavailable, so structure falls back to clip order and basic duration tightening.",
+		);
+		expect(recipe.warnings).toContain(
+			"Retention shaping is unavailable, so structure falls back to clip order and basic duration tightening.",
+		);
 	});
 });

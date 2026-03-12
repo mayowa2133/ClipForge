@@ -154,6 +154,36 @@ export interface DraftSectionPlan {
 	strategy: "talking" | "montage" | "broll" | "caption-led" | "overlay-led";
 }
 
+export interface RetentionBeat {
+	kind: "hook" | "setup" | "body" | "payoff" | "cta";
+	label: string;
+	startTime: number;
+	endTime: number;
+	strategy: "talking" | "montage" | "broll" | "caption-led" | "overlay-led";
+	reasons: string[];
+}
+
+export interface RetentionShapeStep {
+	kind:
+		| "promote-hook"
+		| "trim-setup"
+		| "compress-body"
+		| "delay-context"
+		| "insert-payoff"
+		| "reserve-cta";
+	params: Record<string, unknown>;
+	reasons: string[];
+}
+
+export interface RetentionShapePlan {
+	generatedAt: string;
+	beats: RetentionBeat[];
+	steps: RetentionShapeStep[];
+	warnings: string[];
+	hookCandidateId?: string | null;
+	payoffMomentIds?: string[];
+}
+
 export type DraftBuildStepKind =
 	| "auto-edit"
 	| "make-version"
@@ -175,6 +205,7 @@ export interface DraftRecipe {
 	brief: CreativeBrief;
 	sections: DraftSectionPlan[];
 	operations: DraftBuildStep[];
+	retentionShape?: RetentionShapePlan | null;
 	hookCandidateId?: string | null;
 	keepCutRecommendationIds?: string[];
 	warnings: string[];

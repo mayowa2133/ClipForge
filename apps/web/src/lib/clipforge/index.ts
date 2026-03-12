@@ -23,6 +23,7 @@ export * from "./segment-resolution";
 export * from "./text-overlay-presets";
 export * from "./drafting";
 export * from "./footage-intelligence";
+export * from "./retention-shaping";
 export * from "./transcribers/whisper-cli";
 export * from "./demo/manifest";
 export * from "./demo/create-demo-project";

@@ -3,6 +3,7 @@ import {
 	DEFAULT_PROJECT_OVERLAY_DEFAULTS,
 	detectVersionTargetFromCanvasSize,
 } from "@/constants/project-constants";
+import { buildRetentionShapePlan } from "@/lib/clipforge/retention-shaping";
 import type { MediaAsset } from "@/types/assets";
 import type {
 	CreativeBrief,
@@ -13,6 +14,7 @@ import type {
 	DraftRecipe,
 	DraftSectionPlan,
 	FootageIntelligenceReport,
+	RetentionShapePlan,
 	TrendSoundReference,
 } from "@/types/clipforge";
 import type { ProjectVersionTarget, TProject } from "@/types/project";
@@ -173,13 +175,20 @@ export function planDraftRecipe({
 		: false;
 	const overlayPresets = GOAL_TO_OVERLAY_PRESETS[brief.goal] ?? [];
 	const topHookCandidate = footageIntelligenceReport?.hookCandidates[0] ?? null;
-	const keepCutRecommendationIds =
-		footageIntelligenceReport?.keepCutRecommendations
-			.filter((recommendation) => recommendation.action !== "keep")
-			.slice(0, 3)
-			.map((recommendation) => recommendation.id) ?? [];
 	const hasSceneAssembly =
 		(activeScene?.tracks.reduce((total, track) => total + track.elements.length, 0) ?? 0) > 0;
+	const retentionShape = buildRetentionShapePlan({
+		brief,
+		footageReport: footageIntelligenceReport,
+		project,
+		beatMarkerCount,
+	});
+	const keepCutRecommendationIds = extractRecommendationIdsFromRetentionPlan({
+		retentionShape,
+	});
+	for (const warning of retentionShape.warnings) {
+		pushUniqueWarning({ warnings, warning });
+	}
 
 	if (!hasVisualMedia) {
 		warnings.push("No video clips are available for a TikTok draft.");
@@ -189,10 +198,6 @@ export function planDraftRecipe({
 				kind: "auto-edit",
 				params: {},
 			});
-		} else if (!topHookCandidate) {
-			warnings.push(
-				"Hook scoring is unavailable, so opener selection falls back to clip order.",
-			);
 		}
 	}
 
@@ -248,7 +253,10 @@ export function planDraftRecipe({
 			},
 		});
 	} else {
-		warnings.push("No analyzed beat source is active, so beat-paced montage may be skipped.");
+		pushUniqueWarning({
+			warnings,
+			warning: "No analyzed beat source is active, so beat-paced montage may be skipped.",
+		});
 	}
 	if (brief.trendSoundReferenceId) {
 		const trendReference =
@@ -256,14 +264,19 @@ export function planDraftRecipe({
 				(reference) => reference.id === brief.trendSoundReferenceId,
 			) ?? null;
 		if (trendReference) {
-			warnings.push(
-				`Using trend reference "${trendReference.label}" as a pacing/style cue only; you still need a valid bundled or imported audio track.`,
-			);
+			pushUniqueWarning({
+				warnings,
+				warning: `Using trend reference "${trendReference.label}" as a pacing/style cue only; you still need a valid bundled or imported audio track.`,
+			});
 		}
 	}
 	for (const footageWarning of footageIntelligenceReport?.warnings ?? []) {
-		warnings.push(footageWarning);
+		pushUniqueWarning({ warnings, warning: footageWarning });
 	}
+
+	const hookBeat = retentionShape.beats.find((beat) => beat.kind === "hook") ?? null;
+	const payoffBeat = retentionShape.beats.find((beat) => beat.kind === "payoff") ?? null;
+	const ctaBeat = retentionShape.beats.find((beat) => beat.kind === "cta") ?? null;
 
 	for (const [index, presetId] of overlayPresets.entries()) {
 		operations.push({
@@ -272,7 +285,10 @@ export function planDraftRecipe({
 				presetId,
 				variantId: brief.overlayStyleVariantId,
 				motionPresetId: brief.motionPresetId,
-				startTime: index === 0 ? 0.3 : 2.8,
+				startTime:
+					index === 0
+						? Number(Math.max(0.25, Math.min(1.2, (hookBeat?.startTime ?? 0) + 0.2)).toFixed(2))
+						: Number((payoffBeat?.startTime ?? 2.8).toFixed(2)),
 				duration: presetId === "timestamp-card" ? 2 : 2.2,
 			},
 		});
@@ -286,7 +302,12 @@ export function planDraftRecipe({
 				recipeId: sceneRecipeId,
 				startTime:
 					sceneRecipeId === "cta-outro"
-						? Math.max(0, (brief.durationTargetS ?? 24) - 2.6)
+						? Number(
+								(
+									ctaBeat?.startTime ??
+									Math.max(0, (brief.durationTargetS ?? 24) - 2.6)
+								).toFixed(2),
+						  )
 						: 0.15,
 			},
 		});
@@ -312,13 +333,9 @@ export function planDraftRecipe({
 		brief,
 		sections: buildSectionPlan({ brief }),
 		operations,
-		hookCandidateId: !operations.some((step) => step.kind === "auto-edit")
-			? topHookCandidate?.id ?? null
-			: null,
-		keepCutRecommendationIds:
-			!operations.some((step) => step.kind === "auto-edit") && keepCutRecommendationIds.length > 0
-				? keepCutRecommendationIds
-				: [],
+		retentionShape,
+		hookCandidateId: retentionShape.hookCandidateId ?? topHookCandidate?.id ?? null,
+		keepCutRecommendationIds: keepCutRecommendationIds,
 		warnings,
 	};
 }
@@ -547,4 +564,46 @@ function buildSectionPlan({
 		});
 	}
 	return sections;
+}
+
+function extractRecommendationIdsFromRetentionPlan({
+	retentionShape,
+}: {
+	retentionShape: RetentionShapePlan | null;
+}): string[] {
+	if (!retentionShape) {
+		return [];
+	}
+	const ids: string[] = [];
+	for (const step of retentionShape.steps) {
+		if (
+			step.kind !== "trim-setup" &&
+			step.kind !== "delay-context" &&
+			step.kind !== "compress-body"
+		) {
+			continue;
+		}
+		const stepIds = step.params.recommendationIds;
+		if (!Array.isArray(stepIds)) {
+			continue;
+		}
+		for (const id of stepIds) {
+			if (typeof id === "string" && !ids.includes(id)) {
+				ids.push(id);
+			}
+		}
+	}
+	return ids;
+}
+
+function pushUniqueWarning({
+	warnings,
+	warning,
+}: {
+	warnings: string[];
+	warning: string;
+}): void {
+	if (!warnings.includes(warning)) {
+		warnings.push(warning);
+	}
 }

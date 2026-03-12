@@ -54,6 +54,7 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M46: Creative library foundations with free-first bundled fonts, music, sound effects, stickers, presets, and attribution-safe starter packs.
 - [x] M47: Rights-safe music workflow with free library expansion, trend references, rights labeling, and destination-aware export warnings.
 - [x] M48: Social SFX and animation sync library with expanded built-in SFX, typing/cursor/caption sync sounds, airy transition sounds, and one-click sound pairing for graphics and captions.
+- [x] M49: Retention-aware story shaping with hook-first assembly, payoff planning, CTA reservation, and reviewable story-shape guidance in chat.
 
 ## Working Rules
 

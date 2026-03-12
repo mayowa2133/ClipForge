@@ -238,6 +238,10 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
   - ranks strong early moments as hook candidates,
   - surfaces likely trims/cuts with explainable reasons,
   - and lets the creative-brief planner prefer those hook/keep-cut recommendations when available.
+- Retention-aware story shaping now sits on top of those draft plans:
+  - ClipForge builds a reviewable `Story shape` with explicit `hook -> setup -> body -> payoff -> optional CTA` beats,
+  - reshapes weak openers before duration tightening,
+  - and keeps CTA reservation brief-driven instead of forcing it onto every draft.
 - The free-first creative library is local and attribution-safe:
   - `Graphics`, `Captions`, `Audio`, and `Stickers` now expose bundled starter content before remote/imported sources
   - `Graphics -> Brand` now includes default bundled caption style, title preset, and music mood preferences

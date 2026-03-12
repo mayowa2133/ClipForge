@@ -59,10 +59,11 @@
    - Choose the intended clip or caption, then ClipForge re-runs the plan.
 7. Review UI depends on intent:
    - raw-op requests show the existing JSON-op review flow
-   - draft-build requests show a recipe card with target duration, section plan, caption/overlay style, version targets, warnings, explicit build steps, and compact footage insights
+   - draft-build requests show a recipe card with target duration, section plan, caption/overlay style, version targets, warnings, explicit build steps, compact footage insights, and a `Story shape` section
 8. For draft-build requests:
    - ClipForge runs deterministic footage intelligence first when possible
    - the recipe can reference a recommended opener and likely trims/cuts before build
+   - retention shaping can reserve a distinct payoff beat and optional CTA beat before the draft is applied
    - toggle steps on/off if needed
    - adjust duration/style defaults
    - click `Build draft` to assemble the first cut from existing editor systems

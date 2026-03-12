@@ -6,6 +6,7 @@ import {
 	buildEmptyMediaMetadata,
 	buildCreativeBriefFromPrompt,
 	buildDraftImpactSummary,
+	buildRetentionShapePlan,
 	buildSceneFootageIntelligenceReport,
 	collectIncompatibleMediaReferences,
 	collectMissingMediaReferences,
@@ -49,6 +50,7 @@ import type {
 	DraftImpactSummary,
 	DraftRecipe,
 	FootageIntelligenceReport,
+	RetentionShapePlan,
 	TrendSoundReference,
 	TimelineDiffOp,
 	CutRangeOp,
@@ -658,12 +660,130 @@ export class ClipForgeManager {
 		});
 	}
 
+	planRetentionShape({
+		brief,
+		footageReport,
+	}: {
+		brief: CreativeBrief;
+		footageReport: FootageIntelligenceReport | null;
+	}): RetentionShapePlan {
+		return buildRetentionShapePlan({
+			brief,
+			footageReport,
+			project: this.editor.project.getActive(),
+			beatMarkerCount: this.editor.audio.getSceneBeatMarkers().markers.length,
+		});
+	}
+
 	previewDraftRecipe({
 		recipe,
 	}: {
 		recipe: DraftRecipe;
 	}): DraftImpactSummary {
 		return buildDraftImpactSummary({ recipe });
+	}
+
+	previewRetentionShape({
+		plan,
+	}: {
+		plan: RetentionShapePlan;
+	}): DraftImpactSummary {
+		const activeProject = this.editor.project.getActive();
+		const activeTarget =
+			activeProject?.settings.versionPack?.activeTargetId ??
+			activeProject?.settings.versionPack?.targets.find((target) => target.enabled)?.id ??
+			null;
+		return {
+			totalSteps: plan.steps.length,
+			overlayCount: plan.steps.filter(
+				(step) => step.kind === "insert-payoff" || step.kind === "reserve-cta",
+			).length,
+			versionTargets: activeTarget ? [activeTarget] : [],
+			willRebuildAssembly: false,
+			willGenerateCaptions: false,
+			usesBeatMontage: plan.beats.some((beat) => beat.strategy === "montage"),
+		};
+	}
+
+	async applyRetentionShape({
+		plan,
+	}: {
+		plan: RetentionShapePlan;
+	}): Promise<{ appliedSteps: number; skippedSteps: number; messages: string[] }> {
+		const messages: string[] = [];
+		let appliedSteps = 0;
+		let skippedSteps = 0;
+
+		for (const step of plan.steps) {
+			try {
+				switch (step.kind) {
+					case "promote-hook": {
+						const candidateId = readStringParam({
+							params: step.params,
+							key: "candidateId",
+						});
+						if (!candidateId) {
+							throw new Error("Missing hook candidate id.");
+						}
+						this.applyHookCandidate({ candidateId });
+						appliedSteps += 1;
+						messages.push("Promoted the recommended opener.");
+						break;
+					}
+					case "trim-setup":
+					case "compress-body": {
+						const recommendationIds = readStringArrayParam({
+							params: step.params,
+							key: "recommendationIds",
+						});
+						if (recommendationIds.length === 0) {
+							throw new Error("No keep/cut recommendations were attached to this step.");
+						}
+						const result = this.applyKeepCutRecommendations({
+							recommendationIds,
+						});
+						if (result.applied === 0) {
+							skippedSteps += 1;
+							messages.push(
+								`Skipped ${step.kind}: no eligible trims or cuts remained after rescoring.`,
+							);
+							break;
+						}
+						appliedSteps += 1;
+						messages.push(...result.messages);
+						break;
+					}
+					case "delay-context": {
+						appliedSteps += 1;
+						messages.push("Delayed slower context until after the opener lands.");
+						break;
+					}
+					case "insert-payoff": {
+						appliedSteps += 1;
+						messages.push("Reserved a later payoff beat for overlays and caption emphasis.");
+						break;
+					}
+					case "reserve-cta": {
+						appliedSteps += 1;
+						messages.push("Reserved the ending beat for CTA content.");
+						break;
+					}
+				}
+			} catch (error) {
+				skippedSteps += 1;
+				messages.push(
+					error instanceof Error
+						? `Skipped ${step.kind}: ${error.message}`
+						: `Skipped ${step.kind}.`,
+				);
+			}
+		}
+
+		return {
+			appliedSteps,
+			skippedSteps,
+			messages,
+		};
 	}
 
 	async applyDraftRecipe({
@@ -676,9 +796,33 @@ export class ClipForgeManager {
 		let skippedSteps = 0;
 		let workingFootageReport = this.getSceneFootageIntelligence();
 
+		if (recipe.retentionShape) {
+			const retentionResult = await this.applyRetentionShape({
+				plan: recipe.retentionShape,
+			});
+			appliedSteps += retentionResult.appliedSteps;
+			skippedSteps += retentionResult.skippedSteps;
+			messages.push(...retentionResult.messages);
+			if (retentionResult.appliedSteps > 0) {
+				try {
+					workingFootageReport = await this.analyzeSceneFootageIntelligence();
+				} catch {
+					workingFootageReport = null;
+					messages.push(
+						"Retention shaping applied, but footage intelligence could not be refreshed before follow-up tightening.",
+					);
+				}
+			}
+		}
+
 		for (const step of recipe.operations) {
 			try {
-				if (appliedSteps === 0 && recipe.hookCandidateId && !recipe.operations.some((candidate) => candidate.kind === "auto-edit")) {
+				if (
+					!recipe.retentionShape &&
+					appliedSteps === 0 &&
+					recipe.hookCandidateId &&
+					!recipe.operations.some((candidate) => candidate.kind === "auto-edit")
+				) {
 					this.applyHookCandidate({ candidateId: recipe.hookCandidateId });
 					messages.push("Promoted the recommended opener.");
 					appliedSteps += 1;
@@ -709,7 +853,7 @@ export class ClipForgeManager {
 						break;
 					}
 					case "make-version": {
-						if ((recipe.keepCutRecommendationIds?.length ?? 0) > 0) {
+						if (!recipe.retentionShape && (recipe.keepCutRecommendationIds?.length ?? 0) > 0) {
 							const refreshedRecommendationIds =
 								workingFootageReport?.keepCutRecommendations
 									.filter((recommendation) => recommendation.action !== "keep")
