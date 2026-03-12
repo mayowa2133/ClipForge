@@ -148,6 +148,7 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
    - built-in starter music and SFX in `Audio -> Songs` and `Audio -> Sound effects`
    - built-in sticker/icon pack in `Stickers`
    - bundled caption/graphics/overlay/motion presets in the existing creative surfaces
+   - bundled `Polish` profiles that coordinate caption reveal, overlay style, finishing look, sound sync, and audio polish
    - expanded social SFX groups for:
      - typing / cursor
      - caption pops
@@ -160,8 +161,8 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
      - imported audio with explicit user-managed rights labels
 8. Open chat from the right panel toggle (or `Ctrl/Cmd + /`).
    - Direct edit prompts (for example `trim this clip by 0.5s at the start`, `add text here that says "watch this"`, `replace "teh" with "the" in this caption`, or `trim the first clip by 0.5s and move it to 5s`) still produce deterministic JSON ops for review/apply.
-   - High-level draft prompts (for example `make me a viral TikTok from this`, `luxury morning routine style`, or `make it shorter with bold captions`) now produce a structured `Draft recipe` card first.
-   - The recipe shows target duration, section plan, caption/overlay style, version targets, and explicit build steps before you click `Build draft`.
+   - High-level draft prompts (for example `make me a viral TikTok from this`, `luxury morning routine style`, or `make it shorter with bold captions`) now produce a structured `Creative brief` card first.
+   - The brief shows target duration, story shape, caption/overlay style, polish profile, version targets, and explicit build steps before you click `Build first draft`.
 9. Use normal OpenCut `Undo/Redo` shortcuts.
 10. Click the top-right `Export` button:
    - The preview toolbar shows sampled preview/export fidelity before you export.
@@ -242,6 +243,10 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
   - ClipForge builds a reviewable `Story shape` with explicit `hook -> setup -> body -> payoff -> optional CTA` beats,
   - reshapes weak openers before duration tightening,
   - and keeps CTA reservation brief-driven instead of forcing it onto every draft.
+- Publish-ready polish now sits on top of the structured draft:
+  - ClipForge picks a bundled polish profile for the scene,
+  - applies coordinated caption reveals, overlay styling, finishing looks, sound sync, and audio polish,
+  - and keeps the whole pass deterministic and reversible before export.
 - The free-first creative library is local and attribution-safe:
   - `Graphics`, `Captions`, `Audio`, and `Stickers` now expose bundled starter content before remote/imported sources
   - `Graphics -> Brand` now includes default bundled caption style, title preset, and music mood preferences

@@ -4,6 +4,7 @@ import {
 	detectVersionTargetFromCanvasSize,
 } from "@/constants/project-constants";
 import { buildRetentionShapePlan } from "@/lib/clipforge/retention-shaping";
+import { resolvePolishProfileFromBrief } from "@/lib/clipforge/polish-profiles";
 import type { MediaAsset } from "@/types/assets";
 import type {
 	CreativeBrief,
@@ -177,6 +178,7 @@ export function planDraftRecipe({
 	const topHookCandidate = footageIntelligenceReport?.hookCandidates[0] ?? null;
 	const hasSceneAssembly =
 		(activeScene?.tracks.reduce((total, track) => total + track.elements.length, 0) ?? 0) > 0;
+	const polishProfile = resolvePolishProfileFromBrief({ brief, project });
 	const retentionShape = buildRetentionShapePlan({
 		brief,
 		footageReport: footageIntelligenceReport,
@@ -312,6 +314,13 @@ export function planDraftRecipe({
 			},
 		});
 	}
+
+	operations.push({
+		kind: "apply-polish-profile",
+		params: {
+			profileId: polishProfile.id,
+		},
+	});
 
 	operations.push({
 		kind: "apply-version-pack",

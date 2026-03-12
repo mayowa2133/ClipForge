@@ -29,6 +29,8 @@ function buildProject(overrides?: Partial<TProject>): TProject {
 				duckingAmount: 0.5,
 				duckingAttackMs: 100,
 				duckingReleaseMs: 300,
+				audioPolishPresetId: "none",
+				softLimiterEnabled: false,
 			},
 		},
 		version: 13,
@@ -224,5 +226,7 @@ describe("audio mix helpers", () => {
 		expect(summary.musicClipCount).toBe(1);
 		expect(summary.voiceoverClipCount).toBe(1);
 		expect(summary.masterVolume).toBe(1);
+		expect(summary.audioPolishPresetId).toBe("none");
+		expect(summary.softLimiterEnabled).toBe(false);
 	});
 });

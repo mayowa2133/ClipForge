@@ -1,4 +1,11 @@
-import type { ProjectVersionTarget } from "./project";
+import type {
+	OverlayMotionPresetId,
+	ProjectVersionTarget,
+} from "./project";
+import type {
+	AnimationSfxPresetId,
+	OverlayStyleVariantId,
+} from "./timeline";
 
 export type ClipForgeAspectRatioPreset = "9:16" | "1:1" | "16:9";
 
@@ -57,6 +64,8 @@ export interface CaptionStyleTemplate {
 	position: CaptionPosition;
 	outline: boolean;
 	highlight_mode: CaptionHighlightMode;
+	reveal_preset_id?: CaptionRevealPresetId | null;
+	sound_sync_preset_id?: AnimationSfxPresetId | null;
 }
 
 export interface CaptionSegmentView {
@@ -147,6 +156,49 @@ export interface CreativeBrief {
 	notes: string | null;
 }
 
+export type CaptionRevealPresetId =
+	| "none"
+	| "fade-line"
+	| "pop-line"
+	| "type-on-soft"
+	| "type-on-bold"
+	| "lift-in"
+	| "luxury-rise";
+
+export type AudioPolishPresetId =
+	| "none"
+	| "voice-forward"
+	| "luxury-soft"
+	| "bold-social"
+	| "music-forward";
+
+export type PolishProfileId =
+	| "clean-vlog"
+	| "luxury-routine"
+	| "bold-social"
+	| "talking-head"
+	| "product-promo";
+
+export type PolishFinishingLookId =
+	| "clean"
+	| "warm"
+	| "cool"
+	| "dramatic"
+	| "mono"
+	| "vintage";
+
+export interface PolishProfile {
+	id: PolishProfileId;
+	label: string;
+	captionStyleId: string;
+	captionRevealPresetId: CaptionRevealPresetId;
+	overlayStyleVariantId: OverlayStyleVariantId;
+	motionPresetId: OverlayMotionPresetId;
+	animationSfxPresetId?: AnimationSfxPresetId | null;
+	finishingLookId: PolishFinishingLookId;
+	audioPolishPresetId: AudioPolishPresetId;
+}
+
 export interface DraftSectionPlan {
 	kind: "hook" | "body" | "payoff" | "cta";
 	label: string;
@@ -189,6 +241,7 @@ export type DraftBuildStepKind =
 	| "make-version"
 	| "generate-captions"
 	| "apply-caption-style"
+	| "apply-polish-profile"
 	| "apply-project-kit"
 	| "insert-scene-recipe"
 	| "insert-overlay"

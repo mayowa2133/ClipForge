@@ -1,5 +1,9 @@
 import type { OverlayStyleVariantId, TScene } from "./timeline";
-import type { ClipForgeProjectData } from "./clipforge";
+import type {
+	AudioPolishPresetId,
+	ClipForgeProjectData,
+	PolishProfileId,
+} from "./clipforge";
 import type { ProjectMontageDefaults } from "./templates";
 
 export type TBackground =
@@ -23,6 +27,8 @@ export interface ProjectAudioSettings {
 	duckingAmount: number;
 	duckingAttackMs: number;
 	duckingReleaseMs: number;
+	audioPolishPresetId?: AudioPolishPresetId;
+	softLimiterEnabled?: boolean;
 }
 
 export interface ProjectBrandKit {
@@ -88,6 +94,7 @@ export interface TProjectSettings {
 	overlayDefaults?: ProjectOverlayDefaults;
 	montageDefaults?: ProjectMontageDefaults;
 	versionPack?: ProjectVersionPack;
+	polishProfileId?: PolishProfileId | null;
 }
 
 export interface TTimelineViewState {

@@ -16,8 +16,10 @@ import { Spinner } from "@/components/ui/spinner";
 import { TRANSCRIPTION_LANGUAGES } from "@/constants/transcription-constants";
 import { useEditor } from "@/hooks/use-editor";
 import { getBuiltInCaptionStyleLabel } from "@/lib/clipforge/caption-style-library";
+import { CAPTION_REVEAL_LABELS } from "@/lib/clipforge/polish-profiles";
 import { getAnimationSfxPairingsForTarget } from "@/lib/timeline";
 import type { CaptionSegmentView } from "@/types/clipforge";
+import type { CaptionRevealPresetId } from "@/types/clipforge";
 import type { AnimationSfxPresetId } from "@/types/timeline";
 import type { TranscriptionLanguage } from "@/types/transcription";
 import { cn } from "@/utils/ui";
@@ -47,6 +49,8 @@ export function Captions() {
 		);
 	}, [activeProject]);
 	const activeStyleId = activeProject?.clipforge?.activeCaptionStyleId ?? null;
+	const activeRevealPresetId =
+		styles.find((style) => style.style_id === activeStyleId)?.reveal_preset_id ?? "none";
 	const projectDefaultStyleId =
 		activeProject?.settings.libraryDefaults?.captionStyleId ??
 		activeStyleId ??
@@ -218,7 +222,7 @@ export function Captions() {
 									type="button"
 									onClick={() => {
 										try {
-											editor.clipforge.applySceneCaptionStyle({ styleId: style.style_id });
+											void editor.clipforge.applySceneCaptionStyle({ styleId: style.style_id });
 											toast(`Applied ${style.style_id} to this scene.`);
 										} catch (cause) {
 											const message =
@@ -246,6 +250,31 @@ export function Captions() {
 								</button>
 							);
 						})}
+					</div>
+					<div className="mt-3 grid grid-cols-1 gap-2">
+						<Label>Reveal</Label>
+						<Select
+							value={activeRevealPresetId}
+							onValueChange={(value) => {
+								void editor.clipforge.applySceneCaptionRevealPreset({
+									presetId: value as CaptionRevealPresetId,
+								});
+								toast(`Applied ${CAPTION_REVEAL_LABELS[value as CaptionRevealPresetId]} reveal.`);
+							}}
+						>
+							<SelectTrigger>
+								<SelectValue placeholder="Reveal preset" />
+							</SelectTrigger>
+							<SelectContent>
+								{(Object.entries(CAPTION_REVEAL_LABELS) as Array<
+									[CaptionRevealPresetId, string]
+								>).map(([id, label]) => (
+									<SelectItem key={id} value={id}>
+										{label}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					</div>
 					{captions.length === 0 ? (
 						<p className="text-muted-foreground mt-3 text-xs">

@@ -21,6 +21,7 @@
 4. Click `Auto Edit TikTok`.
 5. Optionally use the bundled creative library first:
    - `Graphics` for built-in title/overlay presets
+   - `Graphics -> Polish` for bundled final-pass polish profiles
    - `Audio -> Songs` for built-in starter tracks, trend references, and imported audio
    - `Audio -> Sound effects` for built-in SFX, including typing/cursor, caption pops, airy transitions, and UI/accent groups
    - `Stickers` for built-in sticker/icon packs
@@ -59,14 +60,15 @@
    - Choose the intended clip or caption, then ClipForge re-runs the plan.
 7. Review UI depends on intent:
    - raw-op requests show the existing JSON-op review flow
-   - draft-build requests show a recipe card with target duration, section plan, caption/overlay style, version targets, warnings, explicit build steps, compact footage insights, and a `Story shape` section
+   - draft-build requests show a recipe card with target duration, section plan, caption/overlay style, polish profile, version targets, warnings, explicit build steps, compact footage insights, and a `Story shape` section
 8. For draft-build requests:
    - ClipForge runs deterministic footage intelligence first when possible
    - the recipe can reference a recommended opener and likely trims/cuts before build
    - retention shaping can reserve a distinct payoff beat and optional CTA beat before the draft is applied
+   - the brief now also includes a `Polish` section with the selected caption reveal, audio polish, and finishing look
    - toggle steps on/off if needed
    - adjust duration/style defaults
-   - click `Build draft` to assemble the first cut from existing editor systems
+   - click `Build first draft` to assemble the first cut from existing editor systems
 9. For raw-op requests:
    - The review UI shows which planner produced the result and any fallback warnings.
    - A plan safety summary shows repaired/dropped/blocked outcomes across semantic safety + validator reconciliation.
@@ -137,5 +139,10 @@ Example chat prompts:
    - `Built-in utility`
 7. Graphics and caption workflows can apply explicit `Sound sync` presets that insert bundled SFX clips on the timeline.
 8. Bundled SFX are universal/free-first assets and do not trigger export music-rights warnings.
-9. When exporting, pick a publish destination in the export popover.
-10. If the project uses imported or restricted audio, ClipForge shows warning-first rights guidance instead of pretending the track is universally safe.
+9. `Graphics -> Polish` and the chat brief can apply bundled final-pass polish profiles:
+   - caption reveal families
+   - finishing looks
+   - coordinated overlay style and motion
+   - deterministic audio polish presets and soft limiting
+10. When exporting, pick a publish destination in the export popover.
+11. If the project uses imported or restricted audio, ClipForge shows warning-first rights guidance instead of pretending the track is universally safe.

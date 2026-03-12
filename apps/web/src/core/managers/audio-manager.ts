@@ -2,6 +2,7 @@ import type { EditorCore } from "@/core";
 import type { AudioClipSource, ProjectMixSummary } from "@/lib/media/audio";
 import {
 	analyzeNormalizationGainDb,
+	buildSoftLimiterCurve,
 	buildProjectMixSummary,
 	collectAudioClips,
 	createAudioContext,
@@ -25,6 +26,7 @@ import {
 export class AudioManager {
 	private audioContext: AudioContext | null = null;
 	private masterGain: GainNode | null = null;
+	private softLimiter: WaveShaperNode | null = null;
 	private playbackStartTime = 0;
 	private playbackStartContextTime = 0;
 	private scheduleTimer: number | null = null;
@@ -57,6 +59,7 @@ export class AudioManager {
 			this.editor.playback.subscribe(this.handlePlaybackChange),
 			this.editor.timeline.subscribe(this.handleTimelineChange),
 			this.editor.media.subscribe(this.handleTimelineChange),
+			this.editor.project.subscribe(this.handleTimelineChange),
 		);
 		if (typeof window !== "undefined") {
 			window.addEventListener("playback-seek", this.handleSeek);
@@ -78,6 +81,7 @@ export class AudioManager {
 			void this.audioContext.close();
 			this.audioContext = null;
 			this.masterGain = null;
+			this.softLimiter = null;
 		}
 	}
 
@@ -135,8 +139,20 @@ export class AudioManager {
 		this.audioContext = createAudioContext();
 		this.masterGain = this.audioContext.createGain();
 		this.masterGain.gain.value = this.lastVolume;
-		this.masterGain.connect(this.audioContext.destination);
+		this.softLimiter = this.audioContext.createWaveShaper();
+		this.softLimiter.oversample = "2x";
+		this.masterGain.connect(this.softLimiter);
+		this.softLimiter.connect(this.audioContext.destination);
+		this.syncAudioPolishNodes();
 		return this.audioContext;
+	}
+
+	private syncAudioPolishNodes(): void {
+		if (!this.softLimiter) return;
+		const settings = this.editor.project.getActive()?.settings.audio;
+		this.softLimiter.curve = settings?.softLimiterEnabled
+			? buildSoftLimiterCurve()
+			: null;
 	}
 
 	private updateGain(): void {
@@ -175,6 +191,7 @@ export class AudioManager {
 		if (audioContext.state === "suspended") {
 			await audioContext.resume();
 		}
+		this.syncAudioPolishNodes();
 
 		this.clips = await collectAudioClips({ tracks, mediaAssets, project: activeProject });
 		if (!this.editor.playback.getIsPlaying()) return;
@@ -294,6 +311,7 @@ export class AudioManager {
 			}) *
 				clip.volume *
 				dbToGain(clip.normalizationGainDb) *
+				clip.roleGain *
 				clip.trackVolume *
 				clip.masterVolume *
 				getDuckingGainAtTime({
@@ -308,6 +326,7 @@ export class AudioManager {
 			}) *
 				clip.volume *
 				dbToGain(clip.normalizationGainDb) *
+				clip.roleGain *
 				clip.trackVolume *
 				clip.masterVolume *
 				getDuckingGainAtTime({

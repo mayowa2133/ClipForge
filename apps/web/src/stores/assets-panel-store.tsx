@@ -28,7 +28,7 @@ export const TAB_KEYS = [
 ] as const;
 
 export type Tab = (typeof TAB_KEYS)[number];
-export type GraphicsTab = "titles" | "overlays" | "cta" | "brand" | "text";
+export type GraphicsTab = "titles" | "overlays" | "cta" | "polish" | "brand" | "text";
 export type TemplatesTab = "components" | "scene-recipes" | "project-kits";
 
 const createHugeiconsIcon =

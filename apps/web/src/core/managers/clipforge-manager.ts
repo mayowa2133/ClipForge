@@ -1,5 +1,9 @@
 import type { EditorCore } from "@/core";
 import {
+	DEFAULT_PROJECT_AUDIO_SETTINGS,
+	DEFAULT_PROJECT_LIBRARY_DEFAULTS,
+} from "@/constants/project-constants";
+import {
 	BestEffortExportIntegration,
 	buildClipIndex,
 	buildSceneCaptionSegments,
@@ -8,6 +12,7 @@ import {
 	buildDraftImpactSummary,
 	buildRetentionShapePlan,
 	buildSceneFootageIntelligenceReport,
+	buildCaptionRevealKeyframes,
 	collectIncompatibleMediaReferences,
 	collectMissingMediaReferences,
 	collectUnverifiedMediaReferences,
@@ -27,11 +32,15 @@ import {
 	type MissingMediaReference,
 	resolveClipForgeTranscriber,
 	resolveMediaAssetByName,
+	resolvePolishProfileFromBrief,
 	SrtImportTranscriber,
 	updateSceneCaptionTrack,
 	validateTimelineDiffOps,
 	isCreativeDraftIntent,
 	planDraftRecipe as planCreativeDraftRecipe,
+	getAudioPolishPresetById,
+	getCaptionRevealSoundSyncPreset,
+	getPolishProfileById,
 } from "@/lib/clipforge";
 import { buildPlanImpactPreview } from "@/lib/clipforge/chat/plan-impact";
 import { reconcileValidatorErrors } from "@/lib/clipforge/chat/validator-reconciliation";
@@ -41,6 +50,7 @@ import {
 	AutoEditTikTokDraftCommand,
 	CaptionProjectSnapshotCommand,
 } from "@/lib/commands";
+import { getAnimationSfxPairingById } from "@/lib/timeline";
 import { useClipForgeChatDraftStore } from "@/stores/clipforge-chat-draft-store";
 import type { MediaAsset } from "@/types/assets";
 import type {
@@ -50,6 +60,7 @@ import type {
 	DraftImpactSummary,
 	DraftRecipe,
 	FootageIntelligenceReport,
+	PolishProfile,
 	RetentionShapePlan,
 	TrendSoundReference,
 	TimelineDiffOp,
@@ -675,6 +686,19 @@ export class ClipForgeManager {
 		});
 	}
 
+	planPolishProfile({
+		brief,
+		project,
+	}: {
+		brief: CreativeBrief;
+		project?: TProject | null;
+	}): PolishProfile {
+		return resolvePolishProfileFromBrief({
+			brief,
+			project: project ?? this.editor.project.getActive(),
+		});
+	}
+
 	previewDraftRecipe({
 		recipe,
 	}: {
@@ -702,6 +726,26 @@ export class ClipForgeManager {
 			willRebuildAssembly: false,
 			willGenerateCaptions: false,
 			usesBeatMontage: plan.beats.some((beat) => beat.strategy === "montage"),
+		};
+	}
+
+	previewPolishProfile({
+		profile,
+	}: {
+		profile: PolishProfile;
+	}): DraftImpactSummary {
+		const activeProject = this.editor.project.getActive();
+		const activeTarget =
+			activeProject?.settings.versionPack?.activeTargetId ??
+			activeProject?.settings.versionPack?.targets.find((target) => target.enabled)?.id ??
+			null;
+		return {
+			totalSteps: 1,
+			overlayCount: this.getSceneOverlayGroups().length,
+			versionTargets: activeTarget ? [activeTarget] : [],
+			willRebuildAssembly: false,
+			willGenerateCaptions: false,
+			usesBeatMontage: profile.audioPolishPresetId === "bold-social",
 		};
 	}
 
@@ -931,9 +975,24 @@ export class ClipForgeManager {
 						if (!styleId) {
 							throw new Error("Missing caption style id.");
 						}
-						this.applySceneCaptionStyle({ styleId });
+						await this.applySceneCaptionStyle({ styleId });
 						appliedSteps += 1;
 						messages.push(`Applied caption style ${styleId}.`);
+						break;
+					}
+					case "apply-polish-profile": {
+						const profileId = readStringParam({
+							params: step.params,
+							key: "profileId",
+						});
+						if (!profileId) {
+							throw new Error("Missing polish profile id.");
+						}
+						const result = await this.applyPolishProfile({
+							profileId: profileId as PolishProfile["id"],
+						});
+						appliedSteps += Math.max(1, result.appliedSteps);
+						messages.push(...result.messages);
 						break;
 					}
 					case "auto-montage": {
@@ -1452,11 +1511,15 @@ export class ClipForgeManager {
 		this.applyCaptionProjectSnapshot({ before: activeProject, after: nextProject });
 	}
 
-	applySceneCaptionStyle({
+	async applySceneCaptionStyle({
 		styleId,
+		revealPresetId,
+		soundSyncPresetId,
 	}: {
 		styleId: string;
-	}): void {
+		revealPresetId?: import("@/types/clipforge").CaptionRevealPresetId | null;
+		soundSyncPresetId?: import("@/types/timeline").AnimationSfxPresetId | null;
+	}): Promise<void> {
 		const activeProject = this.editor.project.getActive();
 		if (!activeProject) {
 			throw new Error("No active project.");
@@ -1484,6 +1547,271 @@ export class ClipForgeManager {
 		if (!result.applied) {
 			throw new Error(result.errors[0]?.message ?? "Failed to apply caption style.");
 		}
+
+		const sceneCaptions = this.getSceneCaptions();
+		if (sceneCaptions.length === 0) {
+			return;
+		}
+
+		const effectiveRevealPresetId = revealPresetId ?? style.reveal_preset_id ?? "none";
+		const updates = sceneCaptions.flatMap((segment) => {
+			const track = this.editor.timeline.getTrackById({ trackId: segment.trackId });
+			const element =
+				track?.type === "text"
+					? track.elements.find(
+							(candidate) =>
+								candidate.type === "text" && candidate.id === segment.elementId,
+					  ) ?? null
+					: null;
+			if (!element || element.type !== "text") {
+				return [];
+			}
+			return [
+				{
+					trackId: segment.trackId,
+					elementId: segment.elementId,
+					updates: {
+						keyframes: buildCaptionRevealKeyframes({
+							element,
+							presetId: effectiveRevealPresetId,
+						}),
+					},
+				},
+			];
+		});
+		if (updates.length > 0) {
+			this.editor.timeline.updateElements({ updates });
+		}
+
+		const captionIds = sceneCaptions.map((segment) => segment.elementId);
+		this.editor.timeline.clearAnimationSfxPairing({
+			targetElementIds: captionIds,
+			expectedKind: "caption",
+		});
+		const effectiveSoundSyncPresetId =
+			soundSyncPresetId ??
+			style.sound_sync_preset_id ??
+			getCaptionRevealSoundSyncPreset({ presetId: effectiveRevealPresetId });
+		if (effectiveSoundSyncPresetId) {
+			await this.editor.timeline.applyAnimationSfxPairing({
+				pairingId: effectiveSoundSyncPresetId,
+				targetElementIds: captionIds,
+			});
+		}
+	}
+
+	async applySceneCaptionRevealPreset({
+		presetId,
+		soundSyncPresetId,
+	}: {
+		presetId: import("@/types/clipforge").CaptionRevealPresetId;
+		soundSyncPresetId?: import("@/types/timeline").AnimationSfxPresetId | null;
+	}): Promise<void> {
+		const sceneCaptions = this.getSceneCaptions();
+		if (sceneCaptions.length === 0) {
+			throw new Error("Generate captions before applying a reveal preset.");
+		}
+
+		const updates = sceneCaptions.flatMap((segment) => {
+			const track = this.editor.timeline.getTrackById({ trackId: segment.trackId });
+			const element =
+				track?.type === "text"
+					? track.elements.find(
+							(candidate) =>
+								candidate.type === "text" && candidate.id === segment.elementId,
+					  ) ?? null
+					: null;
+			if (!element || element.type !== "text") {
+				return [];
+			}
+			return [
+				{
+					trackId: segment.trackId,
+					elementId: segment.elementId,
+					updates: {
+						keyframes: buildCaptionRevealKeyframes({
+							element,
+							presetId,
+						}),
+					},
+				},
+			];
+		});
+		if (updates.length > 0) {
+			this.editor.timeline.updateElements({ updates });
+		}
+
+		const captionIds = sceneCaptions.map((segment) => segment.elementId);
+		if (captionIds.length > 0) {
+			this.editor.timeline.clearAnimationSfxPairing({
+				targetElementIds: captionIds,
+				expectedKind: "caption",
+			});
+			const effectiveSoundSyncPresetId =
+				soundSyncPresetId ?? getCaptionRevealSoundSyncPreset({ presetId });
+			if (effectiveSoundSyncPresetId) {
+				await this.editor.timeline.applyAnimationSfxPairing({
+					pairingId: effectiveSoundSyncPresetId,
+					targetElementIds: captionIds,
+				});
+			}
+		}
+	}
+
+	async applyPolishProfile({
+		profileId,
+	}: {
+		profileId: import("@/types/clipforge").PolishProfileId;
+	}): Promise<{ appliedSteps: number; messages: string[] }> {
+		const profile = getPolishProfileById({ profileId });
+		if (!profile) {
+			throw new Error("Polish profile not found.");
+		}
+
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+
+		const messages: string[] = [];
+		let appliedSteps = 0;
+		const animationSfxPairing = profile.animationSfxPresetId
+			? getAnimationSfxPairingById({ pairingId: profile.animationSfxPresetId })
+			: null;
+
+		await this.applySceneCaptionStyle({
+			styleId: profile.captionStyleId,
+			revealPresetId: profile.captionRevealPresetId,
+			soundSyncPresetId:
+				animationSfxPairing?.targetKind === "caption"
+					? animationSfxPairing.id
+					: undefined,
+		});
+		appliedSteps += 1;
+		messages.push(`Styled captions with ${profile.label}.`);
+
+		const audioPreset = getAudioPolishPresetById({
+			id: profile.audioPolishPresetId,
+		});
+		await this.editor.project.updateSettings({
+			settings: {
+				polishProfileId: profile.id,
+				audio: {
+					...DEFAULT_PROJECT_AUDIO_SETTINGS,
+					...(activeProject.settings.audio ?? {}),
+					audioPolishPresetId: profile.audioPolishPresetId,
+					softLimiterEnabled: audioPreset.softLimiterEnabled,
+				},
+				libraryDefaults: {
+					...DEFAULT_PROJECT_LIBRARY_DEFAULTS,
+					...(activeProject.settings.libraryDefaults ?? {}),
+					captionStyleId: profile.captionStyleId,
+				},
+				overlayDefaults: {
+					...(activeProject.settings.overlayDefaults ?? {}),
+					variantId: profile.overlayStyleVariantId,
+					motionPresetId: profile.motionPresetId,
+				},
+			},
+		});
+		appliedSteps += 1;
+		messages.push(`Updated scene defaults to ${profile.label}.`);
+
+		const overlayGroups = this.getSceneOverlayGroups();
+		for (const group of overlayGroups) {
+			this.editor.timeline.applyOverlayStyleVariant({
+				trackId: group.trackId,
+				elementIds: group.elementIds,
+				variantId: profile.overlayStyleVariantId,
+			});
+			for (const elementId of group.elementIds) {
+				this.editor.timeline.applyGraphicsMotionPreset({
+					trackId: group.trackId,
+					elementId,
+					motionPresetId: profile.motionPresetId,
+				});
+			}
+			if (animationSfxPairing?.targetKind === "graphics") {
+				await this.editor.timeline.applyAnimationSfxPairing({
+					pairingId: animationSfxPairing.id,
+					targetElementIds: group.elementIds,
+				});
+			}
+		}
+		if (overlayGroups.length > 0) {
+			appliedSteps += 1;
+			messages.push(`Updated ${overlayGroups.length} overlay group${overlayGroups.length === 1 ? "" : "s"} to the ${profile.label} polish.`);
+		}
+
+		const visualTargets = this.getSelectedOrPrimaryVisualTargets();
+		if (visualTargets.length > 0) {
+			for (const target of visualTargets) {
+				this.editor.timeline.applyElementFilterPreset({
+					trackId: target.trackId,
+					elementId: target.elementId,
+					presetId: profile.finishingLookId,
+				});
+			}
+			appliedSteps += 1;
+			messages.push(`Applied the ${profile.finishingLookId} finishing look.`);
+		} else {
+			messages.push(`Skipped finishing look because no visual clip was available to polish.`);
+		}
+
+		return { appliedSteps, messages };
+	}
+
+	private getSceneOverlayGroups(): Array<{ trackId: string; elementIds: string[] }> {
+		const groups = new Map<string, { trackId: string; elementIds: string[] }>();
+		for (const track of this.editor.timeline.getTracks()) {
+			if (track.type !== "text") continue;
+			for (const element of track.elements) {
+				if (element.type !== "text" || !element.overlayMeta) continue;
+				const groupKey = `${track.id}:${element.linkedGroupId ?? element.id}`;
+				const existing = groups.get(groupKey);
+				if (existing) {
+					existing.elementIds.push(element.id);
+					continue;
+				}
+				groups.set(groupKey, { trackId: track.id, elementIds: [element.id] });
+			}
+		}
+		return [...groups.values()].map((group) => ({
+			...group,
+			elementIds: [...new Set(group.elementIds)],
+		}));
+	}
+
+	private getSelectedOrPrimaryVisualTargets(): Array<{ trackId: string; elementId: string }> {
+		const selected = this.editor.selection
+			.getSelectedElements()
+			.flatMap(({ trackId, elementId }) => {
+				const track = this.editor.timeline.getTrackById({ trackId });
+				const element =
+					track?.elements.find((candidate) => candidate.id === elementId) ?? null;
+				if (
+					!track ||
+					!element ||
+					(element.type !== "video" && element.type !== "image")
+				) {
+					return [];
+				}
+				return [{ trackId, elementId }];
+			});
+		if (selected.length > 0) {
+			return selected;
+		}
+
+		for (const track of this.editor.timeline.getTracks()) {
+			const primary = track.elements.find(
+				(element) => element.type === "video" || element.type === "image",
+			);
+			if (primary) {
+				return [{ trackId: track.id, elementId: primary.id }];
+			}
+		}
+
+		return [];
 	}
 
 	clearSceneCaptions(): { cleared: number } {

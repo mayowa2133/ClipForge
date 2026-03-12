@@ -11,6 +11,7 @@ import {
 	getElementPlaybackRate,
 } from "@/lib/timeline/element-utils";
 import { canTracktHaveAudio } from "@/lib/timeline";
+import { getAudioPolishPresetById } from "@/lib/clipforge/polish-profiles";
 import { mediaSupportsAudio } from "@/lib/media/media-utils";
 import { Input, ALL_FORMATS, BlobSource, AudioBufferSink } from "mediabunny";
 import { DEFAULT_PROJECT_AUDIO_SETTINGS } from "@/constants/project-constants";
@@ -25,6 +26,7 @@ export type CollectedAudioElement = Omit<
 	buffer: AudioBuffer;
 	trackVolume: number;
 	role: "voiceover" | "music" | "sfx" | "audio";
+	roleGain: number;
 	normalizationGainDb: number;
 	ducking: AudioDuckingProfile | null;
 	masterVolume: number;
@@ -113,7 +115,7 @@ export async function collectAudioElements({
 		mediaAssets.map((media) => [media.id, media]),
 	);
 	const pendingElements: Array<Promise<CollectedAudioElement | null>> = [];
-	const mixSettings = getProjectAudioSettings({ project });
+	const mixSettings = getResolvedProjectAudioSettings({ project });
 	const duckingProfile = buildAudioDuckingProfile({
 		tracks,
 		project,
@@ -149,6 +151,7 @@ export async function collectAudioElements({
 							volume: element.volume,
 							muted: element.muted || isTrackMuted,
 							role: element.role ?? "audio",
+							roleGain: mixSettings.roleGainByType[element.role ?? "audio"],
 							normalizationGainDb: element.normalizationGainDb ?? 0,
 							trackVolume,
 							masterVolume: mixSettings.masterVolume,
@@ -185,6 +188,7 @@ export async function collectAudioElements({
 							volume: 1,
 							muted: elementMuted || isTrackMuted,
 							role: "audio",
+							roleGain: mixSettings.roleGainByType.audio,
 							normalizationGainDb: 0,
 							trackVolume,
 							masterVolume: mixSettings.masterVolume,
@@ -337,6 +341,7 @@ interface AudioMixSource {
 	volume: number;
 	muted: boolean;
 	role: "voiceover" | "music" | "sfx" | "audio";
+	roleGain: number;
 	normalizationGainDb: number;
 	trackVolume: number;
 	masterVolume: number;
@@ -357,6 +362,7 @@ export interface AudioClipSource {
 	volume: number;
 	muted: boolean;
 	role: "voiceover" | "music" | "sfx" | "audio";
+	roleGain: number;
 	normalizationGainDb: number;
 	trackVolume: number;
 	masterVolume: number;
@@ -382,20 +388,28 @@ export interface ProjectMixSummary {
 	masterVolume: number;
 	duckingEnabled: boolean;
 	duckingAmount: number;
+	audioPolishPresetId: ProjectAudioSettings["audioPolishPresetId"];
+	softLimiterEnabled: boolean;
 	dialogueWindowCount: number;
 	musicClipCount: number;
 	voiceoverClipCount: number;
+}
+
+interface ResolvedProjectAudioSettings extends ProjectAudioSettings {
+	roleGainByType: Record<CollectedAudioElement["role"], number>;
 }
 
 async function fetchLibraryAudioSource({
 	element,
 	trackVolume,
 	masterVolume,
+	roleGain,
 	ducking,
 }: {
 	element: LibraryAudioElement;
 	trackVolume: number;
 	masterVolume: number;
+	roleGain: number;
 	ducking: AudioDuckingProfile | null;
 }): Promise<AudioMixSource | null> {
 	try {
@@ -419,6 +433,7 @@ async function fetchLibraryAudioSource({
 			volume: element.volume,
 			muted: element.muted ?? false,
 			role: element.role ?? "audio",
+			roleGain,
 			normalizationGainDb: element.normalizationGainDb ?? 0,
 			trackVolume,
 			masterVolume,
@@ -437,12 +452,14 @@ async function fetchLibraryAudioClip({
 	muted,
 	trackVolume,
 	masterVolume,
+	roleGain,
 	ducking,
 }: {
 	element: LibraryAudioElement;
 	muted: boolean;
 	trackVolume: number;
 	masterVolume: number;
+	roleGain: number;
 	ducking: AudioDuckingProfile | null;
 }): Promise<AudioClipSource | null> {
 	try {
@@ -468,6 +485,7 @@ async function fetchLibraryAudioClip({
 			volume: element.volume,
 			muted,
 			role: element.role ?? "audio",
+			roleGain,
 			normalizationGainDb: element.normalizationGainDb ?? 0,
 			trackVolume,
 			masterVolume,
@@ -486,12 +504,14 @@ function collectMediaAudioSource({
 	mediaAsset,
 	trackVolume,
 	masterVolume,
+	roleGain,
 	ducking,
 }: {
 	element: TimelineElement;
 	mediaAsset: MediaAsset;
 	trackVolume: number;
 	masterVolume: number;
+	roleGain: number;
 	ducking: AudioDuckingProfile | null;
 }): AudioMixSource {
 	const volume = element.type === "audio" ? element.volume : 1;
@@ -508,6 +528,7 @@ function collectMediaAudioSource({
 		volume,
 		muted,
 		role: element.type === "audio" ? (element.role ?? "audio") : "audio",
+		roleGain,
 		normalizationGainDb:
 			element.type === "audio" ? (element.normalizationGainDb ?? 0) : 0,
 		trackVolume,
@@ -524,6 +545,7 @@ function collectMediaAudioClip({
 	muted,
 	trackVolume,
 	masterVolume,
+	roleGain,
 	ducking,
 }: {
 	element: TimelineElement;
@@ -531,6 +553,7 @@ function collectMediaAudioClip({
 	muted: boolean;
 	trackVolume: number;
 	masterVolume: number;
+	roleGain: number;
 	ducking: AudioDuckingProfile | null;
 }): AudioClipSource {
 	const volume = element.type === "audio" ? element.volume : 1;
@@ -548,6 +571,7 @@ function collectMediaAudioClip({
 		volume,
 		muted,
 		role: element.type === "audio" ? (element.role ?? "audio") : "audio",
+		roleGain,
 		normalizationGainDb:
 			element.type === "audio" ? (element.normalizationGainDb ?? 0) : 0,
 		trackVolume,
@@ -572,7 +596,7 @@ export async function collectAudioMixSources({
 		mediaAssets.map((asset) => [asset.id, asset]),
 	);
 	const pendingLibrarySources: Array<Promise<AudioMixSource | null>> = [];
-	const mixSettings = getProjectAudioSettings({ project });
+	const mixSettings = getResolvedProjectAudioSettings({ project });
 	const duckingProfile = buildAudioDuckingProfile({
 		tracks,
 		project,
@@ -589,6 +613,9 @@ export async function collectAudioMixSources({
 			const ducking = shouldDuckAudioElement({ element, duckingProfile })
 				? duckingProfile
 				: null;
+			const role =
+				element.type === "audio" ? (element.role ?? "audio") : "audio";
+			const roleGain = mixSettings.roleGainByType[role];
 
 			if (element.type === "audio") {
 				if (element.sourceType === "upload") {
@@ -601,6 +628,7 @@ export async function collectAudioMixSources({
 							mediaAsset,
 							trackVolume,
 							masterVolume: mixSettings.masterVolume,
+							roleGain,
 							ducking,
 						}),
 					);
@@ -610,6 +638,7 @@ export async function collectAudioMixSources({
 							element,
 							trackVolume,
 							masterVolume: mixSettings.masterVolume,
+							roleGain,
 							ducking,
 						}),
 					);
@@ -628,6 +657,7 @@ export async function collectAudioMixSources({
 							mediaAsset,
 							trackVolume,
 							masterVolume: mixSettings.masterVolume,
+							roleGain,
 							ducking,
 						}),
 					);
@@ -658,7 +688,7 @@ export async function collectAudioClips({
 		mediaAssets.map((asset) => [asset.id, asset]),
 	);
 	const pendingLibraryClips: Array<Promise<AudioClipSource | null>> = [];
-	const mixSettings = getProjectAudioSettings({ project });
+	const mixSettings = getResolvedProjectAudioSettings({ project });
 	const duckingProfile = buildAudioDuckingProfile({
 		tracks,
 		project,
@@ -678,6 +708,9 @@ export async function collectAudioClips({
 			const ducking = shouldDuckAudioElement({ element, duckingProfile })
 				? duckingProfile
 				: null;
+			const role =
+				element.type === "audio" ? (element.role ?? "audio") : "audio";
+			const roleGain = mixSettings.roleGainByType[role];
 
 			if (element.type === "audio") {
 				if (element.sourceType === "upload") {
@@ -691,6 +724,7 @@ export async function collectAudioClips({
 							muted,
 							trackVolume,
 							masterVolume: mixSettings.masterVolume,
+							roleGain,
 							ducking,
 						}),
 					);
@@ -701,6 +735,7 @@ export async function collectAudioClips({
 							muted,
 							trackVolume,
 							masterVolume: mixSettings.masterVolume,
+							roleGain,
 							ducking,
 						}),
 					);
@@ -720,6 +755,7 @@ export async function collectAudioClips({
 							muted,
 							trackVolume,
 							masterVolume: mixSettings.masterVolume,
+							roleGain,
 							ducking,
 						}),
 					);
@@ -780,11 +816,17 @@ export async function createTimelineAudioBuffer({
 			},
 			trackVolume: element.trackVolume,
 			masterVolume: element.masterVolume,
+			roleGain: element.roleGain,
 			ducking: element.ducking,
 			outputBuffer,
 			outputLength,
 			sampleRate,
 		});
+	}
+
+	const mixSettings = getResolvedProjectAudioSettings({ project });
+	if (mixSettings.softLimiterEnabled) {
+		applySoftLimiterToAudioBuffer({ audioBuffer: outputBuffer });
 	}
 
 	return outputBuffer;
@@ -794,6 +836,7 @@ function mixAudioChannels({
 	element,
 	trackVolume,
 	masterVolume,
+	roleGain,
 	ducking,
 	outputBuffer,
 	outputLength,
@@ -802,6 +845,7 @@ function mixAudioChannels({
 	element: CollectedAudioElement;
 	trackVolume: number;
 	masterVolume: number;
+	roleGain: number;
 	ducking: AudioDuckingProfile | null;
 	outputBuffer: AudioBuffer;
 	outputLength: number;
@@ -834,6 +878,7 @@ function mixAudioChannels({
 				(element.volume ?? 1) *
 				trackVolume *
 				masterVolume *
+				roleGain *
 				getDuckingGainAtTime({
 					time: absoluteTimelineTime,
 					ducking,
@@ -844,6 +889,48 @@ function mixAudioChannels({
 					fadeInDuration: element.fadeInDuration ?? 0,
 					fadeOutDuration: element.fadeOutDuration ?? 0,
 				});
+		}
+	}
+}
+
+export function buildSoftLimiterCurve({
+	resolution = 2048,
+	threshold = 0.88,
+}: {
+	resolution?: number;
+	threshold?: number;
+} = {}): Float32Array {
+	const curve = new Float32Array(resolution);
+	for (let i = 0; i < resolution; i++) {
+		const normalized = (i / (resolution - 1)) * 2 - 1;
+		const sign = Math.sign(normalized);
+		const abs = Math.abs(normalized);
+		if (abs <= threshold) {
+			curve[i] = normalized;
+			continue;
+		}
+		const over = (abs - threshold) / Math.max(1e-6, 1 - threshold);
+		const limited = threshold + (1 - threshold) * Math.tanh(over);
+		curve[i] = sign * Math.min(1, limited);
+	}
+	return curve;
+}
+
+function applySoftLimiterToAudioBuffer({
+	audioBuffer,
+}: {
+	audioBuffer: AudioBuffer;
+}): void {
+	const threshold = 0.88;
+	for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+		const data = audioBuffer.getChannelData(channel);
+		for (let i = 0; i < data.length; i++) {
+			const sample = data[i] ?? 0;
+			const abs = Math.abs(sample);
+			if (abs <= threshold) continue;
+			const sign = Math.sign(sample);
+			const over = (abs - threshold) / Math.max(1e-6, 1 - threshold);
+			data[i] = sign * Math.min(1, threshold + (1 - threshold) * Math.tanh(over));
 		}
 	}
 }
@@ -877,6 +964,43 @@ export function getAudioEnvelopeGain({
 
 export function dbToGain(db: number): number {
 	return Math.pow(10, db / 20);
+}
+
+function getResolvedProjectAudioSettings({
+	project,
+}: {
+	project?: TProject | null;
+}): ResolvedProjectAudioSettings {
+	const baseSettings = getProjectAudioSettings({ project });
+	const preset = getAudioPolishPresetById({
+		id: baseSettings.audioPolishPresetId ?? "none",
+	});
+
+	return {
+		...baseSettings,
+		masterVolume: Number(
+			(baseSettings.masterVolume * dbToGain(preset.masterGainDb)).toFixed(4),
+		),
+		duckingAmount: Number(
+			Math.max(
+				0,
+				Math.min(
+					1,
+					preset.duckingAmount ?? baseSettings.duckingAmount,
+				),
+			).toFixed(4),
+		),
+		duckingAttackMs: preset.duckingAttackMs ?? baseSettings.duckingAttackMs,
+		duckingReleaseMs: preset.duckingReleaseMs ?? baseSettings.duckingReleaseMs,
+		softLimiterEnabled:
+			baseSettings.softLimiterEnabled ?? preset.softLimiterEnabled,
+		roleGainByType: {
+			voiceover: dbToGain(preset.voiceGainDb),
+			music: dbToGain(preset.musicGainDb),
+			sfx: dbToGain(preset.sfxGainDb),
+			audio: dbToGain(preset.voiceGainDb * 0.5),
+		},
+	};
 }
 
 export function getProjectAudioSettings({
@@ -980,7 +1104,7 @@ export function buildProjectMixSummary({
 	tracks: TimelineTrack[];
 	project?: TProject | null;
 }): ProjectMixSummary {
-	const mixSettings = getProjectAudioSettings({ project });
+	const mixSettings = getResolvedProjectAudioSettings({ project });
 	const duckingProfile = buildAudioDuckingProfile({
 		tracks,
 		project,
@@ -999,6 +1123,8 @@ export function buildProjectMixSummary({
 		masterVolume: mixSettings.masterVolume,
 		duckingEnabled: mixSettings.duckingEnabled,
 		duckingAmount: mixSettings.duckingAmount,
+		audioPolishPresetId: mixSettings.audioPolishPresetId ?? "none",
+		softLimiterEnabled: mixSettings.softLimiterEnabled ?? false,
 		dialogueWindowCount: duckingProfile?.dialogueWindows.length ?? 0,
 		musicClipCount,
 		voiceoverClipCount,

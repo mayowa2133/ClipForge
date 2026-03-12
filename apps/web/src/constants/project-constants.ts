@@ -40,6 +40,8 @@ export const DEFAULT_PROJECT_AUDIO_SETTINGS: ProjectAudioSettings = {
 	duckingAmount: 0.45,
 	duckingAttackMs: 120,
 	duckingReleaseMs: 280,
+	audioPolishPresetId: "none",
+	softLimiterEnabled: false,
 };
 
 export const DEFAULT_PROJECT_BRAND_KIT: ProjectBrandKit = {

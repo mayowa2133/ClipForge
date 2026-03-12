@@ -33,6 +33,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { useEditor } from "@/hooks/use-editor";
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
 import { useSoundSearch } from "@/hooks/use-sound-search";
+import {
+	AUDIO_POLISH_PRESETS,
+	getAudioPolishPresetLabel,
+} from "@/lib/clipforge/polish-profiles";
 import { ensureBundledAudioAsset } from "@/lib/library/bundled-media";
 import { BUNDLED_MUSIC, BUNDLED_SFX, getBundledMusicByMood } from "@/lib/library";
 import {
@@ -1010,6 +1014,31 @@ function MixView() {
 			<div className="space-y-5 rounded-lg border p-4">
 				<MixSlider label="Master" value={settings.masterVolume} min={0} max={2} step={0.01} display={`${Math.round(settings.masterVolume * 100)}%`} onChange={(value) => updateAudioSettings({ masterVolume: value })} />
 				<div className="space-y-2">
+					<p className="text-sm font-medium">Audio polish preset</p>
+					<Select
+						value={settings.audioPolishPresetId ?? "none"}
+						onValueChange={(value) =>
+							updateAudioSettings({
+								audioPolishPresetId: value as typeof settings.audioPolishPresetId,
+							})
+						}
+					>
+						<SelectTrigger>
+							<SelectValue placeholder="Audio polish preset" />
+						</SelectTrigger>
+						<SelectContent>
+							{AUDIO_POLISH_PRESETS.map((preset) => (
+								<SelectItem key={preset.id} value={preset.id}>
+									{preset.label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					<p className="text-muted-foreground text-xs">
+						Applies a lightweight, deterministic voice/music balance profile in preview and export.
+					</p>
+				</div>
+				<div className="space-y-2">
 					<div className="flex items-center justify-between gap-3">
 						<p className="text-sm font-medium">Duck music</p>
 						<Button variant={settings.duckingEnabled ? "secondary" : "outline"} size="sm" onClick={() => updateAudioSettings({ duckingEnabled: !settings.duckingEnabled })}>
@@ -1021,12 +1050,41 @@ function MixView() {
 				<MixSlider label="Amount" value={settings.duckingAmount} min={0} max={1} step={0.01} display={`${Math.round(settings.duckingAmount * 100)}%`} onChange={(value) => updateAudioSettings({ duckingAmount: value })} disabled={!settings.duckingEnabled} />
 				<MixSlider label="Attack" value={settings.duckingAttackMs} min={0} max={600} step={10} display={`${Math.round(settings.duckingAttackMs)}ms`} onChange={(value) => updateAudioSettings({ duckingAttackMs: value })} disabled={!settings.duckingEnabled} />
 				<MixSlider label="Release" value={settings.duckingReleaseMs} min={0} max={1000} step={10} display={`${Math.round(settings.duckingReleaseMs)}ms`} onChange={(value) => updateAudioSettings({ duckingReleaseMs: value })} disabled={!settings.duckingEnabled} />
+				<div className="space-y-2">
+					<div className="flex items-center justify-between gap-3">
+						<p className="text-sm font-medium">Soft limiter</p>
+						<Button
+							variant={settings.softLimiterEnabled ? "secondary" : "outline"}
+							size="sm"
+							onClick={() =>
+								updateAudioSettings({
+									softLimiterEnabled: !(settings.softLimiterEnabled ?? false),
+								})
+							}
+						>
+							{settings.softLimiterEnabled ? "On" : "Off"}
+						</Button>
+					</div>
+					<p className="text-muted-foreground text-xs">
+						Softly catches master peaks after audio polish. Keeps preview and export aligned.
+					</p>
+				</div>
 			</div>
 			<div className="grid grid-cols-2 gap-3 text-sm">
 				<SummaryCard label="Music clips" value={summary.musicClipCount.toString()} />
 				<SummaryCard label="Voiceover clips" value={summary.voiceoverClipCount.toString()} />
 				<SummaryCard label="Dialogue windows" value={summary.dialogueWindowCount.toString()} />
 				<SummaryCard label="Master" value={`${Math.round(summary.masterVolume * 100)}%`} />
+				<SummaryCard
+					label="Audio polish"
+					value={getAudioPolishPresetLabel({
+						id: summary.audioPolishPresetId ?? "none",
+					})}
+				/>
+				<SummaryCard
+					label="Limiter"
+					value={summary.softLimiterEnabled ? "On" : "Off"}
+				/>
 			</div>
 		</div>
 	);

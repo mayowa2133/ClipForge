@@ -186,6 +186,7 @@ describe("drafting helpers", () => {
 		expect(recipe.operations.map((step) => step.kind)).not.toContain("auto-edit");
 		expect(recipe.operations.map((step) => step.kind)).toContain("make-version");
 		expect(recipe.operations.map((step) => step.kind)).toContain("apply-caption-style");
+		expect(recipe.operations.map((step) => step.kind)).toContain("apply-polish-profile");
 		expect(recipe.operations.map((step) => step.kind)).not.toContain("auto-montage");
 		expect(recipe.warnings).toContain(
 			"No transcript metadata is available, so caption generation may be skipped.",
@@ -228,6 +229,7 @@ describe("drafting helpers", () => {
 
 		expect(recipe.operations.map((step) => step.kind)).toContain("generate-captions");
 		expect(recipe.operations.map((step) => step.kind)).toContain("auto-montage");
+		expect(recipe.operations.map((step) => step.kind)).toContain("apply-polish-profile");
 		const montageStep = recipe.operations.find((step) => step.kind === "auto-montage");
 		expect(montageStep?.params.musicMediaId).toBe("song-1");
 		expect(montageStep?.params.beatDivision).toBe(2);
@@ -347,6 +349,10 @@ describe("drafting helpers", () => {
 			"body",
 			"payoff",
 		]);
+		const polishStep = recipe.operations.find(
+			(step) => step.kind === "apply-polish-profile",
+		);
+		expect(polishStep?.params.profileId).toBe("bold-social");
 		expect(recipe.keepCutRecommendationIds).toEqual(["keep-cut:video-1"]);
 	});
 

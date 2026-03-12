@@ -17,6 +17,8 @@ export const BUILT_IN_CAPTION_STYLES: BuiltInCaptionStyleDefinition[] = [
 			position: "bottom",
 			outline: false,
 			highlight_mode: "none",
+			reveal_preset_id: "fade-line",
+			sound_sync_preset_id: "caption-pop-clean",
 		},
 	},
 	{
@@ -29,6 +31,8 @@ export const BUILT_IN_CAPTION_STYLES: BuiltInCaptionStyleDefinition[] = [
 			position: "center",
 			outline: true,
 			highlight_mode: "line",
+			reveal_preset_id: "pop-line",
+			sound_sync_preset_id: "caption-pop-bright",
 		},
 	},
 	{
@@ -41,6 +45,8 @@ export const BUILT_IN_CAPTION_STYLES: BuiltInCaptionStyleDefinition[] = [
 			position: "bottom",
 			outline: false,
 			highlight_mode: "none",
+			reveal_preset_id: "luxury-rise",
+			sound_sync_preset_id: "air-fahhh-soft",
 		},
 	},
 	{
@@ -53,6 +59,8 @@ export const BUILT_IN_CAPTION_STYLES: BuiltInCaptionStyleDefinition[] = [
 			position: "center",
 			outline: true,
 			highlight_mode: "word",
+			reveal_preset_id: "type-on-bold",
+			sound_sync_preset_id: "typing-clean",
 		},
 	},
 	{
@@ -65,6 +73,8 @@ export const BUILT_IN_CAPTION_STYLES: BuiltInCaptionStyleDefinition[] = [
 			position: "bottom",
 			outline: false,
 			highlight_mode: "line",
+			reveal_preset_id: "lift-in",
+			sound_sync_preset_id: "caption-pop-clean",
 		},
 	},
 	{
@@ -77,6 +87,8 @@ export const BUILT_IN_CAPTION_STYLES: BuiltInCaptionStyleDefinition[] = [
 			position: "center",
 			outline: true,
 			highlight_mode: "word",
+			reveal_preset_id: "type-on-soft",
+			sound_sync_preset_id: "typing-soft",
 		},
 	},
 ];

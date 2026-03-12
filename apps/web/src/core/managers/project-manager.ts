@@ -126,6 +126,7 @@ export class ProjectManager {
 				versionPack: buildDefaultProjectVersionPack({
 					canvasSize: DEFAULT_CANVAS_SIZE,
 				}),
+				polishProfileId: null,
 			},
 			version: CURRENT_PROJECT_VERSION,
 			clipforge: buildDefaultClipForgeProjectData(),

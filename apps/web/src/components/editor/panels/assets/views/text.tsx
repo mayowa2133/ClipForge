@@ -15,6 +15,12 @@ import { DEFAULT_TEXT_ELEMENT } from "@/constants/text-constants";
 import { DEFAULT_PROJECT_LIBRARY_DEFAULTS } from "@/constants/project-constants";
 import { useEditor } from "@/hooks/use-editor";
 import { BUILT_IN_CAPTION_STYLES } from "@/lib/clipforge/caption-style-library";
+import {
+	POLISH_PROFILES,
+	getAudioPolishPresetLabel,
+	getCaptionRevealLabel,
+	getFinishingLookLabel,
+} from "@/lib/clipforge/polish-profiles";
 import { BUNDLED_MUSIC } from "@/lib/library";
 import { buildTextElement } from "@/lib/timeline/element-utils";
 import {
@@ -37,6 +43,7 @@ const GRAPHICS_TAB_OPTIONS: Array<{ key: GraphicsTab; label: string }> = [
 	{ key: "titles", label: "Titles" },
 	{ key: "overlays", label: "Overlays" },
 	{ key: "cta", label: "CTA" },
+	{ key: "polish", label: "Polish" },
 	{ key: "brand", label: "Brand" },
 	{ key: "text", label: "Text" },
 ];
@@ -52,9 +59,13 @@ const MOTION_PRESET_OPTIONS: Array<{
 	{ value: "none", label: "None" },
 ];
 
-const PRESET_GROUPS: Record<Exclude<GraphicsTab, "brand" | "text" | "overlays">, GraphicsPresetId[]> = {
+const PRESET_GROUPS: Record<
+	Exclude<GraphicsTab, "brand" | "text" | "overlays">,
+	GraphicsPresetId[]
+> = {
 	titles: ["title-clean", "title-bold", "lower-third-clean", "lower-third-brand", "quote-card"],
 	cta: ["cta-subscribe", "cta-follow"],
+	polish: [],
 };
 
 const OVERLAY_CARD_LABELS: Record<SocialOverlayPresetId, { title: string; subtitle: string }> = {
@@ -183,7 +194,7 @@ export function TextView() {
 					))}
 				</div>
 
-				{graphicsTab !== "brand" ? (
+				{graphicsTab !== "brand" && graphicsTab !== "polish" ? (
 					<div className="space-y-2 px-1">
 						<p className="text-muted-foreground text-xs">
 							Insert at the playhead, then tune it in the inspector.
@@ -422,6 +433,43 @@ export function TextView() {
 								</SelectContent>
 							</Select>
 						</BrandField>
+					</div>
+				) : null}
+
+				{graphicsTab === "polish" ? (
+					<div className="grid gap-3 px-1 pb-2">
+						<p className="text-muted-foreground px-1 text-xs">
+							Apply a bundled final-pass look that coordinates captions, overlays, motion, finishing, and audio polish.
+						</p>
+						{POLISH_PROFILES.map((profile) => (
+							<button
+								key={profile.id}
+								type="button"
+								onClick={() => {
+									void editor.clipforge.applyPolishProfile({ profileId: profile.id });
+								}}
+								className={cn(
+									"hover:bg-accent/60 flex flex-col items-start gap-2 rounded-lg border px-4 py-3 text-left transition-colors",
+								)}
+							>
+								<div className="flex w-full items-center justify-between gap-3">
+									<div>
+										<p className="text-sm font-medium">{profile.label}</p>
+										<p className="text-muted-foreground text-xs">
+											{getCaptionRevealLabel({ presetId: profile.captionRevealPresetId })} captions · {getAudioPolishPresetLabel({ id: profile.audioPolishPresetId })}
+										</p>
+									</div>
+									<span className="text-muted-foreground text-[11px]">
+										{getFinishingLookLabel({ lookId: profile.finishingLookId })}
+									</span>
+								</div>
+								<div className="bg-muted w-full rounded-md border px-4 py-3 text-xs text-muted-foreground">
+									<div>Caption style: {profile.captionStyleId}</div>
+									<div>Overlay style: {profile.overlayStyleVariantId}</div>
+									<div>Motion: {profile.motionPresetId}</div>
+								</div>
+							</button>
+						))}
 					</div>
 				) : null}
 

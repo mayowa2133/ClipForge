@@ -69,6 +69,8 @@ describe("V12 to V13 Migration", () => {
 			duckingAmount: 0.45,
 			duckingAttackMs: 120,
 			duckingReleaseMs: 280,
+			audioPolishPresetId: "none",
+			softLimiterEnabled: false,
 		});
 		const track = (result.project.scenes as any)[0].tracks[0];
 		expect(track.volume).toBe(1);

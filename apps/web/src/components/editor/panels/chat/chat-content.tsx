@@ -16,6 +16,10 @@ import {
 	buildProjectSummary,
 	createChatOpsProvider,
 	fetchChatPlannerHealth,
+	getAudioPolishPresetLabel,
+	getCaptionRevealLabel,
+	getFinishingLookLabel,
+	getPolishProfileLabel,
 	projectValidatorWarnings,
 	type TimelineOpsValidationError,
 } from "@/lib/clipforge";
@@ -831,6 +835,40 @@ export function ChatContent() {
 							))}
 						</ul>
 					</div>
+					<div className="rounded-md border px-3 py-2">
+						<p className="text-sm font-medium">Polish</p>
+						{(() => {
+							const polishProfile = resolveDraftPolishProfile({
+								recipe: draftRecipe,
+							});
+							return (
+						<div className="text-muted-foreground mt-2 space-y-1 text-xs">
+							<p>
+								<span className="font-medium text-foreground">Profile:</span>{" "}
+								{polishProfile.label}
+							</p>
+							<p>
+								<span className="font-medium text-foreground">Caption reveal:</span>{" "}
+								{getCaptionRevealLabel({
+									presetId: polishProfile.captionRevealPresetId,
+								})}
+							</p>
+							<p>
+								<span className="font-medium text-foreground">Audio polish:</span>{" "}
+								{getAudioPolishPresetLabel({
+									id: polishProfile.audioPolishPresetId,
+								})}
+							</p>
+							<p>
+								<span className="font-medium text-foreground">Finishing look:</span>{" "}
+								{getFinishingLookLabel({
+									lookId: polishProfile.finishingLookId,
+								})}
+							</p>
+						</div>
+							);
+						})()}
+					</div>
 					{draftRecipe.retentionShape && (
 						<div className="rounded-md border px-3 py-2">
 							<p className="text-sm font-medium">Story shape</p>
@@ -1233,6 +1271,8 @@ function formatDraftStepLabel({
 			return "Set publish formats";
 		case "apply-safe-layout":
 			return "Adapt layout for extra formats";
+		case "apply-polish-profile":
+			return "Apply final polish";
 	}
 }
 
@@ -1258,8 +1298,81 @@ function formatDraftStepDetail({
 			return `${Array.isArray(step.params.targets) ? step.params.targets.join(", ") : "Current target"} format targets.`;
 		case "apply-safe-layout":
 			return "Keep overlays and captions in-frame for extra formats.";
+		case "apply-polish-profile":
+			return `${resolveDraftStepPolishProfile({ step }).label} captions, motion, finishing, and audio balance.`;
 		default:
 			return "Deterministic build step.";
+	}
+}
+
+function resolveDraftPolishProfile({
+	recipe,
+}: {
+	recipe: DraftRecipe;
+}) {
+	const profileStep = recipe.operations.find(
+		(step) => step.kind === "apply-polish-profile",
+	);
+	return resolveDraftStepPolishProfile({
+		step: profileStep ?? {
+			kind: "apply-polish-profile",
+			params: { profileId: "clean-vlog" },
+		},
+	});
+}
+
+function resolveDraftStepPolishProfile({
+	step,
+}: {
+	step: DraftRecipe["operations"][number];
+}) {
+	const profileId = normalizeDraftPolishProfileId({
+		profileId: step.params.profileId,
+	});
+	return {
+		profileId,
+		label: getPolishProfileLabel({ profileId }),
+		captionRevealPresetId:
+			profileId === "luxury-routine"
+				? "luxury-rise"
+				: profileId === "bold-social"
+					? "type-on-bold"
+					: profileId === "talking-head"
+						? "lift-in"
+						: profileId === "product-promo"
+							? "pop-line"
+							: "fade-line",
+		audioPolishPresetId:
+			profileId === "luxury-routine"
+				? "luxury-soft"
+				: profileId === "bold-social" || profileId === "product-promo"
+					? "bold-social"
+					: "voice-forward",
+		finishingLookId:
+			profileId === "luxury-routine"
+				? "warm"
+				: profileId === "bold-social"
+					? "dramatic"
+					: profileId === "product-promo"
+						? "cool"
+						: "clean",
+	} as const;
+}
+
+function normalizeDraftPolishProfileId({
+	profileId,
+}: {
+	profileId: unknown;
+}): "clean-vlog" | "luxury-routine" | "bold-social" | "talking-head" | "product-promo" {
+	switch (profileId) {
+		case "luxury-routine":
+		case "bold-social":
+		case "talking-head":
+		case "product-promo":
+		case "clean-vlog":
+			return profileId;
+		default:
+			return "clean-vlog";
 	}
 }
 
