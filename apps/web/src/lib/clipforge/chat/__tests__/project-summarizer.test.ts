@@ -158,4 +158,156 @@ describe("buildProjectSummary", () => {
 			},
 		]);
 	});
+
+	test("surfaces selection, playhead, templates, and recent chat memory", () => {
+		const project: TProject = {
+			metadata: {
+				id: "project-2",
+				name: "Memory Summary",
+				duration: 6,
+				createdAt: new Date("2026-03-01T00:00:00.000Z"),
+				updatedAt: new Date("2026-03-01T00:00:00.000Z"),
+			},
+			scenes: [
+				{
+					id: "scene-main",
+					name: "Main",
+					isMain: true,
+					bookmarks: [],
+					createdAt: new Date("2026-03-01T00:00:00.000Z"),
+					updatedAt: new Date("2026-03-01T00:00:00.000Z"),
+					tracks: [
+						{
+							id: "video-main",
+							type: "video",
+							name: "Video",
+							isMain: true,
+							muted: false,
+							hidden: false,
+							elements: [
+								{
+									id: "clip-a",
+									type: "video",
+									name: "Clip A",
+									mediaId: "media-a",
+									startTime: 0,
+									duration: 2,
+									trimStart: 0,
+									trimEnd: 0,
+									transform: {
+										scale: 1,
+										position: { x: 0, y: 0 },
+										rotate: 0,
+									},
+									opacity: 1,
+								},
+								{
+									id: "clip-b",
+									type: "video",
+									name: "Clip B",
+									mediaId: "media-b",
+									startTime: 2,
+									duration: 2,
+									trimStart: 0,
+									trimEnd: 0,
+									transform: {
+										scale: 1,
+										position: { x: 0, y: 0 },
+										rotate: 0,
+									},
+									opacity: 1,
+								},
+							],
+						},
+					],
+				},
+				{
+					id: "scene-b",
+					name: "B-Roll",
+					isMain: false,
+					bookmarks: [],
+					createdAt: new Date("2026-03-01T00:00:00.000Z"),
+					updatedAt: new Date("2026-03-01T00:00:00.000Z"),
+					tracks: [],
+				},
+			],
+			currentSceneId: "scene-main",
+			settings: {
+				fps: 30,
+				canvasSize: { width: 1920, height: 1080 },
+				background: { type: "color", color: "#000000" },
+				audio: {
+					masterVolume: 1,
+					duckingEnabled: true,
+					duckingAmount: 0.45,
+					duckingAttackMs: 120,
+					duckingReleaseMs: 280,
+					audioPolishPresetId: "none",
+				},
+				overlayDefaults: {
+					variantId: "clean-vlog",
+					motionPresetId: "fade-up",
+				},
+				versionPack: {
+					targets: [
+						{
+							id: "9:16",
+							enabled: true,
+							canvasSize: { width: 1080, height: 1920 },
+						},
+					],
+					activeTargetId: "9:16",
+				},
+			},
+			version: 8,
+			clipforge: {
+				...buildDefaultClipForgeProjectData(),
+				chatMemory: {
+					activeTargets: ["clip-b"],
+					styleIntent: null,
+					publishIntent: null,
+					recentTurnSummaries: [
+						{
+							prompt: "add a subtle transition",
+							summary:
+								"add a subtle transition -> Applied cross-dissolve transitions at 300ms.",
+							commandKinds: ["set-transition-in"],
+							createdAt: "2026-03-01T10:01:00.000Z",
+						},
+					],
+					recentAppliedCommandSummaries: [
+						{
+							kind: "set-transition-in",
+							summary: "Applied cross-dissolve transitions at 300ms.",
+							targetSegmentIds: ["clip-b"],
+							targetElementIds: [],
+							sceneId: "scene-main",
+							scope: "scene",
+							createdAt: "2026-03-01T10:01:00.000Z",
+						},
+					],
+				},
+			},
+		};
+
+		const summary = buildProjectSummary({
+			project,
+			playheadMs: 2300,
+			selectedSegmentIds: ["clip-b"],
+			projectKitTemplates: [
+				{ id: "kit-1", name: "Clean Vlog", kind: "project-kit", version: 1, createdAt: new Date(), updatedAt: new Date(), payload: {} },
+			],
+			sceneRecipeTemplates: [
+				{ id: "recipe-1", name: "Hook Scene", kind: "scene-recipe", version: 1, createdAt: new Date(), updatedAt: new Date(), payload: { elements: [], duration: 4, defaults: {} } },
+			],
+		});
+
+		expect(summary.selection.selected_segment_ids).toEqual(["clip-b"]);
+		expect(summary.playhead_neighborhood.nearby_segments.map((segment) => segment.segment_id)).toContain("clip-b");
+		expect(summary.other_scene_summaries[0]?.scene_id).toBe("scene-b");
+		expect(summary.available_project_kits[0]?.id).toBe("kit-1");
+		expect(summary.available_scene_recipes[0]?.id).toBe("recipe-1");
+		expect(summary.recent_ai_actions[0]?.kind).toBe("set-transition-in");
+		expect(summary.recent_turn_summaries[0]).toContain("add a subtle transition");
+	});
 });

@@ -1,5 +1,8 @@
 import type {
 	CaptionStyleTemplate,
+	ClipForgeAppliedCommandSummary,
+	ClipForgeChatMemory,
+	ClipForgeChatTurnSummary,
 	ClipForgeProjectData,
 	ClipMediaMetadata,
 } from "@/types/clipforge";
@@ -7,7 +10,10 @@ import type { TProject } from "@/types/project";
 import { adoptLegacyCaptionTracks } from "./caption-studio";
 import { BUILT_IN_CAPTION_STYLE_MAP } from "./caption-style-library";
 
-export const CLIPFORGE_SCHEMA_VERSION = 5;
+export const CLIPFORGE_SCHEMA_VERSION = 6;
+
+const MAX_CHAT_MEMORY_TURNS = 12;
+const MAX_CHAT_MEMORY_APPLIED_COMMANDS = 20;
 
 export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 	return {
@@ -20,6 +26,13 @@ export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 		captionTrackIdsBySceneId: {},
 		sceneFootageIntelligenceBySceneId: {},
 		trendSoundReferences: [],
+		chatMemory: {
+			activeTargets: [],
+			styleIntent: null,
+			publishIntent: null,
+			recentTurnSummaries: [],
+			recentAppliedCommandSummaries: [],
+		},
 		opsAudit: [],
 	};
 }
@@ -199,6 +212,159 @@ function normalizeTrendSoundReferences({
 	});
 }
 
+function normalizeCommandScope(value: unknown): import("@/types/clipforge").ClipForgeCommandScope {
+	return value === "scene" || value === "project" ? value : "selection";
+}
+
+function normalizeTurnSummary(value: unknown): ClipForgeChatTurnSummary | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as { prompt?: unknown }).prompt !== "string" ||
+		typeof (value as { summary?: unknown }).summary !== "string" ||
+		typeof (value as { createdAt?: unknown }).createdAt !== "string"
+	) {
+		return null;
+	}
+
+	const commandKinds = Array.isArray((value as { commandKinds?: unknown }).commandKinds)
+		? ((value as { commandKinds?: unknown }).commandKinds as unknown[]).filter(
+				(kind): kind is ClipForgeChatTurnSummary["commandKinds"][number] =>
+					typeof kind === "string",
+		  )
+		: [];
+
+	return {
+		prompt: (value as { prompt: string }).prompt,
+		summary: (value as { summary: string }).summary,
+		commandKinds,
+		createdAt: (value as { createdAt: string }).createdAt,
+	};
+}
+
+function normalizeAppliedCommandSummary(
+	value: unknown,
+): ClipForgeAppliedCommandSummary | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as { kind?: unknown }).kind !== "string" ||
+		typeof (value as { summary?: unknown }).summary !== "string" ||
+		typeof (value as { createdAt?: unknown }).createdAt !== "string"
+	) {
+		return null;
+	}
+
+	const segmentIds = Array.isArray(
+		(value as { targetSegmentIds?: unknown }).targetSegmentIds,
+	)
+		? ((value as { targetSegmentIds?: unknown }).targetSegmentIds as unknown[]).filter(
+				(id): id is string => typeof id === "string",
+		  )
+		: [];
+	const elementIds = Array.isArray(
+		(value as { targetElementIds?: unknown }).targetElementIds,
+	)
+		? ((value as { targetElementIds?: unknown }).targetElementIds as unknown[]).filter(
+				(id): id is string => typeof id === "string",
+		  )
+		: [];
+
+	return {
+		kind: (value as { kind: ClipForgeAppliedCommandSummary["kind"] }).kind,
+		summary: (value as { summary: string }).summary,
+		targetSegmentIds: segmentIds,
+		targetElementIds: elementIds,
+		sceneId:
+			typeof (value as { sceneId?: unknown }).sceneId === "string"
+				? ((value as { sceneId?: string }).sceneId ?? null)
+				: null,
+		scope: normalizeCommandScope((value as { scope?: unknown }).scope),
+		createdAt: (value as { createdAt: string }).createdAt,
+	};
+}
+
+function normalizeChatMemory({
+	memory,
+}: {
+	memory?: Partial<ClipForgeChatMemory> | null;
+}): ClipForgeChatMemory {
+	return {
+		activeTargets: Array.isArray(memory?.activeTargets)
+			? memory.activeTargets.filter(
+					(target): target is string => typeof target === "string",
+			  )
+			: [],
+		styleIntent: memory?.styleIntent
+			? {
+					captionStyleId:
+						typeof memory.styleIntent.captionStyleId === "string"
+							? memory.styleIntent.captionStyleId
+							: null,
+					overlayStyleVariantId:
+						memory.styleIntent.overlayStyleVariantId === "clean-vlog" ||
+						memory.styleIntent.overlayStyleVariantId === "bold-social" ||
+						memory.styleIntent.overlayStyleVariantId === "luxury" ||
+						memory.styleIntent.overlayStyleVariantId === "minimal"
+							? memory.styleIntent.overlayStyleVariantId
+							: null,
+					motionPresetId:
+						memory.styleIntent.motionPresetId === "fade-up" ||
+						memory.styleIntent.motionPresetId === "slide-up" ||
+						memory.styleIntent.motionPresetId === "pop-in" ||
+						memory.styleIntent.motionPresetId === "drift-in" ||
+						memory.styleIntent.motionPresetId === "none"
+							? memory.styleIntent.motionPresetId
+							: null,
+					finishingLookId:
+						memory.styleIntent.finishingLookId === "clean" ||
+						memory.styleIntent.finishingLookId === "warm" ||
+						memory.styleIntent.finishingLookId === "cool" ||
+						memory.styleIntent.finishingLookId === "dramatic" ||
+						memory.styleIntent.finishingLookId === "mono" ||
+						memory.styleIntent.finishingLookId === "vintage"
+							? memory.styleIntent.finishingLookId
+							: null,
+					audioPolishPresetId:
+						memory.styleIntent.audioPolishPresetId === "none" ||
+						memory.styleIntent.audioPolishPresetId === "voice-forward" ||
+						memory.styleIntent.audioPolishPresetId === "luxury-soft" ||
+						memory.styleIntent.audioPolishPresetId === "bold-social" ||
+						memory.styleIntent.audioPolishPresetId === "music-forward"
+							? memory.styleIntent.audioPolishPresetId
+							: null,
+			  }
+			: null,
+		publishIntent:
+			memory?.publishIntent && Array.isArray(memory.publishIntent.versionTargets)
+				? {
+						versionTargets: memory.publishIntent.versionTargets.filter(
+							(target): target is import("@/types/project").ProjectVersionTarget =>
+								target === "9:16" || target === "1:1" || target === "16:9",
+						),
+						activeTargetId:
+							memory.publishIntent.activeTargetId === "9:16" ||
+							memory.publishIntent.activeTargetId === "1:1" ||
+							memory.publishIntent.activeTargetId === "16:9"
+								? memory.publishIntent.activeTargetId
+								: null,
+				  }
+				: null,
+		recentTurnSummaries: Array.isArray(memory?.recentTurnSummaries)
+			? memory.recentTurnSummaries
+					.map((value) => normalizeTurnSummary(value))
+					.filter((value): value is ClipForgeChatTurnSummary => value !== null)
+					.slice(-MAX_CHAT_MEMORY_TURNS)
+			: [],
+		recentAppliedCommandSummaries: Array.isArray(memory?.recentAppliedCommandSummaries)
+			? memory.recentAppliedCommandSummaries
+					.map((value) => normalizeAppliedCommandSummary(value))
+					.filter((value): value is ClipForgeAppliedCommandSummary => value !== null)
+					.slice(-MAX_CHAT_MEMORY_APPLIED_COMMANDS)
+			: [],
+	};
+}
+
 export function normalizeClipForgeProjectData({
 	clipforge,
 }: {
@@ -236,6 +402,9 @@ export function normalizeClipForgeProjectData({
 		),
 		trendSoundReferences: normalizeTrendSoundReferences({
 			references: source.trendSoundReferences,
+		}),
+		chatMemory: normalizeChatMemory({
+			memory: source.chatMemory,
 		}),
 		opsAudit: source.opsAudit ?? [],
 	};

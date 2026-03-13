@@ -42,7 +42,10 @@ import {
 	getCaptionRevealSoundSyncPreset,
 	getPolishProfileById,
 } from "@/lib/clipforge";
-import { buildPlanImpactPreview } from "@/lib/clipforge/chat/plan-impact";
+import {
+	buildCommandPlanImpactPreview,
+	buildPlanImpactPreview,
+} from "@/lib/clipforge/chat/plan-impact";
 import { reconcileValidatorErrors } from "@/lib/clipforge/chat/validator-reconciliation";
 import { extractMediaAssetAudioToFloat32 } from "@/lib/media/audio";
 import {
@@ -50,10 +53,17 @@ import {
 	AutoEditTikTokDraftCommand,
 	CaptionProjectSnapshotCommand,
 } from "@/lib/commands";
-import { getAnimationSfxPairingById } from "@/lib/timeline";
+import {
+	findAdjacentVisualIncomingTransitionTarget,
+	getAnimationSfxPairingById,
+	getSocialOverlayPresetById,
+} from "@/lib/timeline";
 import { useClipForgeChatDraftStore } from "@/stores/clipforge-chat-draft-store";
 import type { MediaAsset } from "@/types/assets";
 import type {
+	ClipForgeAppliedCommandSummary,
+	ClipForgeChatMemory,
+	ClipForgeEditorCommand,
 	ClipMediaMetadata,
 	CaptionSegmentView,
 	CreativeBrief,
@@ -76,10 +86,13 @@ import type {
 } from "@/types/export";
 import type { ProjectVersionTarget } from "@/types/project";
 import type { TProject } from "@/types/project";
+import type { TimelineElement } from "@/types/timeline";
 import type {
+	ChatClarificationRequest,
 	ChatPlannerContext,
 	ChatPlannerOverrides,
 	ChatPlanPreviewResult,
+	ChatPlanSafetySummary,
 	ChatValidatorReconciliationResult,
 	ProjectSummary,
 } from "@/lib/clipforge/chat/types";
@@ -396,6 +409,188 @@ export class ClipForgeManager {
 		});
 	}
 
+	validateCommands({
+		commands,
+	}: {
+		commands: ClipForgeEditorCommand[];
+	}): {
+		valid: boolean;
+		commands: ClipForgeEditorCommand[];
+		errors: ReturnType<typeof validateTimelineDiffOps>["errors"];
+	} {
+		if (!this.editor.project.getActiveOrNull()) {
+			return {
+				valid: false,
+				commands: [],
+				errors: [
+					{
+						opIndex: -1,
+						code: "no_active_project",
+						message: "No active project.",
+					},
+				],
+			};
+		}
+
+		const validatedCommands: ClipForgeEditorCommand[] = [];
+		const errors: ReturnType<typeof validateTimelineDiffOps>["errors"] = [];
+
+		for (const [commandIndex, command] of commands.entries()) {
+			if (command.kind === "timeline-op") {
+				const validation = this.validateOps({ ops: [command.op] });
+				if (!validation.valid) {
+					errors.push(
+						...validation.errors.map((error) => ({
+							...error,
+							opIndex: commandIndex,
+						})),
+					);
+					continue;
+				}
+				const validatedOp = validation.ops[0];
+				if (validatedOp) {
+					validatedCommands.push({
+						kind: "timeline-op",
+						op: validatedOp,
+					});
+				}
+				continue;
+			}
+
+			const directErrors = this.validateDirectCommand({
+				command,
+				commandIndex,
+			});
+			if (directErrors.length > 0) {
+				errors.push(...directErrors);
+				continue;
+			}
+			validatedCommands.push(command);
+		}
+
+		return {
+			valid: errors.length === 0,
+			commands: validatedCommands,
+			errors,
+		};
+	}
+
+	reconcileAndValidateCommands({
+		userText,
+		projectSummary,
+		context,
+		overrides,
+		commands,
+	}: {
+		userText: string;
+		projectSummary: ProjectSummary;
+		context: ChatPlannerContext;
+		overrides?: ChatPlannerOverrides;
+		commands: ClipForgeEditorCommand[];
+	}): {
+		commands: ClipForgeEditorCommand[];
+		clarification: ChatClarificationRequest | null;
+		safety: ChatPlanSafetySummary;
+		firstPassErrors: ReturnType<typeof validateTimelineDiffOps>["errors"];
+		secondPassErrors: ReturnType<typeof validateTimelineDiffOps>["errors"];
+		blocked: boolean;
+	} {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			return {
+				commands: [],
+				clarification: null,
+				safety: buildEmptyPlanSafetySummary({
+					blocked: true,
+					message: "No active project.",
+				}),
+				firstPassErrors: [
+					{
+						opIndex: -1,
+						code: "no_active_project",
+						message: "No active project.",
+					},
+				],
+				secondPassErrors: [],
+				blocked: true,
+			};
+		}
+
+		const timelineOps: TimelineDiffOp[] = [];
+		for (const command of commands) {
+			if (command.kind === "timeline-op") {
+				timelineOps.push(command.op);
+			}
+		}
+
+		if (timelineOps.length === 0) {
+			const validation = this.validateCommands({ commands });
+			return {
+				commands: validation.commands,
+				clarification: null,
+				safety: buildEmptyPlanSafetySummary({
+					blocked: !validation.valid,
+					message: validation.valid
+						? "Direct commands validated."
+						: validation.errors[0]?.message ?? "Command validation failed.",
+				}),
+				firstPassErrors: validation.valid ? [] : validation.errors,
+				secondPassErrors: validation.valid ? [] : validation.errors,
+				blocked: !validation.valid,
+			};
+		}
+
+		const reconciliation = this.reconcileAndValidateOps({
+			userText,
+			projectSummary,
+			context,
+			overrides,
+			ops: timelineOps,
+		});
+		if (reconciliation.clarification) {
+			return {
+				commands: [],
+				clarification: reconciliation.clarification,
+				safety: reconciliation.safety,
+				firstPassErrors: reconciliation.firstPassErrors,
+				secondPassErrors: reconciliation.secondPassErrors,
+				blocked: reconciliation.blocked,
+			};
+		}
+
+		const reconciledTimelineOps = reconciliation.ops;
+		let timelineOpIndex = 0;
+		const reconciledCommands: ClipForgeEditorCommand[] = [];
+		for (const command of commands) {
+			if (command.kind !== "timeline-op") {
+				reconciledCommands.push(command);
+				continue;
+			}
+			const reconciledOp = reconciledTimelineOps[timelineOpIndex];
+			timelineOpIndex += 1;
+			if (reconciledOp) {
+				reconciledCommands.push({
+					kind: "timeline-op",
+					op: reconciledOp,
+				});
+			}
+		}
+
+		const validation = this.validateCommands({
+			commands: reconciledCommands,
+		});
+		return {
+			commands: validation.commands,
+			clarification: null,
+			safety: reconciliation.safety,
+			firstPassErrors: reconciliation.firstPassErrors,
+			secondPassErrors: validation.valid
+				? reconciliation.secondPassErrors
+				: [...reconciliation.secondPassErrors, ...validation.errors],
+			blocked: reconciliation.blocked || !validation.valid,
+		};
+	}
+
 	reconcileAndValidateOps({
 		userText,
 		projectSummary,
@@ -460,6 +655,7 @@ export class ClipForgeManager {
 			return {
 				cards: [],
 				summary: {
+					totalCommands: ops.length,
 					totalOps: ops.length,
 					impactCount: 0,
 					simulatedDurationDeltaMs: 0,
@@ -472,6 +668,98 @@ export class ClipForgeManager {
 			mediaAssets: this.editor.media.getAssets(),
 			ops,
 		});
+	}
+
+	previewCommandsImpact({
+		commands,
+	}: {
+		commands: ClipForgeEditorCommand[];
+	}): ChatPlanPreviewResult {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			return {
+				cards: [],
+				summary: {
+					totalCommands: commands.length,
+					totalOps: commands.filter((command) => command.kind === "timeline-op").length,
+					impactCount: 0,
+					simulatedDurationDeltaMs: 0,
+				},
+			};
+		}
+
+		return buildCommandPlanImpactPreview({
+			project: activeProject,
+			mediaAssets: this.editor.media.getAssets(),
+			commands,
+		});
+	}
+
+	async applyCommands({
+		commands,
+		source = "manual",
+		prompt = null,
+	}: {
+		commands: ClipForgeEditorCommand[];
+		source?: TimelineDiffOpSource;
+		prompt?: string | null;
+	}): Promise<{
+		applied: boolean;
+		commands: ClipForgeEditorCommand[];
+		errors: ReturnType<typeof validateTimelineDiffOps>["errors"];
+	}> {
+		const validation = this.validateCommands({ commands });
+		if (!validation.valid) {
+			return {
+				applied: false,
+				commands: [],
+				errors: validation.errors,
+			};
+		}
+
+		const appliedCommands: ClipForgeEditorCommand[] = [];
+		let pendingTimelineCommands: ClipForgeEditorCommand[] = [];
+		const flushTimelineCommands = () => {
+			if (pendingTimelineCommands.length === 0) {
+				return;
+			}
+			const result = this.applyOps({
+				ops: pendingTimelineCommands.flatMap((command) =>
+					command.kind === "timeline-op" ? [command.op] : [],
+				),
+				source,
+			});
+			if (!result.applied) {
+				throw new Error(result.errors[0]?.message ?? "Failed to apply timeline ops.");
+			}
+			appliedCommands.push(...pendingTimelineCommands);
+			pendingTimelineCommands = [];
+		};
+
+		for (const command of validation.commands) {
+			if (command.kind === "timeline-op") {
+				pendingTimelineCommands.push(command);
+				continue;
+			}
+			flushTimelineCommands();
+			await this.executeDirectCommand({ command });
+			appliedCommands.push(command);
+		}
+
+		flushTimelineCommands();
+
+		if (source === "chat" && appliedCommands.length > 0) {
+			this.rememberAppliedChatPlan({
+				prompt,
+				commands: appliedCommands,
+			});
+		}
+
+		return {
+			applied: true,
+			commands: appliedCommands,
+			errors: [],
+		};
 	}
 
 	isDraftBuildIntent({
@@ -2074,6 +2362,642 @@ export class ClipForgeManager {
 		});
 	}
 
+	private validateDirectCommand({
+		command,
+		commandIndex,
+	}: {
+		command: Exclude<ClipForgeEditorCommand, { kind: "timeline-op" }>;
+		commandIndex: number;
+	}): ReturnType<typeof validateTimelineDiffOps>["errors"] {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			return [
+				{
+					opIndex: commandIndex,
+					code: "no_active_project",
+					message: "No active project.",
+				},
+			];
+		}
+
+		switch (command.kind) {
+			case "set-clip-speed": {
+				if (!Number.isFinite(command.playback_rate) || command.playback_rate <= 0) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "invalid_playback_rate",
+							message: "Clip speed must be greater than zero.",
+						}),
+					];
+				}
+				return validateTargetSegments({
+					commandIndex,
+					targetIds: command.target_segment_ids,
+					resolveTarget: (segmentId) => {
+						const target = this.resolveCurrentSceneElement({ elementId: segmentId });
+						return target &&
+							(target.element.type === "video" || target.element.type === "audio")
+							? null
+							: "Clip speed targets must be video or audio elements.";
+					},
+				});
+			}
+			case "separate-audio":
+				return validateTargetSegments({
+					commandIndex,
+					targetIds: command.target_segment_ids,
+					resolveTarget: (segmentId) => {
+						const target = this.resolveCurrentSceneElement({ elementId: segmentId });
+						return target?.element.type === "video"
+							? null
+							: "Separate Audio requires video clip targets.";
+					},
+				});
+			case "insert-freeze-frame": {
+				if (command.duration_ms <= 0) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "invalid_freeze_duration",
+							message: "Freeze-frame duration must be greater than zero.",
+						}),
+					];
+				}
+				const target = this.resolveCurrentSceneElement({
+					elementId: command.target_segment_id,
+				});
+				if (!target || target.element.type !== "video") {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "freeze_target_invalid",
+							message: "Freeze Frame requires a video clip target.",
+						}),
+					];
+				}
+				const startMs = Math.round(target.element.startTime * 1000);
+				const endMs = Math.round(
+					(target.element.startTime + target.element.duration) * 1000,
+				);
+				if (command.at_ms < startMs || command.at_ms > endMs) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "freeze_time_out_of_range",
+							message: "Freeze-frame insertion time must be inside the target clip.",
+						}),
+					];
+				}
+				return [];
+			}
+			case "set-transition-in":
+				if (command.duration_ms <= 0) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "invalid_transition_duration",
+							message: "Transition duration must be greater than zero.",
+						}),
+					];
+				}
+				return validateTargetSegments({
+					commandIndex,
+					targetIds: command.target_segment_ids,
+					resolveTarget: (segmentId) => {
+						const target = this.resolveCurrentSceneElement({ elementId: segmentId });
+						if (
+							!target ||
+							(target.element.type !== "video" && target.element.type !== "image")
+						) {
+							return "Transition targets must be visual clips.";
+						}
+						const track = this.editor.timeline.getTrackById({ trackId: target.trackId });
+						const fps = activeProject.settings.fps ?? 30;
+						return track &&
+							findAdjacentVisualIncomingTransitionTarget({
+								track,
+								elementId: segmentId,
+								fps,
+							})
+							? null
+							: "Transition targets require an adjacent visual clip immediately before them.";
+					},
+				});
+			case "apply-finishing-look":
+				return validateTargetSegments({
+					commandIndex,
+					targetIds: command.target_segment_ids,
+					resolveTarget: (segmentId) => {
+						const target = this.resolveCurrentSceneElement({ elementId: segmentId });
+						return target &&
+							(target.element.type === "video" || target.element.type === "image")
+							? null
+							: "Finishing looks only apply to video and image clips.";
+					},
+				});
+			case "apply-effect-preset":
+				return validateTargetSegments({
+					commandIndex,
+					targetIds: command.target_segment_ids,
+					resolveTarget: (segmentId) => {
+						const target = this.resolveCurrentSceneElement({ elementId: segmentId });
+						if (
+							!target ||
+							(target.element.type !== "video" && target.element.type !== "image")
+						) {
+							return "Effect presets only apply to video and image clips.";
+						}
+						const effects = target.element.effects ?? [];
+						if (effects.some((effect) => effect.kind === command.effect_kind)) {
+							return "The requested effect is already applied to one of the targets.";
+						}
+						if (effects.length >= 3) {
+							return "A clip can have at most three effects.";
+						}
+						return null;
+					},
+				});
+			case "insert-overlay-preset":
+				if (!getSocialOverlayPresetById({ presetId: command.preset_id })) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "unknown_overlay_preset",
+							message: "The requested overlay preset does not exist.",
+						}),
+					];
+				}
+				if (command.duration_ms <= 0) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "invalid_overlay_duration",
+							message: "Overlay duration must be greater than zero.",
+						}),
+					];
+				}
+				return [];
+			case "apply-overlay-style":
+				return validateTargetSegments({
+						commandIndex,
+						targetIds: command.target_element_ids,
+						resolveTarget: (elementId) => {
+							const target = this.resolveCurrentSceneElement({ elementId });
+							return target &&
+								"overlayMeta" in target.element &&
+								target.element.overlayMeta
+								? null
+								: "Overlay style targets must be overlay elements.";
+						},
+					});
+			case "apply-motion-preset":
+				return validateTargetSegments({
+					commandIndex,
+					targetIds: command.target_element_ids,
+					resolveTarget: (elementId) => {
+						const target = this.resolveCurrentSceneElement({ elementId });
+						return target &&
+							(target.element.type === "text" || target.element.type === "sticker")
+							? null
+							: "Motion presets only apply to text and sticker elements.";
+					},
+				});
+			case "apply-sound-sync": {
+				const pairing = getAnimationSfxPairingById({
+					pairingId: command.pairing_id,
+				});
+				if (!pairing) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "unknown_sound_sync_preset",
+							message: "The requested sound sync preset does not exist.",
+						}),
+					];
+				}
+				return validateTargetSegments({
+					commandIndex,
+					targetIds: command.target_element_ids,
+					resolveTarget: (elementId) => {
+						const target = this.resolveCurrentSceneElement({ elementId });
+						if (!target) {
+							return "Sound sync targets must exist in the active scene.";
+						}
+						if (pairing.targetKind === "caption") {
+							return target.element.type === "text" && target.element.role === "caption"
+								? null
+								: "This sound sync preset only applies to caption elements.";
+						}
+						return target.element.type === "text" || target.element.type === "sticker"
+							? null
+							: "This sound sync preset only applies to graphics targets.";
+					},
+				});
+			}
+			case "set-audio-mix":
+				return [];
+			case "apply-project-kit":
+				return this.editor.project.findTemplateById({
+					templateId: command.kit_id,
+				})
+					? []
+					: [
+							buildCommandValidationError({
+								commandIndex,
+								code: "project_kit_not_found",
+								message: "The requested project kit could not be found.",
+							}),
+					  ];
+			case "set-version-pack": {
+				const versionPack = activeProject.settings.versionPack;
+				if (!versionPack) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "version_pack_unavailable",
+							message: "Project version pack settings are unavailable.",
+						}),
+					];
+				}
+				if (command.target_ids.length === 0) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "version_targets_required",
+							message: "Choose at least one version target.",
+						}),
+					];
+				}
+				const knownTargets = new Set(versionPack.targets.map((target) => target.id));
+				return command.target_ids.every((targetId) => knownTargets.has(targetId))
+					? []
+					: [
+							buildCommandValidationError({
+								commandIndex,
+								code: "unknown_version_target",
+								message: "One or more requested version targets are unavailable.",
+							}),
+					  ];
+			}
+			case "auto-reframe-selection": {
+				const resolvedTargets = this.resolveAutoReframeTargets();
+				if (resolvedTargets.length === 0) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "auto_reframe_requires_selection",
+							message: "Select or previously target at least one visual clip to auto reframe.",
+						}),
+					];
+				}
+				return [];
+			}
+		}
+	}
+
+	private async executeDirectCommand({
+		command,
+	}: {
+		command: Exclude<ClipForgeEditorCommand, { kind: "timeline-op" }>;
+	}): Promise<void> {
+		switch (command.kind) {
+			case "set-clip-speed": {
+				for (const segmentId of command.target_segment_ids) {
+					const target = this.resolveCurrentSceneElement({ elementId: segmentId });
+					if (!target) continue;
+					this.editor.timeline.updateElementPlaybackRate({
+						trackId: target.trackId,
+						elementId: segmentId,
+						playbackRate: command.playback_rate,
+						ripple: command.ripple,
+					});
+				}
+				break;
+			}
+			case "separate-audio": {
+				for (const segmentId of command.target_segment_ids) {
+					const target = this.resolveCurrentSceneElement({ elementId: segmentId });
+					if (!target) continue;
+					this.editor.timeline.separateAudio({
+						trackId: target.trackId,
+						elementId: segmentId,
+					});
+				}
+				break;
+			}
+			case "insert-freeze-frame": {
+				const target = this.resolveCurrentSceneElement({
+					elementId: command.target_segment_id,
+				});
+				if (!target) {
+					break;
+				}
+				await this.editor.timeline.insertFreezeFrame({
+					trackId: target.trackId,
+					elementId: command.target_segment_id,
+					atTime: command.at_ms / 1000,
+					duration: command.duration_ms / 1000,
+					ripple: command.ripple,
+				});
+				break;
+			}
+			case "set-transition-in": {
+				for (const segmentId of command.target_segment_ids) {
+					const target = this.resolveCurrentSceneElement({ elementId: segmentId });
+					if (!target) continue;
+					this.editor.timeline.setElementTransitionIn({
+						trackId: target.trackId,
+						elementId: segmentId,
+						preset: command.preset,
+						duration: command.duration_ms / 1000,
+					});
+				}
+				break;
+			}
+			case "apply-finishing-look": {
+				for (const segmentId of command.target_segment_ids) {
+					const target = this.resolveCurrentSceneElement({ elementId: segmentId });
+					if (!target) continue;
+					this.editor.timeline.applyElementFilterPreset({
+						trackId: target.trackId,
+						elementId: segmentId,
+						presetId: command.preset_id,
+					});
+				}
+				break;
+			}
+			case "apply-effect-preset": {
+				for (const segmentId of command.target_segment_ids) {
+					const target = this.resolveCurrentSceneElement({ elementId: segmentId });
+					if (!target) continue;
+					this.editor.timeline.addElementEffect({
+						trackId: target.trackId,
+						elementId: segmentId,
+						kind: command.effect_kind,
+					});
+				}
+				break;
+			}
+			case "insert-overlay-preset":
+				this.editor.timeline.insertSocialOverlayPreset({
+					presetId: command.preset_id,
+					variantId: command.variant_id ?? undefined,
+					motionPresetId: command.motion_preset_id ?? undefined,
+					startTime: command.start_ms / 1000,
+					duration: command.duration_ms / 1000,
+					values: command.values ?? undefined,
+				});
+				break;
+			case "apply-overlay-style": {
+				const targetsByTrack = new Map<string, string[]>();
+				for (const elementId of command.target_element_ids) {
+					const target = this.resolveCurrentSceneElement({ elementId });
+					if (!target) continue;
+					const existing = targetsByTrack.get(target.trackId);
+					if (existing) {
+						existing.push(elementId);
+						continue;
+					}
+					targetsByTrack.set(target.trackId, [elementId]);
+				}
+				for (const [trackId, elementIds] of targetsByTrack.entries()) {
+					this.editor.timeline.applyOverlayStyleVariant({
+						trackId,
+						elementIds,
+						variantId: command.variant_id,
+					});
+				}
+				break;
+			}
+			case "apply-motion-preset": {
+				for (const elementId of command.target_element_ids) {
+					const target = this.resolveCurrentSceneElement({ elementId });
+					if (!target) continue;
+					this.editor.timeline.applyGraphicsMotionPreset({
+						trackId: target.trackId,
+						elementId,
+						motionPresetId: command.motion_preset_id,
+					});
+				}
+				break;
+			}
+			case "apply-sound-sync":
+				await this.editor.timeline.applyAnimationSfxPairing({
+					pairingId: command.pairing_id,
+					targetElementIds: command.target_element_ids,
+				});
+				break;
+			case "set-audio-mix": {
+				const activeProject = this.editor.project.getActive();
+				await this.editor.project.updateSettings({
+					settings: {
+						audio: {
+							...DEFAULT_PROJECT_AUDIO_SETTINGS,
+							...(activeProject.settings.audio ?? {}),
+							...command.settings,
+						},
+					},
+				});
+				break;
+			}
+			case "apply-project-kit":
+				await this.editor.project.applyProjectKit({ kitId: command.kit_id });
+				break;
+			case "set-version-pack": {
+				const activeProject = this.editor.project.getActive();
+				const currentPack = activeProject.settings.versionPack;
+				if (!currentPack) {
+					throw new Error("Project version pack is unavailable.");
+				}
+				await this.editor.project.updateVersionPack({
+					versionPack: {
+						...currentPack,
+						targets: currentPack.targets.map((target) => ({
+							...target,
+							enabled: command.target_ids.includes(target.id),
+						})),
+						activeTargetId:
+							command.active_target_id ??
+							command.target_ids[0] ??
+							currentPack.activeTargetId,
+					},
+				});
+				break;
+			}
+			case "auto-reframe-selection": {
+				const targets = this.resolveAutoReframeTargets();
+				if (targets.length === 0) {
+					throw new Error("Select one or more visual clips to auto reframe.");
+				}
+				this.editor.selection.setSelectedElements({ elements: targets });
+				this.editor.timeline.applyAutoReframeToSelection({
+					targetVersionId: command.target_version_id,
+				});
+				break;
+			}
+		}
+
+		this.invalidateSceneFootageIntelligence();
+		this.stabilizePreview();
+	}
+
+	private resolveCurrentSceneElement({
+		elementId,
+	}: {
+		elementId: string;
+	}): { trackId: string; element: TimelineElement } | null {
+		const trackId = this.editor.timeline.findTrackIdForElement({ elementId });
+		if (!trackId) {
+			return null;
+		}
+		const track = this.editor.timeline.getTrackById({ trackId });
+		const element = track?.elements.find((candidate) => candidate.id === elementId) ?? null;
+		if (!track || !element) {
+			return null;
+		}
+		return { trackId, element };
+	}
+
+	private resolveAutoReframeTargets(): Array<{ trackId: string; elementId: string }> {
+		const selectedVisuals = this.editor.selection
+			.getSelectedElements()
+			.flatMap((selection) => {
+				const target = this.resolveCurrentSceneElement({
+					elementId: selection.elementId,
+				});
+				if (
+					!target ||
+					(target.element.type !== "video" && target.element.type !== "image")
+				) {
+					return [];
+				}
+				return [{ trackId: target.trackId, elementId: selection.elementId }];
+			});
+		if (selectedVisuals.length > 0) {
+			return selectedVisuals;
+		}
+
+		const activeTargets =
+			this.editor.project.getActiveOrNull()?.clipforge?.chatMemory?.activeTargets ?? [];
+		return activeTargets.flatMap((elementId) => {
+			const target = this.resolveCurrentSceneElement({ elementId });
+			if (
+				!target ||
+				(target.element.type !== "video" && target.element.type !== "image")
+			) {
+				return [];
+			}
+			return [{ trackId: target.trackId, elementId }];
+		});
+	}
+
+	private rememberAppliedChatPlan({
+		prompt,
+		commands,
+	}: {
+		prompt: string | null;
+		commands: ClipForgeEditorCommand[];
+	}): void {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			return;
+		}
+
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		const existingMemory = project.clipforge.chatMemory;
+		const nextAppliedSummaries = commands.map((command) =>
+			buildAppliedCommandSummary({
+				command,
+				sceneId: project.currentSceneId ?? null,
+			}),
+		);
+		const selectedTargets = this.editor.selection
+			.getSelectedElements()
+			.map((selection) => selection.elementId);
+		const nextActiveTargets =
+			selectedTargets.length > 0
+				? selectedTargets
+				: nextAppliedSummaries.flatMap((summary) => [
+						...summary.targetSegmentIds,
+						...summary.targetElementIds,
+				  ]);
+
+		const nextTurnSummaries =
+			prompt && prompt.trim().length > 0
+				? [
+						...existingMemory.recentTurnSummaries,
+						{
+							prompt,
+							summary: `${prompt.trim()} -> ${summarizeCommands(commands)}`,
+							commandKinds: [...new Set(commands.map((command) => command.kind))],
+							createdAt: new Date().toISOString(),
+						},
+				  ]
+				: existingMemory.recentTurnSummaries;
+
+		const styleIntent = shouldRefreshStyleIntent({ commands })
+			? {
+					captionStyleId: project.clipforge.activeCaptionStyleId,
+					overlayStyleVariantId:
+						project.settings.overlayDefaults?.variantId ??
+						existingMemory.styleIntent?.overlayStyleVariantId ??
+						null,
+					motionPresetId:
+						project.settings.overlayDefaults?.motionPresetId ??
+						existingMemory.styleIntent?.motionPresetId ??
+						null,
+					finishingLookId:
+						findLatestFinishingLookId({ commands }) ??
+						existingMemory.styleIntent?.finishingLookId ??
+						null,
+					audioPolishPresetId:
+						project.settings.audio?.audioPolishPresetId ??
+						existingMemory.styleIntent?.audioPolishPresetId ??
+						null,
+			  }
+			: existingMemory.styleIntent;
+
+		const publishIntent = shouldRefreshPublishIntent({ commands })
+			? {
+					versionTargets:
+						project.settings.versionPack?.targets
+							.filter((target) => target.enabled)
+							.map((target) => target.id) ?? [],
+					activeTargetId: project.settings.versionPack?.activeTargetId ?? null,
+			  }
+			: existingMemory.publishIntent;
+
+		const nextMemory: ClipForgeChatMemory = {
+			activeTargets:
+				nextActiveTargets.length > 0
+					? [...new Set(nextActiveTargets)]
+					: existingMemory.activeTargets,
+			styleIntent,
+			publishIntent,
+			recentTurnSummaries: nextTurnSummaries.slice(-12),
+			recentAppliedCommandSummaries: [
+				...existingMemory.recentAppliedCommandSummaries,
+				...nextAppliedSummaries,
+			].slice(-20),
+		};
+
+		this.editor.project.setActiveProject({
+			project: {
+				...project,
+				metadata: {
+					...project.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...project.clipforge,
+					chatMemory: nextMemory,
+				},
+			},
+		});
+		this.editor.save.markDirty();
+	}
+
 	private stabilizePreview(): void {
 		const currentTime = this.editor.playback.getCurrentTime();
 		const totalDuration = this.editor.timeline.getTotalDuration();
@@ -2175,4 +3099,236 @@ function readStringArrayParam({
 
 function isProjectVersionTarget(value: string): value is ProjectVersionTarget {
 	return value === "9:16" || value === "1:1" || value === "16:9";
+}
+
+function buildEmptyPlanSafetySummary({
+	blocked,
+	message,
+}: {
+	blocked: boolean;
+	message: string;
+}): ChatPlanSafetySummary {
+	return {
+		repairedCount: 0,
+		droppedCount: 0,
+		blocked,
+		notices: blocked
+			? [
+					{
+						code: "blocked_validator_reconcile_failed",
+						severity: "error",
+						source: "validator",
+						message,
+					},
+			  ]
+			: [],
+	};
+}
+
+function buildCommandValidationError({
+	commandIndex,
+	code,
+	message,
+}: {
+	commandIndex: number;
+	code: string;
+	message: string;
+}) {
+	return {
+		opIndex: commandIndex,
+		code,
+		message,
+	};
+}
+
+function validateTargetSegments({
+	commandIndex,
+	targetIds,
+	resolveTarget,
+}: {
+	commandIndex: number;
+	targetIds: string[];
+	resolveTarget: (segmentId: string) => string | null;
+}) {
+	if (targetIds.length === 0) {
+		return [
+			buildCommandValidationError({
+				commandIndex,
+				code: "missing_command_targets",
+				message: "The command requires at least one target.",
+			}),
+		];
+	}
+
+	const errors: Array<{
+		opIndex: number;
+		code: string;
+		message: string;
+	}> = [];
+	for (const targetId of targetIds) {
+		const failureMessage = resolveTarget(targetId);
+		if (!failureMessage) continue;
+		errors.push(
+			buildCommandValidationError({
+				commandIndex,
+				code: "invalid_command_target",
+				message: failureMessage,
+			}),
+		);
+	}
+	return errors;
+}
+
+function buildAppliedCommandSummary({
+	command,
+	sceneId,
+}: {
+	command: ClipForgeEditorCommand;
+	sceneId: string | null;
+}): ClipForgeAppliedCommandSummary {
+	return {
+		kind: command.kind,
+		summary: summarizeSingleCommand(command),
+		targetSegmentIds: extractCommandTargetSegmentIds(command),
+		targetElementIds: extractCommandTargetElementIds(command),
+		sceneId,
+		scope: command.kind === "timeline-op" ? "selection" : command.scope ?? "selection",
+		createdAt: new Date().toISOString(),
+	};
+}
+
+function extractCommandTargetSegmentIds(command: ClipForgeEditorCommand): string[] {
+	if (command.kind === "timeline-op") {
+		switch (command.op.type) {
+			case "TRIM_CLIP":
+				return [command.op.clip_id];
+			case "MOVE_SEGMENT":
+			case "DELETE_SEGMENT":
+			case "DUPLICATE_SEGMENT":
+			case "FIX_CAPTION_TEXT":
+				return [command.op.segment_id];
+			case "SWAP_SEGMENTS":
+				return [command.op.a_id, command.op.b_id];
+			default:
+				return [];
+		}
+	}
+
+	switch (command.kind) {
+		case "set-clip-speed":
+		case "separate-audio":
+		case "set-transition-in":
+		case "apply-finishing-look":
+		case "apply-effect-preset":
+			return command.target_segment_ids;
+		case "insert-freeze-frame":
+			return [command.target_segment_id];
+		default:
+			return [];
+	}
+}
+
+function extractCommandTargetElementIds(command: ClipForgeEditorCommand): string[] {
+	switch (command.kind) {
+		case "apply-overlay-style":
+		case "apply-motion-preset":
+		case "apply-sound-sync":
+			return command.target_element_ids;
+		default:
+			return [];
+	}
+}
+
+function summarizeSingleCommand(command: ClipForgeEditorCommand): string {
+	switch (command.kind) {
+		case "timeline-op":
+			return command.op.type.replaceAll("_", " ").toLowerCase();
+		case "set-clip-speed":
+			return `Set clip speed to ${Math.round(command.playback_rate * 100)}%.`;
+		case "separate-audio":
+			return "Separated clip audio.";
+		case "insert-freeze-frame":
+			return `Inserted a ${Math.round(command.duration_ms)}ms freeze frame.`;
+		case "set-transition-in":
+			return `Applied ${command.preset} transitions at ${Math.round(command.duration_ms)}ms.`;
+		case "apply-finishing-look":
+			return `Applied the ${command.preset_id} finishing look.`;
+		case "apply-effect-preset":
+			return `Applied the ${command.effect_kind} effect.`;
+		case "insert-overlay-preset":
+			return `Inserted the ${command.preset_id} overlay preset.`;
+		case "apply-overlay-style":
+			return `Applied the ${command.variant_id} overlay style.`;
+		case "apply-motion-preset":
+			return `Applied the ${command.motion_preset_id} motion preset.`;
+		case "apply-sound-sync":
+			return `Applied the ${command.pairing_id} sound sync preset.`;
+		case "set-audio-mix":
+			return `Updated project audio mix settings (${Object.keys(command.settings).join(", ") || "defaults"}).`;
+		case "apply-project-kit":
+			return `Applied project kit ${command.kit_id}.`;
+		case "set-version-pack":
+			return `Updated publish targets to ${command.target_ids.join(", ")}.`;
+		case "auto-reframe-selection":
+			return `Auto reframed the selection for ${command.target_version_id}.`;
+	}
+}
+
+function summarizeCommands(commands: ClipForgeEditorCommand[]): string {
+	if (commands.length === 0) {
+		return "Applied an empty plan.";
+	}
+	if (commands.length === 1) {
+		return summarizeSingleCommand(commands[0] as ClipForgeEditorCommand);
+	}
+	return `${commands.length} AI editing commands applied: ${commands
+		.slice(0, 3)
+		.map((command) => summarizeSingleCommand(command))
+		.join(" ")}`;
+}
+
+function shouldRefreshStyleIntent({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}): boolean {
+	return commands.some((command) => {
+		if (command.kind === "timeline-op") {
+			return command.op.type === "SET_CAPTION_STYLE";
+		}
+		return (
+			command.kind === "apply-finishing-look" ||
+			command.kind === "apply-overlay-style" ||
+			command.kind === "apply-motion-preset" ||
+			command.kind === "set-audio-mix" ||
+			command.kind === "apply-project-kit"
+		);
+	});
+}
+
+function findLatestFinishingLookId({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}) {
+	for (let index = commands.length - 1; index >= 0; index -= 1) {
+		const command = commands[index];
+		if (command?.kind === "apply-finishing-look") {
+			return command.preset_id;
+		}
+	}
+	return null;
+}
+
+function shouldRefreshPublishIntent({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}): boolean {
+	return commands.some(
+		(command) =>
+			command.kind === "set-version-pack" ||
+			command.kind === "auto-reframe-selection" ||
+			command.kind === "apply-project-kit",
+	);
 }

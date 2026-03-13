@@ -3,6 +3,8 @@ export * from "./few-shot-prompt";
 export * from "./json-ops-parser";
 export * from "./planner-health";
 export * from "./project-summarizer";
+export * from "./command-plan";
+export * from "./evaluation-harness";
 export * from "./chat-clarification";
 export * from "./ambiguity-guard";
 export * from "./context-resolution";

@@ -57,7 +57,10 @@ describe("chat selective apply helpers", () => {
 		});
 
 		expect(selected).toHaveLength(2);
-		expect(selected.map((op) => op.type)).toEqual(["MAKE_VERSION", "ADD_TEXT_OVERLAY"]);
+		expect(selected.map((op: TimelineDiffOp) => op.type)).toEqual([
+			"MAKE_VERSION",
+			"ADD_TEXT_OVERLAY",
+		]);
 	});
 
 	test("empty subset is possible and should block apply upstream", () => {

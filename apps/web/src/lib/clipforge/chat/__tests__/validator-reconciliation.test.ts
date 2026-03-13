@@ -1,50 +1,45 @@
 import { describe, expect, test } from "bun:test";
+import {
+	buildProjectSegmentSummaryFixture,
+	buildProjectSummaryFixture,
+} from "@/lib/clipforge/__tests__/fixtures";
 import { reconcileValidatorErrors } from "@/lib/clipforge/chat/validator-reconciliation";
 import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat/types";
 import type { TimelineOpsValidationResult } from "@/lib/clipforge/ops-validator";
 import type { TimelineDiffOp } from "@/types/clipforge";
 
-const baseSummary: ProjectSummary = {
+const baseSummary: ProjectSummary = buildProjectSummaryFixture({
 	total_duration_s: 12,
-	caption_style_id: null,
-	pause_stats: {
-		region_count: 0,
-		total_pause_ms: 0,
-	},
 	segments: [
-		{
+		buildProjectSegmentSummaryFixture({
 			segment_id: "seg-1",
-			track_type: "video",
-			segment_kind: "video",
+			element_name: "Clip 1",
 			start_ms: 0,
 			end_ms: 4000,
-			ordinal: 1,
 			asset_id: "asset-1",
-			text_content: "",
 			transcript_snippet: "clipforge one",
-		},
-		{
+		}),
+		buildProjectSegmentSummaryFixture({
 			segment_id: "seg-2",
-			track_type: "video",
-			segment_kind: "video",
+			element_name: "Clip 2",
 			start_ms: 4000,
 			end_ms: 8000,
 			ordinal: 2,
 			asset_id: "asset-2",
-			text_content: "",
 			transcript_snippet: "clipforge two",
-		},
-		{
+		}),
+		buildProjectSegmentSummaryFixture({
 			segment_id: "cap-1",
+			track_id: "track-text",
 			track_type: "text",
 			segment_kind: "caption",
+			element_name: "Caption 1",
 			start_ms: 500,
 			end_ms: 1500,
 			ordinal: 1,
 			asset_id: null,
 			text_content: "demo",
-			transcript_snippet: "",
-		},
+		}),
 	],
 	media_assets: [
 		{
@@ -74,7 +69,7 @@ const baseSummary: ProjectSummary = {
 			media_id: "asset-2",
 		},
 	],
-};
+});
 
 const context: ChatPlannerContext = {
 	playhead_ms: 1000,
@@ -184,7 +179,7 @@ describe("reconcileValidatorErrors", () => {
 
 		expect(result.blocked).toBe(true);
 		expect(result.ops).toEqual([]);
-		expect(result.clarification?.kind).toBe("segment-target");
+		expect(result.clarification?.kind).toBe("target");
 		expect(
 			result.safety.notices.some(
 				(notice) => notice.code === "blocked_validator_reconcile_ambiguous",

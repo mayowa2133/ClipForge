@@ -1,10 +1,18 @@
 import type {
 	OverlayMotionPresetId,
+	ProjectAudioSettings,
+	ProjectBrandKit,
+	ProjectOverlayDefaults,
 	ProjectVersionTarget,
+	ProjectVersionPack,
 } from "./project";
 import type {
 	AnimationSfxPresetId,
 	OverlayStyleVariantId,
+	OverlayTextSlot,
+	SocialOverlayPresetId,
+	TransitionPreset,
+	VisualEffectKind,
 } from "./timeline";
 
 export type ClipForgeAspectRatioPreset = "9:16" | "1:1" | "16:9";
@@ -273,6 +281,8 @@ export interface DraftImpactSummary {
 	usesBeatMontage: boolean;
 }
 
+export type ClipForgeCommandScope = "selection" | "scene" | "project";
+
 export interface TimelineDiffBaseOp {
 	type:
 		| "REMOVE_SILENCE"
@@ -400,6 +410,168 @@ export type TimelineDiffOp =
 	| FixCaptionTextOp
 	| MakeVersionOp;
 
+export interface TimelineOpEditorCommand {
+	kind: "timeline-op";
+	op: TimelineDiffOp;
+}
+
+export interface SetClipSpeedEditorCommand {
+	kind: "set-clip-speed";
+	target_segment_ids: string[];
+	playback_rate: number;
+	ripple: boolean;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface SeparateAudioEditorCommand {
+	kind: "separate-audio";
+	target_segment_ids: string[];
+	scope?: ClipForgeCommandScope;
+}
+
+export interface InsertFreezeFrameEditorCommand {
+	kind: "insert-freeze-frame";
+	target_segment_id: string;
+	at_ms: number;
+	duration_ms: number;
+	ripple: boolean;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface SetTransitionInEditorCommand {
+	kind: "set-transition-in";
+	target_segment_ids: string[];
+	preset: TransitionPreset;
+	duration_ms: number;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ApplyFinishingLookEditorCommand {
+	kind: "apply-finishing-look";
+	target_segment_ids: string[];
+	preset_id: PolishFinishingLookId;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ApplyEffectPresetEditorCommand {
+	kind: "apply-effect-preset";
+	target_segment_ids: string[];
+	effect_kind: VisualEffectKind;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface InsertOverlayPresetEditorCommand {
+	kind: "insert-overlay-preset";
+	preset_id: SocialOverlayPresetId;
+	variant_id?: OverlayStyleVariantId | null;
+	motion_preset_id?: OverlayMotionPresetId | null;
+	start_ms: number;
+	duration_ms: number;
+	values?: Partial<Record<OverlayTextSlot, string>> | null;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ApplyOverlayStyleEditorCommand {
+	kind: "apply-overlay-style";
+	target_element_ids: string[];
+	variant_id: OverlayStyleVariantId;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ApplyMotionPresetEditorCommand {
+	kind: "apply-motion-preset";
+	target_element_ids: string[];
+	motion_preset_id: OverlayMotionPresetId;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ApplySoundSyncEditorCommand {
+	kind: "apply-sound-sync";
+	target_element_ids: string[];
+	pairing_id: AnimationSfxPresetId;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface SetAudioMixEditorCommand {
+	kind: "set-audio-mix";
+	settings: Partial<ProjectAudioSettings>;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ApplyProjectKitEditorCommand {
+	kind: "apply-project-kit";
+	kit_id: string;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface SetVersionPackEditorCommand {
+	kind: "set-version-pack";
+	target_ids: ProjectVersionTarget[];
+	active_target_id?: ProjectVersionTarget | null;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface AutoReframeSelectionEditorCommand {
+	kind: "auto-reframe-selection";
+	target_version_id: ProjectVersionTarget;
+	scope?: ClipForgeCommandScope;
+}
+
+export type ClipForgeEditorCommand =
+	| TimelineOpEditorCommand
+	| SetClipSpeedEditorCommand
+	| SeparateAudioEditorCommand
+	| InsertFreezeFrameEditorCommand
+	| SetTransitionInEditorCommand
+	| ApplyFinishingLookEditorCommand
+	| ApplyEffectPresetEditorCommand
+	| InsertOverlayPresetEditorCommand
+	| ApplyOverlayStyleEditorCommand
+	| ApplyMotionPresetEditorCommand
+	| ApplySoundSyncEditorCommand
+	| SetAudioMixEditorCommand
+	| ApplyProjectKitEditorCommand
+	| SetVersionPackEditorCommand
+	| AutoReframeSelectionEditorCommand;
+
+export interface ClipForgeChatMemoryStyleIntent {
+	captionStyleId?: string | null;
+	overlayStyleVariantId?: OverlayStyleVariantId | null;
+	motionPresetId?: OverlayMotionPresetId | null;
+	finishingLookId?: PolishFinishingLookId | null;
+	audioPolishPresetId?: AudioPolishPresetId | null;
+}
+
+export interface ClipForgeChatMemoryPublishIntent {
+	versionTargets: ProjectVersionTarget[];
+	activeTargetId: ProjectVersionTarget | null;
+}
+
+export interface ClipForgeChatTurnSummary {
+	prompt: string;
+	summary: string;
+	commandKinds: ClipForgeEditorCommand["kind"][];
+	createdAt: string;
+}
+
+export interface ClipForgeAppliedCommandSummary {
+	kind: ClipForgeEditorCommand["kind"];
+	summary: string;
+	targetSegmentIds: string[];
+	targetElementIds: string[];
+	sceneId: string | null;
+	scope: ClipForgeCommandScope;
+	createdAt: string;
+}
+
+export interface ClipForgeChatMemory {
+	activeTargets: string[];
+	styleIntent: ClipForgeChatMemoryStyleIntent | null;
+	publishIntent: ClipForgeChatMemoryPublishIntent | null;
+	recentTurnSummaries: ClipForgeChatTurnSummary[];
+	recentAppliedCommandSummaries: ClipForgeAppliedCommandSummary[];
+}
+
 export type TimelineDiffOpSource = "chat" | "auto-edit" | "manual";
 
 export interface TimelineDiffAuditEntry {
@@ -422,6 +594,7 @@ export interface ClipForgeProjectData {
 	captionTrackIdsBySceneId: Record<string, string | null>;
 	sceneFootageIntelligenceBySceneId: Record<string, FootageIntelligenceReport | null>;
 	trendSoundReferences: TrendSoundReference[];
+	chatMemory: ClipForgeChatMemory;
 	opsAudit: TimelineDiffAuditEntry[];
 }
 

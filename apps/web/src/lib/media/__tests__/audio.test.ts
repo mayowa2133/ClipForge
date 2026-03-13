@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { buildDefaultClipForgeProjectData } from "@/lib/clipforge";
 import {
 	buildAudioDuckingProfile,
 	buildProjectMixSummary,
@@ -114,7 +115,7 @@ describe("audio mix helpers", () => {
 		];
 		const project = buildProject({
 			clipforge: {
-				schemaVersion: 4,
+				...buildDefaultClipForgeProjectData(),
 				mediaMetadataById: {
 					"spoken-media": {
 						words: [
@@ -130,12 +131,7 @@ describe("audio mix helpers", () => {
 						indexedAt: null,
 					},
 				},
-				captionStylesById: {},
 				activeCaptionStyleId: "clean-bottom",
-				captionTrackIdsBySceneId: {},
-				sceneFootageIntelligenceBySceneId: {},
-				trendSoundReferences: [],
-				opsAudit: [],
 			},
 		} as Partial<TProject>);
 		const profile = buildAudioDuckingProfile({

@@ -1,18 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { buildProjectSummaryFixture } from "@/lib/clipforge/__tests__/fixtures";
 import { OpenAIChatOpsProvider } from "@/lib/clipforge/chat";
 import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat";
 
-const summary: ProjectSummary = {
-	total_duration_s: 10,
-	caption_style_id: null,
-	pause_stats: {
-		region_count: 0,
-		total_pause_ms: 0,
-	},
-	segments: [],
-	media_assets: [],
-	timeline_words: [],
-};
+const summary: ProjectSummary = buildProjectSummaryFixture();
 
 const context: ChatPlannerContext = {
 	playhead_ms: 3000,

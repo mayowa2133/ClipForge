@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+	buildProjectSegmentSummaryFixture,
+	buildProjectSummaryFixture,
+} from "@/lib/clipforge/__tests__/fixtures";
+import {
 	createEmptyResolutionState,
 	findPlayheadCandidates,
 	findSelectionCandidates,
@@ -11,48 +15,41 @@ import {
 import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat";
 
 function buildSummary(): ProjectSummary {
-	return {
+	return buildProjectSummaryFixture({
 		total_duration_s: 12,
-		caption_style_id: null,
-		pause_stats: { region_count: 0, total_pause_ms: 0 },
 		segments: [
-			{
+			buildProjectSegmentSummaryFixture({
 				segment_id: "seg-1",
-				track_type: "video",
-				segment_kind: "video",
+				element_name: "Clip 1",
 				start_ms: 1000,
 				end_ms: 3000,
-				ordinal: 1,
 				asset_id: "clip-1",
-				text_content: "",
 				transcript_snippet: "hello world",
-			},
-			{
+			}),
+			buildProjectSegmentSummaryFixture({
 				segment_id: "caption-1",
+				track_id: "track-text",
 				track_type: "text",
 				segment_kind: "caption",
+				element_name: "Caption 1",
 				start_ms: 1200,
 				end_ms: 1800,
 				ordinal: 1,
 				asset_id: null,
 				text_content: "hello world",
 				transcript_snippet: "hello world",
-			},
-			{
+			}),
+			buildProjectSegmentSummaryFixture({
 				segment_id: "seg-2",
-				track_type: "video",
-				segment_kind: "video",
+				element_name: "Clip 2",
 				start_ms: 4000,
 				end_ms: 6000,
 				ordinal: 2,
 				asset_id: "clip-2",
-				text_content: "",
 				transcript_snippet: "next clip",
-			},
+			}),
 		],
-		media_assets: [],
-		timeline_words: [],
-	};
+	});
 }
 
 describe("context-resolution", () => {

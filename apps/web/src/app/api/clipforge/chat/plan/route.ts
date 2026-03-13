@@ -88,8 +88,21 @@ function isPlannerOverrides(value: unknown): value is ChatPlannerOverrides {
 	if (!isRecord(value.forced_segment_ids_by_reference)) {
 		return false;
 	}
-	return Object.entries(value.forced_segment_ids_by_reference).every(
+	const segmentOverridesValid = Object.entries(value.forced_segment_ids_by_reference).every(
 		([key, segmentId]) => typeof key === "string" && typeof segmentId === "string",
+	);
+	if (!segmentOverridesValid) {
+		return false;
+	}
+	if (
+		value.forced_choice_values_by_reference !== undefined &&
+		!isRecord(value.forced_choice_values_by_reference)
+	) {
+		return false;
+	}
+	return Object.entries(value.forced_choice_values_by_reference ?? {}).every(
+		([key, choiceValue]) =>
+			typeof key === "string" && typeof choiceValue === "string",
 	);
 }
 

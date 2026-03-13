@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import {
+	buildProjectSegmentSummaryFixture,
+	buildProjectSummaryFixture,
+} from "@/lib/clipforge/__tests__/fixtures";
 import { AmbiguitySafeChatOpsProvider } from "@/lib/clipforge/chat";
 import type {
 	ChatOpsProvider,
@@ -7,38 +11,26 @@ import type {
 	ProjectSummary,
 } from "@/lib/clipforge/chat";
 
-const summary: ProjectSummary = {
-	total_duration_s: 10,
-	caption_style_id: null,
-	pause_stats: {
-		region_count: 0,
-		total_pause_ms: 0,
-	},
+const summary: ProjectSummary = buildProjectSummaryFixture({
 	segments: [
-		{
+		buildProjectSegmentSummaryFixture({
 			segment_id: "seg-1",
-			track_type: "video",
-			segment_kind: "video",
+			element_name: "Clip 1",
 			start_ms: 0,
 			end_ms: 2000,
-			ordinal: 1,
 			asset_id: "clip-1",
-			text_content: "",
 			transcript_snippet: "clipforge one",
-		},
-		{
+		}),
+		buildProjectSegmentSummaryFixture({
 			segment_id: "seg-2",
-			track_type: "video",
-			segment_kind: "video",
+			element_name: "Clip 2",
 			start_ms: 2000,
 			end_ms: 4000,
 			ordinal: 2,
 			asset_id: "clip-2",
-			text_content: "",
 			transcript_snippet: "clipforge two",
-		},
+		}),
 	],
-	media_assets: [],
 	timeline_words: [
 		{
 			text: "clipforge",
@@ -55,7 +47,7 @@ const summary: ProjectSummary = {
 			media_id: "clip-2",
 		},
 	],
-};
+});
 
 const context: ChatPlannerContext = {
 	playhead_ms: 0,
@@ -78,7 +70,7 @@ describe("AmbiguitySafeChatOpsProvider", () => {
 				fallbackUsed: false,
 				warnings: ["a"],
 				clarification: {
-					kind: "segment-target",
+					kind: "target",
 					prompt: "pick one",
 					referenceLabel: "selection:clip",
 					options: [],
@@ -139,7 +131,7 @@ describe("AmbiguitySafeChatOpsProvider", () => {
 		});
 
 		expect(result.ops).toEqual([]);
-		expect(result.clarification?.kind).toBe("segment-target");
+		expect(result.clarification?.kind).toBe("target");
 		expect(result.provider).toBe("openai");
 		expect(result.fallbackUsed).toBe(false);
 		expect(result.warnings.some((warning) => warning.includes("safety guard"))).toBe(

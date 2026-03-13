@@ -1,18 +1,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+	buildProjectSegmentSummaryFixture,
+	buildProjectSummaryFixture,
+} from "@/lib/clipforge/__tests__/fixtures";
 import { requestOpenAIChatPlan } from "@/lib/clipforge/chat/server/openai-planner";
 import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat";
 
-const summary: ProjectSummary = {
+const summary: ProjectSummary = buildProjectSummaryFixture({
 	total_duration_s: 12,
-	caption_style_id: null,
-	pause_stats: {
-		region_count: 0,
-		total_pause_ms: 0,
-	},
-	segments: [],
-	media_assets: [],
-	timeline_words: [],
-};
+});
 
 const context: ChatPlannerContext = {
 	playhead_ms: 2000,
@@ -134,17 +130,28 @@ describe("requestOpenAIChatPlan", () => {
 			userText: "x".repeat(2100),
 			projectSummary: {
 				...summary,
-				segments: Array.from({ length: 501 }, (_, index) => ({
-					segment_id: `seg-${index}`,
-					track_type: "video",
-					segment_kind: "video" as const,
-					start_ms: index * 10,
-					end_ms: index * 10 + 10,
-					ordinal: index + 1,
-					asset_id: `asset-${index}`,
-					text_content: "",
-					transcript_snippet: "x",
-				})),
+				segments: Array.from({ length: 501 }, (_, index) =>
+					buildProjectSegmentSummaryFixture({
+						segment_id: `seg-${index}`,
+						element_name: `Clip ${index + 1}`,
+						start_ms: index * 10,
+						end_ms: index * 10 + 10,
+						ordinal: index + 1,
+						asset_id: `asset-${index}`,
+						transcript_snippet: "x",
+					}),
+				),
+				current_scene_segments: Array.from({ length: 501 }, (_, index) =>
+					buildProjectSegmentSummaryFixture({
+						segment_id: `seg-${index}`,
+						element_name: `Clip ${index + 1}`,
+						start_ms: index * 10,
+						end_ms: index * 10 + 10,
+						ordinal: index + 1,
+						asset_id: `asset-${index}`,
+						transcript_snippet: "x",
+					}),
+				),
 				timeline_words: Array.from({ length: 5001 }, (_, index) => ({
 					text: "x",
 					start_ms: index,

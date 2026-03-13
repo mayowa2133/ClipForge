@@ -1,6 +1,9 @@
 import { buildTimelineDiffPatch } from "@/lib/clipforge/timeline-op-engine";
 import type { MediaAsset } from "@/types/assets";
-import type { TimelineDiffOp } from "@/types/clipforge";
+import type {
+	ClipForgeEditorCommand,
+	TimelineDiffOp,
+} from "@/types/clipforge";
 import type { TProject } from "@/types/project";
 import type { TimelineElement } from "@/types/timeline";
 import { buildProjectSummary } from "./project-summarizer";
@@ -32,6 +35,7 @@ export function buildPlanImpactPreview({
 		return {
 			cards: [],
 			summary: {
+				totalCommands: 0,
 				totalOps: 0,
 				impactCount: 0,
 				simulatedDurationDeltaMs: 0,
@@ -83,11 +87,82 @@ export function buildPlanImpactPreview({
 	return {
 		cards,
 		summary: {
+			totalCommands: ops.length,
 			totalOps: ops.length,
 			impactCount: cards.length,
 			simulatedDurationDeltaMs: Math.round(
 				(patch.after.metadata.duration - patch.before.metadata.duration) * 1000,
 			),
+		},
+	};
+}
+
+export function buildCommandPlanImpactPreview({
+	project,
+	mediaAssets = [],
+	commands,
+}: {
+	project: TProject;
+	mediaAssets?: MediaAsset[];
+	commands: ClipForgeEditorCommand[];
+}): ChatPlanPreviewResult {
+	const timelineOpCommands = commands.flatMap((command) =>
+		command.kind === "timeline-op" ? [command.op] : [],
+	);
+	const timelinePreview =
+		timelineOpCommands.length > 0
+			? buildPlanImpactPreview({
+					project,
+					mediaAssets,
+					ops: timelineOpCommands,
+			  })
+			: {
+					cards: [],
+					summary: {
+						totalCommands: 0,
+						totalOps: 0,
+						impactCount: 0,
+						simulatedDurationDeltaMs: 0,
+					},
+			  };
+	const timelineCards = [...timelinePreview.cards];
+	const lookup = buildElementLookupById({ project });
+	const summary = buildProjectSummary({ project, mediaAssets });
+	const cardByCommandIndex = new Map<number, ChatPlanImpactCard>();
+	let timelineOpIndex = 0;
+
+	for (const [commandIndex, command] of commands.entries()) {
+		if (command.kind === "timeline-op") {
+			const timelineCard = timelineCards[timelineOpIndex];
+			if (timelineCard) {
+				cardByCommandIndex.set(commandIndex, {
+					...timelineCard,
+					opIndex: commandIndex,
+				});
+			}
+			timelineOpIndex += 1;
+			continue;
+		}
+		cardByCommandIndex.set(
+			commandIndex,
+			buildDirectCommandImpactCard({
+				command,
+				commandIndex,
+				lookup,
+				summary,
+			}),
+		);
+	}
+
+	return {
+		cards: commands
+			.map((_, index) => cardByCommandIndex.get(index) ?? null)
+			.filter((card): card is ChatPlanImpactCard => card !== null),
+		summary: {
+			totalCommands: commands.length,
+			totalOps: timelinePreview.summary.totalOps,
+			impactCount: commands.length,
+			simulatedDurationDeltaMs: timelinePreview.summary.simulatedDurationDeltaMs,
 		},
 	};
 }
@@ -366,6 +441,221 @@ function buildImpactCard({
 				kind: "unknown",
 				title: "Timeline change",
 				detail: "Deterministic timeline operation",
+				jump: null,
+			};
+	}
+}
+
+function buildDirectCommandImpactCard({
+	command,
+	commandIndex,
+	lookup,
+	summary,
+}: {
+	command: Exclude<ClipForgeEditorCommand, { kind: "timeline-op" }>;
+	commandIndex: number;
+	lookup: Map<string, ElementLookupEntry>;
+	summary: ReturnType<typeof buildProjectSummary>;
+}): ChatPlanImpactCard {
+	switch (command.kind) {
+		case "set-clip-speed": {
+			const target = lookup.get(command.target_segment_ids[0] ?? "");
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "set-clip-speed",
+				title: "Set clip speed",
+				detail: `${command.playback_rate.toFixed(2)}x${
+					command.ripple ? " · ripple" : ""
+				}`,
+				beforeRangeMs: target
+					? { start: target.startMs, end: target.endMs }
+					: null,
+				jump: buildJumpTarget({
+					primary: target,
+					fallbackTimeMs: target?.startMs ?? 0,
+				}),
+			};
+		}
+		case "separate-audio": {
+			const target = lookup.get(command.target_segment_ids[0] ?? "");
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "separate-audio",
+				title: "Separate audio",
+				detail: `${command.target_segment_ids.length} clip${
+					command.target_segment_ids.length === 1 ? "" : "s"
+				}`,
+				beforeRangeMs: target
+					? { start: target.startMs, end: target.endMs }
+					: null,
+				jump: buildJumpTarget({
+					primary: target,
+					fallbackTimeMs: target?.startMs ?? 0,
+				}),
+			};
+		}
+		case "insert-freeze-frame":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "freeze-frame",
+				title: "Insert freeze frame",
+				detail: `${formatTimeMs(command.at_ms)} · ${formatSeconds(
+					command.duration_ms,
+				)}${command.ripple ? " · ripple" : ""}`,
+				jump: {
+					time_ms: command.at_ms,
+					track_id: null,
+					segment_id: command.target_segment_id,
+				},
+			};
+		case "set-transition-in": {
+			const target = lookup.get(command.target_segment_ids[0] ?? "");
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "transition",
+				title: "Set transition",
+				detail: `${command.preset} · ${formatSeconds(command.duration_ms)}`,
+				beforeRangeMs: target
+					? { start: target.startMs, end: target.endMs }
+					: null,
+				jump: buildJumpTarget({
+					primary: target,
+					fallbackTimeMs: target?.startMs ?? 0,
+				}),
+			};
+		}
+		case "apply-finishing-look":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "finishing-look",
+				title: "Apply finishing look",
+				detail: `${command.preset_id} · ${command.target_segment_ids.length} target${
+					command.target_segment_ids.length === 1 ? "" : "s"
+				}`,
+				jump: buildJumpTarget({
+					primary: lookup.get(command.target_segment_ids[0] ?? ""),
+					fallbackTimeMs: 0,
+				}),
+			};
+		case "apply-effect-preset":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "effect",
+				title: "Apply effect",
+				detail: `${command.effect_kind} · ${command.target_segment_ids.length} target${
+					command.target_segment_ids.length === 1 ? "" : "s"
+				}`,
+				jump: buildJumpTarget({
+					primary: lookup.get(command.target_segment_ids[0] ?? ""),
+					fallbackTimeMs: 0,
+				}),
+			};
+		case "insert-overlay-preset":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "overlay-preset",
+				title: "Insert overlay preset",
+				detail: `${command.preset_id} · ${formatTimeRangeMs(
+					command.start_ms,
+					command.start_ms + command.duration_ms,
+				)}`,
+				jump: {
+					time_ms: command.start_ms,
+					track_id: null,
+					segment_id: null,
+				},
+			};
+		case "apply-overlay-style":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "overlay-style",
+				title: "Apply overlay style",
+				detail: `${command.variant_id} · ${command.target_element_ids.length} overlay element${
+					command.target_element_ids.length === 1 ? "" : "s"
+				}`,
+				jump: buildJumpTarget({
+					primary: lookup.get(command.target_element_ids[0] ?? ""),
+					fallbackTimeMs: 0,
+				}),
+			};
+		case "apply-motion-preset":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "motion-preset",
+				title: "Apply motion preset",
+				detail: `${command.motion_preset_id} · ${command.target_element_ids.length} target${
+					command.target_element_ids.length === 1 ? "" : "s"
+				}`,
+				jump: buildJumpTarget({
+					primary: lookup.get(command.target_element_ids[0] ?? ""),
+					fallbackTimeMs: 0,
+				}),
+			};
+		case "apply-sound-sync":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "sound-sync",
+				title: "Apply sound sync",
+				detail: `${command.pairing_id} · ${command.target_element_ids.length} target${
+					command.target_element_ids.length === 1 ? "" : "s"
+				}`,
+				jump: buildJumpTarget({
+					primary: lookup.get(command.target_element_ids[0] ?? ""),
+					fallbackTimeMs: 0,
+				}),
+			};
+		case "set-audio-mix": {
+			const parts = Object.entries(command.settings).map(
+				([key, value]) => `${key}=${String(value)}`,
+			);
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "audio-mix",
+				title: "Update audio mix",
+				detail: parts.join(" · "),
+				jump: null,
+			};
+		}
+		case "apply-project-kit":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "project-kit",
+				title: "Apply project kit",
+				detail:
+					summary.available_project_kits.find((kit) => kit.id === command.kit_id)?.name ??
+					command.kit_id,
+				jump: null,
+			};
+		case "set-version-pack":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "version-pack",
+				title: "Update version pack",
+				detail: `${command.target_ids.join(", ")}${
+					command.active_target_id ? ` · active ${command.active_target_id}` : ""
+				}`,
+				jump: null,
+			};
+		case "auto-reframe-selection":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "auto-reframe",
+				title: "Auto reframe selection",
+				detail: `Target ${command.target_version_id}`,
 				jump: null,
 			};
 	}

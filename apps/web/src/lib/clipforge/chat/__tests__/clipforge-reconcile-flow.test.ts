@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import {
+	buildProjectSegmentSummaryFixture,
+	buildProjectSummaryFixture,
+} from "@/lib/clipforge/__tests__/fixtures";
 import { ClipForgeManager } from "@/core/managers/clipforge-manager";
 import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat/types";
 import type { TimelineDiffOp } from "@/types/clipforge";
@@ -10,36 +14,26 @@ const context: ChatPlannerContext = {
 };
 
 function createProjectSummary(): ProjectSummary {
-	return {
+	return buildProjectSummaryFixture({
 		total_duration_s: 12,
-		caption_style_id: null,
-		pause_stats: {
-			region_count: 0,
-			total_pause_ms: 0,
-		},
 		segments: [
-			{
+			buildProjectSegmentSummaryFixture({
 				segment_id: "seg-1",
-				track_type: "video",
-				segment_kind: "video",
+				element_name: "Clip 1",
 				start_ms: 0,
 				end_ms: 4000,
-				ordinal: 1,
 				asset_id: "asset-1",
-				text_content: "",
 				transcript_snippet: "clipforge one",
-			},
-			{
+			}),
+			buildProjectSegmentSummaryFixture({
 				segment_id: "seg-2",
-				track_type: "video",
-				segment_kind: "video",
+				element_name: "Clip 2",
 				start_ms: 4000,
 				end_ms: 8000,
 				ordinal: 2,
 				asset_id: "asset-2",
-				text_content: "",
 				transcript_snippet: "clipforge two",
-			},
+			}),
 		],
 		media_assets: [
 			{
@@ -69,7 +63,7 @@ function createProjectSummary(): ProjectSummary {
 				media_id: "asset-2",
 			},
 		],
-	};
+	});
 }
 
 function createFakeEditor({ activeProject }: { activeProject: any | null }) {
@@ -222,7 +216,7 @@ describe("ClipForgeManager.reconcileAndValidateOps", () => {
 		});
 
 		expect(result.blocked).toBe(true);
-		expect(result.clarification?.kind).toBe("segment-target");
+		expect(result.clarification?.kind).toBe("target");
 		expect(result.ops).toEqual([]);
 	});
 });

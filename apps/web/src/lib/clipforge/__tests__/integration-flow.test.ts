@@ -125,7 +125,7 @@ describe("ClipForge integration flow", () => {
 				active_scene_id: autoDraft.currentSceneId,
 			},
 		});
-		const chatOps = result.ops;
+		const chatOps = result.ops ?? [];
 
 		const finalProject = applyTimelineDiffOpsToProject({
 			project: autoDraft,
@@ -182,7 +182,7 @@ describe("ClipForge integration flow", () => {
 				active_scene_id: project.currentSceneId,
 			},
 		});
-		const chatOps = result.ops;
+		const chatOps = result.ops ?? [];
 
 		expect(chatOps).toHaveLength(1);
 		expect(chatOps[0]?.type).toBe("INSERT_BROLL");
@@ -228,7 +228,7 @@ describe("ClipForge integration flow", () => {
 			},
 		});
 
-		expect(result.ops).toEqual([
+		expect(result.ops ?? []).toEqual([
 			{
 				type: "SWAP_SEGMENTS",
 				a_id: expect.any(String),
@@ -247,7 +247,7 @@ describe("ClipForge integration flow", () => {
 				) ?? [];
 		const swapped = applyTimelineDiffOpsToProject({
 			project: autoDraft,
-			ops: result.ops,
+			ops: result.ops ?? [],
 			source: "chat",
 			now: new Date("2026-02-27T12:00:00.000Z"),
 		});

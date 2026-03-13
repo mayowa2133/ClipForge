@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { FallbackChatOpsProvider } from "@/lib/clipforge/chat";
+import { buildProjectSummaryFixture } from "@/lib/clipforge/__tests__/fixtures";
 import type {
 	ChatOpsProvider,
 	ChatPlannerContext,
@@ -7,17 +8,7 @@ import type {
 	ProjectSummary,
 } from "@/lib/clipforge/chat";
 
-const summary: ProjectSummary = {
-	total_duration_s: 10,
-	caption_style_id: null,
-	pause_stats: {
-		region_count: 0,
-		total_pause_ms: 0,
-	},
-	segments: [],
-	media_assets: [],
-	timeline_words: [],
-};
+const summary: ProjectSummary = buildProjectSummaryFixture();
 
 const context: ChatPlannerContext = {
 	playhead_ms: 0,
@@ -105,7 +96,7 @@ describe("FallbackChatOpsProvider", () => {
 				fallbackUsed: false,
 				warnings: [],
 				clarification: {
-					kind: "segment-target",
+					kind: "target",
 					prompt:
 						"Multiple timeline targets match this request. Choose one target to continue.",
 					referenceLabel: "selection:clip",

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { buildProjectSegmentSummaryFixture } from "@/lib/clipforge/__tests__/fixtures";
 import {
 	findAddressableSegments,
 	findCaptionReferenceCandidates,
@@ -10,50 +11,49 @@ import {
 function buildSummary() {
 	return {
 		segments: [
-			{
+			buildProjectSegmentSummaryFixture({
 				segment_id: "seg-1",
-				track_type: "video",
-				segment_kind: "video" as const,
+				element_name: "Clip 1",
 				start_ms: 0,
 				end_ms: 2000,
-				ordinal: 1,
 				asset_id: "clip-1",
-				text_content: "",
 				transcript_snippet: "hello bro",
-			},
-			{
+			}),
+			buildProjectSegmentSummaryFixture({
 				segment_id: "seg-2",
-				track_type: "video",
-				segment_kind: "video" as const,
+				element_name: "Clip 2",
 				start_ms: 2000,
 				end_ms: 4000,
 				ordinal: 2,
 				asset_id: "clip-2",
-				text_content: "",
 				transcript_snippet: "summer vibes",
-			},
-			{
+			}),
+			buildProjectSegmentSummaryFixture({
 				segment_id: "caption-1",
+				track_id: "track-text",
 				track_type: "text",
 				segment_kind: "caption" as const,
+				element_name: "Caption 1",
 				start_ms: 500,
 				end_ms: 1200,
 				ordinal: 1,
 				asset_id: null,
 				text_content: "hello there",
 				transcript_snippet: "hello there",
-			},
-			{
+			}),
+			buildProjectSegmentSummaryFixture({
 				segment_id: "caption-2",
+				track_id: "track-text",
 				track_type: "text",
 				segment_kind: "caption" as const,
+				element_name: "Caption 2",
 				start_ms: 2500,
 				end_ms: 3200,
 				ordinal: 2,
 				asset_id: null,
 				text_content: "hello again",
 				transcript_snippet: "hello again",
-			},
+			}),
 		],
 		timeline_words: [
 			{ text: "hello", start_ms: 0, end_ms: 200, segment_id: "seg-1", media_id: "clip-1" },

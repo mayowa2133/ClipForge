@@ -1,59 +1,63 @@
 import { describe, expect, test } from "bun:test";
+import {
+	buildProjectSegmentSummaryFixture,
+	buildProjectSummaryFixture,
+} from "@/lib/clipforge/__tests__/fixtures";
 import { evaluateAmbiguityGuard } from "@/lib/clipforge/chat";
 import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat";
 
 function buildSummary(): ProjectSummary {
-	return {
+	const segments = [
+		buildProjectSegmentSummaryFixture({
+			segment_id: "seg-1",
+			element_name: "Clip 1",
+			start_ms: 1000,
+			end_ms: 3000,
+			asset_id: "clip-1",
+			transcript_snippet: "hey bro clipforge welcome",
+		}),
+		buildProjectSegmentSummaryFixture({
+			segment_id: "seg-2",
+			element_name: "Clip 2",
+			start_ms: 3000,
+			end_ms: 6000,
+			ordinal: 2,
+			asset_id: "clip-2",
+			transcript_snippet: "summer vibes clipforge",
+		}),
+		buildProjectSegmentSummaryFixture({
+			segment_id: "caption-1",
+			track_id: "track-text",
+			track_type: "text",
+			segment_kind: "caption",
+			element_name: "Caption 1",
+			start_ms: 1200,
+			end_ms: 2000,
+			ordinal: 1,
+			asset_id: null,
+			text_content: "demo title",
+			transcript_snippet: "demo title",
+		}),
+		buildProjectSegmentSummaryFixture({
+			segment_id: "caption-2",
+			track_id: "track-text",
+			track_type: "text",
+			segment_kind: "caption",
+			element_name: "Caption 2",
+			start_ms: 3400,
+			end_ms: 4200,
+			ordinal: 2,
+			asset_id: null,
+			text_content: "demo again",
+			transcript_snippet: "demo again",
+		}),
+	];
+
+	return buildProjectSummaryFixture({
 		total_duration_s: 50,
 		caption_style_id: "clean-bottom",
-		pause_stats: { region_count: 0, total_pause_ms: 0 },
-		segments: [
-			{
-				segment_id: "seg-1",
-				track_type: "video",
-				segment_kind: "video",
-				start_ms: 1000,
-				end_ms: 3000,
-				ordinal: 1,
-				asset_id: "clip-1",
-				text_content: "",
-				transcript_snippet: "hey bro clipforge welcome",
-			},
-			{
-				segment_id: "seg-2",
-				track_type: "video",
-				segment_kind: "video",
-				start_ms: 3000,
-				end_ms: 6000,
-				ordinal: 2,
-				asset_id: "clip-2",
-				text_content: "",
-				transcript_snippet: "summer vibes clipforge",
-			},
-			{
-				segment_id: "caption-1",
-				track_type: "text",
-				segment_kind: "caption",
-				start_ms: 1200,
-				end_ms: 2000,
-				ordinal: 1,
-				asset_id: null,
-				text_content: "demo title",
-				transcript_snippet: "demo title",
-			},
-			{
-				segment_id: "caption-2",
-				track_type: "text",
-				segment_kind: "caption",
-				start_ms: 3400,
-				end_ms: 4200,
-				ordinal: 2,
-				asset_id: null,
-				text_content: "demo again",
-				transcript_snippet: "demo again",
-			},
-		],
-		media_assets: [],
+		segments,
+		current_scene_segments: segments,
 		timeline_words: [
 			{
 				text: "clipforge",
@@ -70,7 +74,7 @@ function buildSummary(): ProjectSummary {
 				media_id: "clip-2",
 			},
 		],
-	};
+	});
 }
 
 function buildContext(
@@ -92,7 +96,7 @@ describe("evaluateAmbiguityGuard", () => {
 			context: buildContext(),
 		});
 
-		expect(result.clarification?.kind).toBe("segment-target");
+		expect(result.clarification?.kind).toBe("target");
 		expect(result.clarification?.options).toHaveLength(2);
 	});
 
@@ -103,7 +107,7 @@ describe("evaluateAmbiguityGuard", () => {
 			context: buildContext(),
 		});
 
-		expect(result.clarification?.kind).toBe("segment-target");
+		expect(result.clarification?.kind).toBe("target");
 		expect(result.clarification?.options).toHaveLength(2);
 	});
 
@@ -131,29 +135,23 @@ describe("evaluateAmbiguityGuard", () => {
 	test("returns clarification for playhead distance ties", () => {
 		const summary = buildSummary();
 		summary.segments = [
-			{
+			buildProjectSegmentSummaryFixture({
 				segment_id: "seg-a",
-				track_type: "video",
-				segment_kind: "video",
+				element_name: "Clip A",
 				start_ms: 1000,
 				end_ms: 1500,
-				ordinal: 1,
 				asset_id: "clip-a",
-				text_content: "",
-				transcript_snippet: "",
-			},
-			{
+			}),
+			buildProjectSegmentSummaryFixture({
 				segment_id: "seg-b",
-				track_type: "video",
-				segment_kind: "video",
+				element_name: "Clip B",
 				start_ms: 3000,
 				end_ms: 3500,
 				ordinal: 2,
 				asset_id: "clip-b",
-				text_content: "",
-				transcript_snippet: "",
-			},
+			}),
 		];
+		summary.current_scene_segments = summary.segments;
 
 		const result = evaluateAmbiguityGuard({
 			userText: "move this earlier by 1s",

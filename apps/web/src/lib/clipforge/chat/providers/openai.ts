@@ -1,4 +1,5 @@
 import type { TimelineDiffOp } from "@/types/clipforge";
+import { wrapTimelineOpsAsCommands } from "../command-plan";
 import type {
 	ChatOpsProvider,
 	ChatProposalResult,
@@ -74,6 +75,7 @@ export class OpenAIChatOpsProvider implements ChatOpsProvider {
 		}
 
 		return {
+			commands: wrapTimelineOpsAsCommands(payload.ops as TimelineDiffOp[]),
 			ops: payload.ops as TimelineDiffOp[],
 			provider: "openai",
 			fallbackUsed: false,

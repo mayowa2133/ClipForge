@@ -1,3 +1,4 @@
+import { normalizeChatPlanResult, wrapTimelineOpsAsCommands } from "@/lib/clipforge/chat/command-plan";
 import { evaluateSemanticPlanSafety } from "@/lib/clipforge/chat/plan-safety";
 import type { ChatOpsProvider, ChatProposalResult } from "../types";
 
@@ -7,8 +8,14 @@ export class SemanticSafeChatOpsProvider implements ChatOpsProvider {
 	async proposeEdits(
 		args: Parameters<ChatOpsProvider["proposeEdits"]>[0],
 	): Promise<ChatProposalResult> {
-		const baseResult = await this.wrapped.proposeEdits(args);
+		const baseResult = normalizeChatPlanResult(await this.wrapped.proposeEdits(args));
 		if (baseResult.clarification) {
+			return {
+				...baseResult,
+				safety: baseResult.safety ?? null,
+			};
+		}
+		if (baseResult.commands.some((command) => command.kind !== "timeline-op")) {
 			return {
 				...baseResult,
 				safety: baseResult.safety ?? null,
@@ -22,6 +29,7 @@ export class SemanticSafeChatOpsProvider implements ChatOpsProvider {
 
 		return {
 			...baseResult,
+			commands: wrapTimelineOpsAsCommands(safetyResult.ops),
 			ops: safetyResult.ops,
 			clarification: safetyResult.clarification,
 			safety: safetyResult.safety,

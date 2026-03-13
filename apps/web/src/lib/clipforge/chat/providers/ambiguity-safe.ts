@@ -1,3 +1,4 @@
+import { normalizeChatPlanResult } from "@/lib/clipforge/chat/command-plan";
 import { evaluateAmbiguityGuard } from "@/lib/clipforge/chat/ambiguity-guard";
 import type { ChatOpsProvider, ChatProposalResult } from "../types";
 
@@ -7,8 +8,11 @@ export class AmbiguitySafeChatOpsProvider implements ChatOpsProvider {
 	async proposeEdits(
 		args: Parameters<ChatOpsProvider["proposeEdits"]>[0],
 	): Promise<ChatProposalResult> {
-		const baseResult = await this.wrapped.proposeEdits(args);
+		const baseResult = normalizeChatPlanResult(await this.wrapped.proposeEdits(args));
 		if (baseResult.clarification) {
+			return baseResult;
+		}
+		if (baseResult.commands.some((command) => command.kind !== "timeline-op")) {
 			return baseResult;
 		}
 

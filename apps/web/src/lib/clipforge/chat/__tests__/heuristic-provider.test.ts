@@ -2,68 +2,87 @@ import { describe, expect, test } from "bun:test";
 import { HeuristicChatOpsProvider } from "@/lib/clipforge";
 import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat";
 
-function buildSummary(): ProjectSummary {
+function buildSummary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
+	const segments: ProjectSummary["segments"] = [
+		{
+			segment_id: "seg-1",
+			track_id: "track-video",
+			scene_id: "scene-main",
+			track_type: "video",
+			segment_kind: "video",
+			start_ms: 1000,
+			end_ms: 3000,
+			ordinal: 1,
+			asset_id: "clip-1",
+			element_name: "Opener",
+			text_content: "",
+			transcript_snippet: "hey bro clipforge welcome",
+		},
+		{
+			segment_id: "seg-2",
+			track_id: "track-video",
+			scene_id: "scene-main",
+			track_type: "video",
+			segment_kind: "video",
+			start_ms: 3000,
+			end_ms: 6000,
+			ordinal: 2,
+			asset_id: "clip-2",
+			element_name: "Body",
+			text_content: "",
+			transcript_snippet: "summer vibes clipforge",
+		},
+		{
+			segment_id: "caption-1",
+			track_id: "track-text",
+			scene_id: "scene-main",
+			track_type: "text",
+			segment_kind: "caption",
+			start_ms: 1200,
+			end_ms: 2000,
+			ordinal: 1,
+			asset_id: null,
+			element_name: "Caption 1",
+			text_content: "teh hook demo",
+			transcript_snippet: "teh hook demo",
+		},
+		{
+			segment_id: "caption-2",
+			track_id: "track-text",
+			scene_id: "scene-main",
+			track_type: "text",
+			segment_kind: "caption",
+			start_ms: 3400,
+			end_ms: 4200,
+			ordinal: 2,
+			asset_id: null,
+			element_name: "Caption 2",
+			text_content: "demo again",
+			transcript_snippet: "demo again",
+		},
+		{
+			segment_id: "overlay-1",
+			track_id: "track-text",
+			scene_id: "scene-main",
+			track_type: "text",
+			segment_kind: "text-overlay",
+			start_ms: 6500,
+			end_ms: 9000,
+			ordinal: 1,
+			asset_id: null,
+			element_name: "Overlay 1",
+			text_content: "watch this",
+			transcript_snippet: "watch this",
+		},
+	];
 	return {
 		total_duration_s: 50,
+		current_scene_id: "scene-main",
 		caption_style_id: "clean-bottom",
 		pause_stats: { region_count: 0, total_pause_ms: 0 },
-		segments: [
-			{
-				segment_id: "seg-1",
-				track_type: "video",
-				segment_kind: "video",
-				start_ms: 1000,
-				end_ms: 3000,
-				ordinal: 1,
-				asset_id: "clip-1",
-				text_content: "",
-				transcript_snippet: "hey bro clipforge welcome",
-			},
-			{
-				segment_id: "seg-2",
-				track_type: "video",
-				segment_kind: "video",
-				start_ms: 3000,
-				end_ms: 6000,
-				ordinal: 2,
-				asset_id: "clip-2",
-				text_content: "",
-				transcript_snippet: "summer vibes clipforge",
-			},
-			{
-				segment_id: "caption-1",
-				track_type: "text",
-				segment_kind: "caption",
-				start_ms: 1200,
-				end_ms: 2000,
-				ordinal: 1,
-				asset_id: null,
-				text_content: "teh hook demo",
-				transcript_snippet: "teh hook demo",
-			},
-			{
-				segment_id: "caption-2",
-				track_type: "text",
-				segment_kind: "caption",
-				start_ms: 3400,
-				end_ms: 4200,
-				ordinal: 2,
-				asset_id: null,
-				text_content: "demo again",
-				transcript_snippet: "demo again",
-			},
-			{
-				segment_id: "overlay-1",
-				track_type: "text",
-				segment_kind: "text-overlay",
-				start_ms: 6500,
-				end_ms: 9000,
-				ordinal: 1,
-				asset_id: null,
-				text_content: "watch this",
-				transcript_snippet: "watch this",
-			},
-		],
+		segments,
+		current_scene_segments: segments,
+		other_scene_summaries: [],
 		media_assets: [
 			{
 				asset_id: "beach-1",
@@ -71,6 +90,42 @@ function buildSummary(): ProjectSummary {
 				type: "video",
 			},
 		],
+		selection: {
+			selected_segment_ids: [],
+			selected_segments: [],
+		},
+		playhead_neighborhood: {
+			playhead_ms: 0,
+			nearby_segments: segments.slice(0, 2),
+		},
+		version_pack: {
+			targets: [
+				{ id: "9:16", enabled: true, canvasSize: { width: 1080, height: 1920 } },
+				{ id: "1:1", enabled: true, canvasSize: { width: 1080, height: 1080 } },
+				{ id: "16:9", enabled: false, canvasSize: { width: 1920, height: 1080 } },
+			],
+			activeTargetId: "9:16",
+		},
+		audio_mix: {
+			masterVolume: 1,
+			duckingEnabled: true,
+			duckingAmount: 0.45,
+			duckingAttackMs: 120,
+			duckingReleaseMs: 280,
+			audioPolishPresetId: "none",
+		},
+		overlay_defaults: {
+			variantId: "clean-vlog",
+			motionPresetId: "fade-up",
+		},
+		brand_kit: null,
+		available_project_kits: [
+			{ id: "kit-clean", name: "Clean Vlog Kit", kind: "project-kit" },
+		],
+		available_scene_recipes: [],
+		media_analysis_markers: [],
+		recent_ai_actions: [],
+		recent_turn_summaries: [],
 		timeline_words: [
 			{
 				text: "hey",
@@ -122,6 +177,7 @@ function buildSummary(): ProjectSummary {
 				media_id: "clip-2",
 			},
 		],
+		...overrides,
 	};
 }
 
@@ -152,6 +208,27 @@ async function propose({
 	});
 }
 
+async function proposeWithSummary({
+	provider,
+	userText,
+	projectSummary,
+	context,
+	overrides,
+}: {
+	provider: HeuristicChatOpsProvider;
+	userText: string;
+	projectSummary?: ProjectSummary;
+	context?: Partial<ChatPlannerContext>;
+	overrides?: Parameters<HeuristicChatOpsProvider["proposeEdits"]>[0]["overrides"];
+}) {
+	return provider.proposeEdits({
+		userText,
+		projectSummary: projectSummary ?? buildSummary(),
+		context: buildContext(context),
+		overrides,
+	});
+}
+
 describe("HeuristicChatOpsProvider", () => {
 	test("returns deterministic ops for common edit intents in clause order", async () => {
 		const provider = new HeuristicChatOpsProvider();
@@ -160,7 +237,7 @@ describe("HeuristicChatOpsProvider", () => {
 			userText: "make it faster and remove more pauses and use bold center captions",
 		});
 
-		expect(result.ops.map((op) => op.type)).toEqual([
+		expect((result.ops ?? []).map((op) => op.type)).toEqual([
 			"MAKE_VERSION",
 			"REMOVE_SILENCE",
 			"SET_CAPTION_STYLE",
@@ -472,7 +549,7 @@ describe("HeuristicChatOpsProvider", () => {
 			userText: "make it faster and use bold center captions",
 		});
 
-		expect(result.ops.map((op) => op.type)).toEqual([
+		expect((result.ops ?? []).map((op) => op.type)).toEqual([
 			"MAKE_VERSION",
 			"SET_CAPTION_STYLE",
 		]);
@@ -526,5 +603,428 @@ describe("HeuristicChatOpsProvider", () => {
 		expect(missingTiming.ops).toEqual([]);
 		expect(missingAsset.ops).toEqual([]);
 		expect(missingQuote.ops).toEqual([]);
+	});
+
+	test("emits a clip-speed command for opener speed requests", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await provider.proposeEdits({
+			userText: "speed up the opener 15%",
+			projectSummary: buildSummary(),
+			context: buildContext(),
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "set-clip-speed",
+				target_segment_ids: ["seg-1"],
+				playback_rate: 1.15,
+				ripple: true,
+				scope: "selection",
+			},
+		]);
+	});
+
+	test("emits a transition command for next-shot follow-ups using recent memory", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await provider.proposeEdits({
+			userText: "add a subtle transition into the next shot",
+			projectSummary: buildSummary({
+				recent_ai_actions: [
+					{
+						kind: "set-clip-speed",
+						summary: "Set clip speed to 115%.",
+						targetSegmentIds: ["seg-1"],
+						targetElementIds: [],
+						sceneId: "scene-main",
+						scope: "selection",
+						createdAt: "2026-03-12T10:00:00.000Z",
+					},
+				],
+				recent_turn_summaries: [
+					"speed up the opener 15% -> Set clip speed to 115%.",
+				],
+			}),
+			context: buildContext(),
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "set-transition-in",
+				target_segment_ids: ["seg-2"],
+				preset: "cross-dissolve",
+				duration_ms: 300,
+				scope: "scene",
+			},
+		]);
+	});
+
+	test("repeats the previous transition command across the next cuts", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await provider.proposeEdits({
+			userText: "do that to the next two cuts",
+			projectSummary: buildSummary({
+				segments: [
+					...buildSummary().segments,
+					{
+						segment_id: "seg-3",
+						track_id: "track-video",
+						scene_id: "scene-main",
+						track_type: "video",
+						segment_kind: "video",
+						start_ms: 6000,
+						end_ms: 8500,
+						ordinal: 3,
+						asset_id: "clip-3",
+						element_name: "Clip 3",
+						text_content: "",
+						transcript_snippet: "third shot",
+					},
+					{
+						segment_id: "seg-4",
+						track_id: "track-video",
+						scene_id: "scene-main",
+						track_type: "video",
+						segment_kind: "video",
+						start_ms: 8500,
+						end_ms: 11000,
+						ordinal: 4,
+						asset_id: "clip-4",
+						element_name: "Clip 4",
+						text_content: "",
+						transcript_snippet: "fourth shot",
+					},
+				],
+				current_scene_segments: [
+					...buildSummary().segments,
+					{
+						segment_id: "seg-3",
+						track_id: "track-video",
+						scene_id: "scene-main",
+						track_type: "video",
+						segment_kind: "video",
+						start_ms: 6000,
+						end_ms: 8500,
+						ordinal: 3,
+						asset_id: "clip-3",
+						element_name: "Clip 3",
+						text_content: "",
+						transcript_snippet: "third shot",
+					},
+					{
+						segment_id: "seg-4",
+						track_id: "track-video",
+						scene_id: "scene-main",
+						track_type: "video",
+						segment_kind: "video",
+						start_ms: 8500,
+						end_ms: 11000,
+						ordinal: 4,
+						asset_id: "clip-4",
+						element_name: "Clip 4",
+						text_content: "",
+						transcript_snippet: "fourth shot",
+					},
+				],
+				recent_ai_actions: [
+					{
+						kind: "set-transition-in",
+						summary: "Applied cross-dissolve transitions at 300ms.",
+						targetSegmentIds: ["seg-2"],
+						targetElementIds: [],
+						sceneId: "scene-main",
+						scope: "scene",
+						createdAt: "2026-03-12T10:01:00.000Z",
+					},
+				],
+				recent_turn_summaries: [
+					"add a subtle transition into the next shot -> Applied cross-dissolve transitions at 300ms.",
+				],
+			}),
+			context: buildContext(),
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "set-transition-in",
+				target_segment_ids: ["seg-3", "seg-4"],
+				preset: "cross-dissolve",
+				duration_ms: 300,
+				scope: "scene",
+			},
+		]);
+	});
+
+	test("emits an audio mix command for stronger music ducking", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await provider.proposeEdits({
+			userText: "duck the music more",
+			projectSummary: buildSummary(),
+			context: buildContext(),
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "set-audio-mix",
+				settings: {
+					duckingEnabled: true,
+					duckingAmount: 0.55,
+				},
+				scope: "project",
+			},
+		]);
+	});
+
+	test("emits a separate-audio command", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "separate audio from the opener",
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "separate-audio",
+				target_segment_ids: ["seg-1"],
+				scope: "selection",
+			},
+		]);
+	});
+
+	test("emits a freeze-frame command anchored to the playhead", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "freeze opener for 1.2s",
+			context: { playhead_ms: 1600 },
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "insert-freeze-frame",
+				target_segment_id: "seg-1",
+				at_ms: 1600,
+				duration_ms: 1200,
+				ripple: true,
+				scope: "selection",
+			},
+		]);
+	});
+
+	test("emits a finishing-look command", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "apply a warm finishing look to the opener",
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "apply-finishing-look",
+				target_segment_ids: ["seg-1"],
+				preset_id: "warm",
+				scope: "selection",
+			},
+		]);
+	});
+
+	test("emits an effect command", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "add a blur effect to the opener",
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "apply-effect-preset",
+				target_segment_ids: ["seg-1"],
+				effect_kind: "blur",
+				scope: "selection",
+			},
+		]);
+	});
+
+	test("emits an overlay preset command", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "add a timestamp card for 3s",
+			context: { playhead_ms: 2400 },
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "insert-overlay-preset",
+				preset_id: "timestamp-card",
+				variant_id: null,
+				motion_preset_id: null,
+				start_ms: 2400,
+				duration_ms: 3000,
+				scope: "scene",
+			},
+		]);
+	});
+
+	test("emits an overlay-style command", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "make the overlays bold",
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "apply-overlay-style",
+				target_element_ids: ["overlay-1"],
+				variant_id: "bold-social",
+				scope: "scene",
+			},
+		]);
+	});
+
+	test("emits a motion-preset command", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "make the overlays drift in",
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "apply-motion-preset",
+				target_element_ids: ["overlay-1"],
+				motion_preset_id: "drift-in",
+				scope: "scene",
+			},
+		]);
+	});
+
+	test("emits a sound-sync command for graphics", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "use typing soft on graphics",
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "apply-sound-sync",
+				target_element_ids: ["overlay-1"],
+				pairing_id: "typing-soft",
+				scope: "scene",
+			},
+		]);
+	});
+
+	test("emits a project-kit command", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "apply clean vlog kit",
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "apply-project-kit",
+				kit_id: "kit-clean",
+				scope: "project",
+			},
+		]);
+	});
+
+	test("emits a version-pack command", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "set versions to 9:16, 1:1",
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "set-version-pack",
+				target_ids: ["9:16", "1:1"],
+				active_target_id: "9:16",
+				scope: "project",
+			},
+		]);
+	});
+
+	test("emits an auto-reframe command", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "reframe for 9:16",
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "auto-reframe-selection",
+				target_version_id: "9:16",
+				scope: "selection",
+			},
+		]);
+	});
+
+	test("asks for a transition preset when the intent is ambiguous", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "add a transition into the opener",
+		});
+
+		expect(result.commands).toEqual([]);
+		expect(result.clarification?.kind).toBe("preset");
+		expect(result.clarification?.referenceLabel).toBe("preset:transition");
+	});
+
+	test("asks for scope when overlay styling could mean selection or scene", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const overlaySelection = buildSummary().segments.find(
+			(segment) => segment.segment_id === "overlay-1",
+		);
+		const overlayTwo = {
+			segment_id: "overlay-2",
+			track_id: "track-text",
+			scene_id: "scene-main",
+			track_type: "text",
+			segment_kind: "text-overlay" as const,
+			start_ms: 9100,
+			end_ms: 11200,
+			ordinal: 2,
+			asset_id: null,
+			element_name: "Overlay 2",
+			text_content: "second overlay",
+			transcript_snippet: "second overlay",
+		};
+		const summary = buildSummary({
+			segments: [...buildSummary().segments, overlayTwo],
+			current_scene_segments: [...buildSummary().current_scene_segments, overlayTwo],
+			selection: {
+				selected_segment_ids: ["overlay-1"],
+				selected_segments: overlaySelection ? [overlaySelection] : [],
+			},
+		});
+		const result = await proposeWithSummary({
+			provider,
+			userText: "make the overlays clean",
+			projectSummary: summary,
+			context: { selected_segment_ids: ["overlay-1"] },
+		});
+
+		expect(result.commands).toEqual([]);
+		expect(result.clarification?.kind).toBe("scope");
+		expect(result.clarification?.referenceLabel).toBe("scope:overlay-style");
+	});
+
+	test("asks for a version target when auto reframe has no explicit destination", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "reframe this",
+		});
+
+		expect(result.commands).toEqual([]);
+		expect(result.clarification?.kind).toBe("version-target");
+		expect(result.clarification?.referenceLabel).toBe("version-target:auto-reframe");
 	});
 });

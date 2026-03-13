@@ -20,12 +20,14 @@ import {
 	getCaptionRevealLabel,
 	getFinishingLookLabel,
 	getPolishProfileLabel,
+	normalizeChatPlanResult,
 	projectValidatorWarnings,
 	type TimelineOpsValidationError,
 } from "@/lib/clipforge";
 import { useClipForgeChatDraftStore } from "@/stores/clipforge-chat-draft-store";
 import { useClipForgeChatSettingsStore } from "@/stores/clipforge-chat-settings-store";
 import type {
+	ClipForgeEditorCommand,
 	CreativeBrief,
 	DraftImpactSummary,
 	DraftRecipe,
@@ -67,7 +69,7 @@ export function ChatContent() {
 	const activeRequestIdRef = useRef(0);
 	const [prompt, setPrompt] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
-	const [proposedOps, setProposedOps] = useState<TimelineDiffOp[]>([]);
+	const [proposedCommands, setProposedCommands] = useState<ClipForgeEditorCommand[]>([]);
 	const [impactPreview, setImpactPreview] = useState<ChatPlanPreviewResult | null>(
 		null,
 	);
@@ -77,7 +79,7 @@ export function ChatContent() {
 		Record<number, boolean>
 	>({});
 	const [draftBuildMessages, setDraftBuildMessages] = useState<string[]>([]);
-	const [enabledOpsByIndex, setEnabledOpsByIndex] = useState<
+	const [enabledCommandsByIndex, setEnabledCommandsByIndex] = useState<
 		Record<number, boolean>
 	>({});
 	const [errors, setErrors] = useState<TimelineOpsValidationError[]>([]);
@@ -92,13 +94,13 @@ export function ChatContent() {
 		useState<PlannerRequestSnapshot | null>(null);
 	const [, setClarificationOverrides] =
 		useState<ChatPlannerOverrides | null>(null);
-	const selectedOps = useMemo(
+	const selectedCommands = useMemo(
 		() =>
-			selectEnabledOps({
-				ops: proposedOps,
-				enabledOpsByIndex,
+			selectEnabledCommands({
+				commands: proposedCommands,
+				enabledCommandsByIndex,
 			}),
-		[proposedOps, enabledOpsByIndex],
+		[proposedCommands, enabledCommandsByIndex],
 	);
 	const selectedDraftSteps = useMemo(
 		() =>
@@ -162,15 +164,17 @@ export function ChatContent() {
 	}, [plannerMode]);
 
 	useEffect(() => {
-		if (proposedOps.length === 0) return;
+		if (proposedCommands.length === 0) return;
 
-		const validation = editor.clipforge.validateOps({ ops: selectedOps });
+		const validation = editor.clipforge.validateCommands({
+			commands: selectedCommands,
+		});
 		setErrors(validation.valid ? [] : validation.errors);
-	}, [editor, proposedOps, selectedOps]);
+	}, [editor, proposedCommands, selectedCommands]);
 
 	const resetPreview = () => {
 		setImpactPreview(null);
-		setEnabledOpsByIndex({});
+		setEnabledCommandsByIndex({});
 	};
 
 	const resetDraftRecipe = () => {
@@ -179,10 +183,14 @@ export function ChatContent() {
 		setEnabledDraftStepsByIndex({});
 	};
 
-	const buildPreviewForOps = ({ ops }: { ops: TimelineDiffOp[] }) => {
-		const preview = editor.clipforge.previewOpsImpact({ ops });
+	const buildPreviewForCommands = ({
+		commands,
+	}: {
+		commands: ClipForgeEditorCommand[];
+	}) => {
+		const preview = editor.clipforge.previewCommandsImpact({ commands });
 		setImpactPreview(preview);
-		setEnabledOpsByIndex(buildEnabledOpsMap({ ops }));
+		setEnabledCommandsByIndex(buildEnabledCommandsMap({ commands }));
 	};
 
 	const buildPreviewForDraftRecipe = ({ recipe }: { recipe: DraftRecipe }) => {
@@ -217,14 +225,18 @@ export function ChatContent() {
 		setPendingClarification(null);
 		setClarificationOverrides(null);
 		try {
-			const projectSummary = buildProjectSummary({
-				project: activeProject,
-				mediaAssets: editor.media.getAssets(),
-			});
 			const playheadMs = Math.round(editor.playback.getCurrentTime() * 1000);
 			const selectedSegmentIds = editor.selection
 				.getSelectedElements()
 				.map((element) => element.elementId);
+			const projectSummary = buildProjectSummary({
+				project: activeProject,
+				mediaAssets: editor.media.getAssets(),
+				playheadMs,
+				selectedSegmentIds,
+				projectKitTemplates: editor.project.getProjectKitTemplates(),
+				sceneRecipeTemplates: editor.project.getSceneRecipeTemplates(),
+			});
 			const plannerRequest: PlannerRequestSnapshot = {
 				userText: prompt,
 				projectSummary,
@@ -247,13 +259,15 @@ export function ChatContent() {
 				});
 				const recipe = editor.clipforge.planDraftRecipe({ brief });
 				buildPreviewForDraftRecipe({ recipe });
-				setProposedOps([]);
+				setProposedCommands([]);
 				setErrors([]);
 				setLastPlanError(null);
 				setPendingClarification(null);
 				return;
 			}
-			const result = await provider.proposeEdits(plannerRequest);
+			const result = normalizeChatPlanResult(
+				await provider.proposeEdits(plannerRequest),
+			);
 			if (activeRequestIdRef.current !== requestId) {
 				return;
 			}
@@ -265,7 +279,7 @@ export function ChatContent() {
 					warnings: result.warnings,
 					safety: result.safety ?? null,
 				});
-				setProposedOps([]);
+				setProposedCommands([]);
 				setErrors([]);
 				resetPreview();
 				setPendingClarification(result.clarification);
@@ -274,19 +288,19 @@ export function ChatContent() {
 			}
 			setPendingClarification(null);
 
-			if (result.ops.length === 0) {
-				setProposedOps([]);
+			if (result.commands.length === 0) {
+				setProposedCommands([]);
 				setErrors([]);
 				resetPreview();
-				toast.error("No deterministic ops could be generated.");
+				toast.error("No deterministic editor commands could be generated.");
 				return;
 			}
 
-			const reconciliation = editor.clipforge.reconcileAndValidateOps({
+			const reconciliation = editor.clipforge.reconcileAndValidateCommands({
 				userText: plannerRequest.userText,
 				projectSummary: plannerRequest.projectSummary,
 				context: plannerRequest.context,
-				ops: result.ops,
+				commands: result.commands,
 			});
 			const validatorWarnings = projectValidatorWarnings({
 				notices: reconciliation.safety.notices,
@@ -305,15 +319,15 @@ export function ChatContent() {
 
 			if (reconciliation.clarification) {
 				setPendingClarification(reconciliation.clarification);
-				setProposedOps([]);
+				setProposedCommands([]);
 				setErrors([]);
 				resetPreview();
 				setLastPlanError(null);
 				return;
 			}
 
-			if (reconciliation.blocked || reconciliation.ops.length === 0) {
-				setProposedOps([]);
+			if (reconciliation.blocked || reconciliation.commands.length === 0) {
+				setProposedCommands([]);
 				setErrors(
 					reconciliation.secondPassErrors.length > 0
 						? reconciliation.secondPassErrors
@@ -321,12 +335,12 @@ export function ChatContent() {
 				);
 				resetPreview();
 				setLastPlanError(null);
-				toast.error("Unable to produce validator-clean deterministic ops.");
+				toast.error("Unable to produce validator-clean deterministic commands.");
 				return;
 			}
 
-			setProposedOps(reconciliation.ops);
-			buildPreviewForOps({ ops: reconciliation.ops });
+			setProposedCommands(reconciliation.commands);
+			buildPreviewForCommands({ commands: reconciliation.commands });
 			setErrors([]);
 			setLastPlanError(null);
 		} catch (error) {
@@ -350,10 +364,10 @@ export function ChatContent() {
 
 	const handleClarificationSelection = async ({
 		referenceLabel,
-		segmentId,
+		choiceValue,
 	}: {
 		referenceLabel: string;
-		segmentId: string;
+		choiceValue: string;
 	}) => {
 		if (!lastPlannerRequest || isLoading) {
 			return;
@@ -361,21 +375,31 @@ export function ChatContent() {
 
 		const requestId = activeRequestIdRef.current + 1;
 		activeRequestIdRef.current = requestId;
-		const overrides: ChatPlannerOverrides = {
-			forced_segment_ids_by_reference: {
-				[referenceLabel]: segmentId,
-			},
-		};
+		const overrides: ChatPlannerOverrides =
+			choiceValue.startsWith("segment:")
+				? {
+						forced_segment_ids_by_reference: {
+							[referenceLabel]: choiceValue.slice("segment:".length),
+						},
+				  }
+				: {
+						forced_segment_ids_by_reference: {},
+						forced_choice_values_by_reference: {
+							[referenceLabel]: choiceValue,
+						},
+				  };
 		setClarificationOverrides(overrides);
 		setIsLoading(true);
 		setLastPlanError(null);
 		setErrors([]);
 		resetPreview();
 		try {
-			const result = await provider.proposeEdits({
-				...lastPlannerRequest,
-				overrides,
-			});
+			const result = normalizeChatPlanResult(
+				await provider.proposeEdits({
+					...lastPlannerRequest,
+					overrides,
+				}),
+			);
 			if (activeRequestIdRef.current !== requestId) {
 				return;
 			}
@@ -388,27 +412,27 @@ export function ChatContent() {
 					safety: result.safety ?? null,
 				});
 				setPendingClarification(result.clarification);
-				setProposedOps([]);
+				setProposedCommands([]);
 				setErrors([]);
 				resetPreview();
 				return;
 			}
 
 			setPendingClarification(null);
-			if (result.ops.length === 0) {
-				setProposedOps([]);
+			if (result.commands.length === 0) {
+				setProposedCommands([]);
 				setErrors([]);
 				resetPreview();
-				toast.error("No deterministic ops could be generated.");
+				toast.error("No deterministic editor commands could be generated.");
 				return;
 			}
 
-			const reconciliation = editor.clipforge.reconcileAndValidateOps({
+			const reconciliation = editor.clipforge.reconcileAndValidateCommands({
 				userText: lastPlannerRequest.userText,
 				projectSummary: lastPlannerRequest.projectSummary,
 				context: lastPlannerRequest.context,
 				overrides,
-				ops: result.ops,
+				commands: result.commands,
 			});
 			const validatorWarnings = projectValidatorWarnings({
 				notices: reconciliation.safety.notices,
@@ -427,26 +451,26 @@ export function ChatContent() {
 
 			if (reconciliation.clarification) {
 				setPendingClarification(reconciliation.clarification);
-				setProposedOps([]);
+				setProposedCommands([]);
 				setErrors([]);
 				resetPreview();
 				return;
 			}
 
-			if (reconciliation.blocked || reconciliation.ops.length === 0) {
-				setProposedOps([]);
+			if (reconciliation.blocked || reconciliation.commands.length === 0) {
+				setProposedCommands([]);
 				setErrors(
 					reconciliation.secondPassErrors.length > 0
 						? reconciliation.secondPassErrors
 						: reconciliation.firstPassErrors,
 				);
 				resetPreview();
-				toast.error("Unable to produce validator-clean deterministic ops.");
+				toast.error("Unable to produce validator-clean deterministic commands.");
 				return;
 			}
 
-			setProposedOps(reconciliation.ops);
-			buildPreviewForOps({ ops: reconciliation.ops });
+			setProposedCommands(reconciliation.commands);
+			buildPreviewForCommands({ commands: reconciliation.commands });
 			setErrors([]);
 		} catch (error) {
 			if (activeRequestIdRef.current !== requestId) {
@@ -467,30 +491,40 @@ export function ChatContent() {
 		}
 	};
 
-	const handleApply = () => {
-		if (selectedOps.length === 0) return;
+	const handleApply = async () => {
+		if (selectedCommands.length === 0) return;
 
-		const result = editor.clipforge.applyOps({
-			ops: selectedOps,
-			source: "chat",
-		});
-		if (!result.applied) {
-			setErrors(result.errors);
-			toast.error("Ops were rejected by validation.");
-			return;
+		try {
+			const result = await editor.clipforge.applyCommands({
+				commands: selectedCommands,
+				source: "chat",
+				prompt,
+			});
+			if (!result.applied) {
+				setErrors(result.errors);
+				toast.error("Commands were rejected by validation.");
+				return;
+			}
+
+			toast.success("Chat edits applied.");
+			setPrompt("");
+			setProposedCommands([]);
+			resetPreview();
+			resetDraftRecipe();
+			setDraftBuildMessages([]);
+			setErrors([]);
+			setProposalMeta(null);
+			setLastPlanError(null);
+			setPendingClarification(null);
+			setClarificationOverrides(null);
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : "Failed to apply planned edits.";
+			setLastPlanError(message);
+			toast.error("Failed to apply planned edits.", {
+				description: message,
+			});
 		}
-
-		toast.success("Chat edits applied.");
-		setPrompt("");
-		setProposedOps([]);
-		resetPreview();
-		resetDraftRecipe();
-		setDraftBuildMessages([]);
-		setErrors([]);
-		setProposalMeta(null);
-		setLastPlanError(null);
-		setPendingClarification(null);
-		setClarificationOverrides(null);
 	};
 
 	const handleToggleDraftStep = ({ stepIndex }: { stepIndex: number }) => {
@@ -538,10 +572,10 @@ export function ChatContent() {
 		}
 	};
 
-	const handleToggleOp = ({ opIndex }: { opIndex: number }) => {
-		setEnabledOpsByIndex((previous) => ({
+	const handleToggleCommand = ({ commandIndex }: { commandIndex: number }) => {
+		setEnabledCommandsByIndex((previous) => ({
 			...previous,
-			[opIndex]: previous[opIndex] === false,
+			[commandIndex]: previous[commandIndex] === false,
 		}));
 	};
 
@@ -650,7 +684,7 @@ export function ChatContent() {
 					placeholder='Try: "trim this clip by 0.5s at the start", "add text here that says \"watch this\"", "replace \"teh\" with \"the\" in this caption"'
 				/>
 				<Button onClick={handlePropose} disabled={isLoading}>
-					{isLoading ? "Proposing..." : "Propose Ops"}
+					{isLoading ? "Proposing..." : "Propose Plan"}
 				</Button>
 			</div>
 
@@ -700,7 +734,9 @@ export function ChatContent() {
 								onClick={() =>
 									void handleClarificationSelection({
 										referenceLabel: pendingClarification.referenceLabel,
-										segmentId: option.segment_id,
+										choiceValue: option.segment_id
+											? `segment:${option.segment_id}`
+											: option.value,
 									})
 								}
 							>
@@ -1095,7 +1131,7 @@ export function ChatContent() {
 				</div>
 			)}
 
-			{proposedOps.length > 0 && (
+			{proposedCommands.length > 0 && (
 				<div className="flex flex-1 flex-col gap-2">
 					{impactPreview && (
 						<div className="rounded-md border p-3">
@@ -1108,7 +1144,7 @@ export function ChatContent() {
 							</p>
 							<div className="flex max-h-52 flex-col gap-2 overflow-auto pr-1">
 								{impactPreview.cards.map((card) => {
-									const enabled = enabledOpsByIndex[card.opIndex] !== false;
+									const enabled = enabledCommandsByIndex[card.opIndex] !== false;
 									return (
 										<div
 											key={`${card.opType}-${card.opIndex}`}
@@ -1120,7 +1156,9 @@ export function ChatContent() {
 														type="checkbox"
 														checked={enabled}
 														onChange={() =>
-															handleToggleOp({ opIndex: card.opIndex })
+															handleToggleCommand({
+																commandIndex: card.opIndex,
+															})
 														}
 													/>
 													<span>
@@ -1166,22 +1204,22 @@ export function ChatContent() {
 						</div>
 					)}
 					<Label>
-						Selected JSON Ops ({selectedOps.length}/{proposedOps.length})
+						Selected JSON Commands ({selectedCommands.length}/{proposedCommands.length})
 					</Label>
 					<pre className="bg-muted max-h-64 overflow-auto rounded-md border p-3 text-xs">
-						{JSON.stringify(selectedOps, null, 2)}
+						{JSON.stringify(selectedCommands, null, 2)}
 					</pre>
 					<div className="flex gap-2">
 						<Button
-							onClick={handleApply}
-							disabled={errors.length > 0 || selectedOps.length === 0}
+							onClick={() => void handleApply()}
+							disabled={errors.length > 0 || selectedCommands.length === 0}
 						>
 							Apply
 						</Button>
 						<Button
 							variant="outline"
 							onClick={() => {
-								setProposedOps([]);
+								setProposedCommands([]);
 								resetPreview();
 								setErrors([]);
 								setProposalMeta(null);
@@ -1454,16 +1492,39 @@ function formatSignedDurationMs(durationMs: number): string {
 	return `${sign}${seconds.toFixed(2)}s`;
 }
 
+export function buildEnabledCommandsMap({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}): Record<number, boolean> {
+	const next: Record<number, boolean> = {};
+	for (const [index] of commands.entries()) {
+		next[index] = true;
+	}
+	return next;
+}
+
+export function selectEnabledCommands({
+	commands,
+	enabledCommandsByIndex,
+}: {
+	commands: ClipForgeEditorCommand[];
+	enabledCommandsByIndex: Record<number, boolean>;
+}): ClipForgeEditorCommand[] {
+	return commands.filter((_, index) => enabledCommandsByIndex[index] !== false);
+}
+
 export function buildEnabledOpsMap({
 	ops,
 }: {
 	ops: TimelineDiffOp[];
 }): Record<number, boolean> {
-	const next: Record<number, boolean> = {};
-	for (const [index] of ops.entries()) {
-		next[index] = true;
-	}
-	return next;
+	return buildEnabledCommandsMap({
+		commands: ops.map((op) => ({
+			kind: "timeline-op",
+			op,
+		})),
+	});
 }
 
 export function selectEnabledOps({

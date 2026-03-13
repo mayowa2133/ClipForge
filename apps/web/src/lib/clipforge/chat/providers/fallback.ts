@@ -1,3 +1,4 @@
+import { normalizeChatPlanResult } from "../command-plan";
 import type { ChatOpsProvider, ChatProposalResult } from "../types";
 
 export class FallbackChatOpsProvider implements ChatOpsProvider {
@@ -10,12 +11,14 @@ export class FallbackChatOpsProvider implements ChatOpsProvider {
 		args: Parameters<ChatOpsProvider["proposeEdits"]>[0],
 	): Promise<ChatProposalResult> {
 		try {
-			const result = await this.primary.proposeEdits(args);
-			if (result.ops.length > 0 || result.clarification) {
+			const result = normalizeChatPlanResult(await this.primary.proposeEdits(args));
+			if (result.commands.length > 0 || result.clarification) {
 				return result;
 			}
 
-			const fallbackResult = await this.fallback.proposeEdits(args);
+			const fallbackResult = normalizeChatPlanResult(
+				await this.fallback.proposeEdits(args),
+			);
 			return {
 				...fallbackResult,
 				fallbackUsed: true,
@@ -28,7 +31,9 @@ export class FallbackChatOpsProvider implements ChatOpsProvider {
 				],
 			};
 		} catch (error) {
-			const fallbackResult = await this.fallback.proposeEdits(args);
+			const fallbackResult = normalizeChatPlanResult(
+				await this.fallback.proposeEdits(args),
+			);
 			return {
 				...fallbackResult,
 				fallbackUsed: true,
