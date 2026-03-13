@@ -32,7 +32,11 @@ import type {
 	TimelineDiffOp,
 } from "@/types/clipforge";
 
-type EvalSuiteName = "single-turn" | "multi-turn-memory" | "creative-direction";
+type EvalSuiteName =
+	| "single-turn"
+	| "multi-turn-memory"
+	| "creative-direction"
+	| "finishing";
 
 interface EvalCommandExpectation {
 	commandKinds?: ClipForgeEditorCommand["kind"][];
@@ -109,20 +113,24 @@ export interface ClipForgeChatEvalThresholds {
 	singleTurnMinPassRate: number;
 	multiTurnMinPassRate: number;
 	creativeDirectionMinPassRate: number;
+	finishingMinPassRate: number;
 	maxUnsafeApplyFailures: number;
 	expectedSingleTurnPrompts: number;
 	expectedMultiTurnPrompts: number;
 	expectedCreativeDirectionPrompts: number;
+	expectedFinishingPrompts: number;
 }
 
 export const DEFAULT_CLIPFORGE_CHAT_EVAL_THRESHOLDS: ClipForgeChatEvalThresholds = {
 	singleTurnMinPassRate: 0.9,
 	multiTurnMinPassRate: 0.8,
 	creativeDirectionMinPassRate: 0.8,
+	finishingMinPassRate: 0.8,
 	maxUnsafeApplyFailures: 0,
 	expectedSingleTurnPrompts: 60,
 	expectedMultiTurnPrompts: 30,
 	expectedCreativeDirectionPrompts: 20,
+	expectedFinishingPrompts: 12,
 };
 
 export async function runClipForgeChatEvaluationHarness({
@@ -206,6 +214,7 @@ export function assertClipForgeChatEvalThresholds({
 	const singleTurn = report.suites["single-turn"];
 	const multiTurn = report.suites["multi-turn-memory"];
 	const creative = report.suites["creative-direction"];
+	const finishing = report.suites.finishing;
 	const unsafeApplyFailures = report.turns.filter(
 		(turn) => turn.unsafeApplyFailure,
 	).length;
@@ -228,6 +237,11 @@ export function assertClipForgeChatEvalThresholds({
 			`Expected ${thresholds.expectedCreativeDirectionPrompts} creative-direction prompts, received ${creative.totalPrompts}.`,
 		);
 	}
+	if (finishing.totalPrompts !== thresholds.expectedFinishingPrompts) {
+		errors.push(
+			`Expected ${thresholds.expectedFinishingPrompts} finishing prompts, received ${finishing.totalPrompts}.`,
+		);
+	}
 	if (singleTurn.passRate < thresholds.singleTurnMinPassRate) {
 		errors.push(
 			`Single-turn pass rate ${formatRate(singleTurn.passRate)} is below ${formatRate(thresholds.singleTurnMinPassRate)}.`,
@@ -241,6 +255,11 @@ export function assertClipForgeChatEvalThresholds({
 	if (creative.passRate < thresholds.creativeDirectionMinPassRate) {
 		errors.push(
 			`Creative-direction pass rate ${formatRate(creative.passRate)} is below ${formatRate(thresholds.creativeDirectionMinPassRate)}.`,
+		);
+	}
+	if (finishing.passRate < thresholds.finishingMinPassRate) {
+		errors.push(
+			`Finishing pass rate ${formatRate(finishing.passRate)} is below ${formatRate(thresholds.finishingMinPassRate)}.`,
 		);
 	}
 	if (unsafeApplyFailures > thresholds.maxUnsafeApplyFailures) {
@@ -264,6 +283,7 @@ export function formatClipForgeChatEvalReport({
 		"single-turn",
 		"multi-turn-memory",
 		"creative-direction",
+		"finishing",
 	] as const) {
 		const suite = report.suites[suiteName];
 		lines.push(
@@ -434,9 +454,16 @@ function extractCommandTargetIds({
 				return command.target_element_ids;
 			case "insert-overlay-preset":
 			case "set-audio-mix":
+			case "apply-music-track":
+			case "replace-music-track":
+			case "insert-sfx-preset":
+			case "apply-polish-profile":
+			case "apply-caption-reveal":
 			case "apply-project-kit":
 			case "set-version-pack":
 			case "auto-reframe-selection":
+			case "set-publish-destination":
+			case "run-export-preflight-fixes":
 				return [];
 		}
 	});
@@ -452,6 +479,7 @@ function buildSuiteReports({
 		"single-turn",
 		"multi-turn-memory",
 		"creative-direction",
+		"finishing",
 	] as const) {
 		const suiteTurns = turns.filter((turn) => turn.suite === suiteName);
 		const passedPrompts = suiteTurns.filter((turn) => turn.pass).length;
@@ -631,12 +659,26 @@ function summarizeCommandForEval({
 			return `Applied ${command.pairing_id} sound sync.`;
 		case "set-audio-mix":
 			return `Updated audio mix ducking to ${command.settings.duckingAmount ?? 0}.`;
+		case "apply-music-track":
+			return `Applied music ${command.music_asset_id}.`;
+		case "replace-music-track":
+			return `Replaced music with ${command.music_asset_id}.`;
+		case "insert-sfx-preset":
+			return `Inserted SFX ${command.sfx_asset_id}.`;
+		case "apply-polish-profile":
+			return `Applied polish profile ${command.profile_id}.`;
+		case "apply-caption-reveal":
+			return `Applied caption reveal ${command.preset_id}.`;
 		case "apply-project-kit":
 			return `Applied project kit ${command.kit_id}.`;
 		case "set-version-pack":
 			return `Enabled version targets ${command.target_ids.join(", ")}.`;
 		case "auto-reframe-selection":
 			return `Auto reframed for ${command.target_version_id}.`;
+		case "set-publish-destination":
+			return `Set publish destination to ${command.publish_destination}.`;
+		case "run-export-preflight-fixes":
+			return "Applied export preflight fixes.";
 	}
 }
 
@@ -650,23 +692,30 @@ function extractSummarySegmentTargets({
 			return [];
 		case "set-clip-speed":
 		case "separate-audio":
-		case "set-transition-in":
-		case "apply-finishing-look":
-		case "apply-effect-preset":
-			return command.target_segment_ids;
-		case "insert-freeze-frame":
-			return [command.target_segment_id];
-		case "insert-overlay-preset":
-		case "apply-overlay-style":
-		case "apply-motion-preset":
-		case "apply-sound-sync":
-		case "set-audio-mix":
-		case "apply-project-kit":
-		case "set-version-pack":
-		case "auto-reframe-selection":
-			return [];
+			case "set-transition-in":
+			case "apply-finishing-look":
+			case "apply-effect-preset":
+				return command.target_segment_ids;
+			case "insert-freeze-frame":
+				return [command.target_segment_id];
+			case "apply-music-track":
+			case "replace-music-track":
+			case "insert-sfx-preset":
+			case "apply-polish-profile":
+			case "apply-caption-reveal":
+			case "insert-overlay-preset":
+			case "apply-overlay-style":
+			case "apply-motion-preset":
+			case "apply-sound-sync":
+			case "set-audio-mix":
+			case "apply-project-kit":
+			case "set-version-pack":
+			case "auto-reframe-selection":
+			case "set-publish-destination":
+			case "run-export-preflight-fixes":
+				return [];
+		}
 	}
-}
 
 function extractSummaryElementTargets({
 	command,
@@ -686,13 +735,20 @@ function extractSummaryElementTargets({
 		case "apply-finishing-look":
 		case "apply-effect-preset":
 		case "insert-overlay-preset":
-		case "set-audio-mix":
-		case "apply-project-kit":
-		case "set-version-pack":
-		case "auto-reframe-selection":
-			return [];
+			case "set-audio-mix":
+			case "apply-music-track":
+			case "replace-music-track":
+			case "insert-sfx-preset":
+			case "apply-polish-profile":
+			case "apply-caption-reveal":
+			case "apply-project-kit":
+			case "set-version-pack":
+			case "auto-reframe-selection":
+			case "set-publish-destination":
+			case "run-export-preflight-fixes":
+				return [];
+		}
 	}
-}
 
 function buildEvaluationFixtures(): EvalFixture[] {
 	return [
@@ -716,6 +772,7 @@ function buildEvaluationScenarios(): EvalScenario[] {
 		...buildSingleTurnScenarios(),
 		...buildMultiTurnMemoryScenarios(),
 		...buildCreativeDirectionScenarios(),
+		...buildFinishingScenarios(),
 	];
 }
 
@@ -1266,6 +1323,186 @@ function buildCreativeDirectionScenarios(): EvalScenario[] {
 	return prompts.map((prompt) => ({
 		id: prompt.id,
 		suite: "creative-direction" as const,
+		fixtureId: "creator-studio",
+		turns: [
+			{
+				id: prompt.id,
+				prompt: prompt.prompt,
+				context: prompt.context,
+				expectation: prompt.expectation,
+			},
+		],
+	}));
+}
+
+function buildFinishingScenarios(): EvalScenario[] {
+	const prompts: Array<{
+		id: string;
+		prompt: string;
+		expectation: EvalTurn["expectation"];
+		context?: Partial<ChatPlannerContext>;
+	}> = [
+		{
+			id: "finishing-tiktok-1",
+			prompt: "Finish this for TikTok",
+			expectation: {
+				kind: "plan",
+				command: {
+					commandKinds: [
+						"set-publish-destination",
+						"set-version-pack",
+						"apply-polish-profile",
+						"apply-caption-reveal",
+						"replace-music-track",
+						"insert-sfx-preset",
+						"run-export-preflight-fixes",
+					],
+				},
+			},
+		},
+		{
+			id: "finishing-tiktok-2",
+			prompt: "finish this for tiktok",
+			expectation: {
+				kind: "plan",
+				command: {
+					commandKinds: [
+						"set-publish-destination",
+						"set-version-pack",
+						"apply-polish-profile",
+						"apply-caption-reveal",
+						"replace-music-track",
+						"insert-sfx-preset",
+						"run-export-preflight-fixes",
+					],
+				},
+			},
+		},
+		{
+			id: "finishing-shorts-1",
+			prompt: "Polish this for Shorts",
+			expectation: {
+				kind: "plan",
+				command: {
+					commandKinds: [
+						"set-publish-destination",
+						"set-version-pack",
+						"apply-polish-profile",
+						"apply-caption-reveal",
+						"replace-music-track",
+						"insert-sfx-preset",
+						"run-export-preflight-fixes",
+					],
+				},
+			},
+		},
+		{
+			id: "finishing-shorts-2",
+			prompt: "polish this for shorts",
+			expectation: {
+				kind: "plan",
+				command: {
+					commandKinds: [
+						"set-publish-destination",
+						"set-version-pack",
+						"apply-polish-profile",
+						"apply-caption-reveal",
+						"replace-music-track",
+						"insert-sfx-preset",
+						"run-export-preflight-fixes",
+					],
+				},
+			},
+		},
+		{
+			id: "finishing-music-sfx-1",
+			prompt: "Add clean music and subtle SFX",
+			expectation: {
+				kind: "plan",
+				command: {
+					commandKinds: ["replace-music-track", "insert-sfx-preset"],
+				},
+			},
+		},
+		{
+			id: "finishing-music-sfx-2",
+			prompt: "add clean music and subtle sfx",
+			expectation: {
+				kind: "plan",
+				command: {
+					commandKinds: ["replace-music-track", "insert-sfx-preset"],
+				},
+			},
+		},
+		{
+			id: "finishing-track-1",
+			prompt: "Use a more energetic track",
+			expectation: {
+				kind: "plan",
+				command: {
+					commandKinds: ["replace-music-track"],
+				},
+			},
+		},
+		{
+			id: "finishing-track-2",
+			prompt: "use a more energetic track",
+			expectation: {
+				kind: "plan",
+				command: {
+					commandKinds: ["replace-music-track"],
+				},
+			},
+		},
+		{
+			id: "finishing-captions-1",
+			prompt: "Make the captions pop more",
+			expectation: {
+				kind: "plan",
+				command: {
+					commandKinds: ["apply-caption-reveal"],
+				},
+			},
+		},
+		{
+			id: "finishing-captions-2",
+			prompt: "make the captions pop more",
+			expectation: {
+				kind: "plan",
+				command: {
+					commandKinds: ["apply-caption-reveal"],
+				},
+			},
+		},
+		{
+			id: "finishing-destination-1",
+			prompt: "Set this up for Reels",
+			expectation: {
+				kind: "plan",
+				command: {
+					commandKinds: ["set-publish-destination"],
+				},
+			},
+		},
+		{
+			id: "finishing-destination-2",
+			prompt: "set this up for reels",
+			expectation: {
+				kind: "plan",
+				command: {
+					commandKinds: ["set-publish-destination"],
+				},
+			},
+		},
+	];
+
+	if (prompts.length !== 12) {
+		throw new Error(`Finishing eval suite must contain 12 prompts. Found ${prompts.length}.`);
+	}
+
+	return prompts.map((prompt) => ({
+		id: prompt.id,
+		suite: "finishing" as const,
 		fixtureId: "creator-studio",
 		turns: [
 			{

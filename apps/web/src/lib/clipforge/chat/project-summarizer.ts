@@ -3,6 +3,8 @@ import {
 	buildTimelineTranscriptWords,
 	buildTranscriptSnippetForElement,
 } from "@/lib/clipforge/timeline-transcript";
+import { evaluateExportPreflight } from "@/lib/clipforge/export-preflight";
+import { BUNDLED_MUSIC, BUNDLED_SFX } from "@/lib/library/content-packs";
 import type { MediaAsset } from "@/types/assets";
 import type { TProject } from "@/types/project";
 import type {
@@ -20,6 +22,8 @@ import type {
 const PLAYHEAD_NEIGHBORHOOD_MS = 8000;
 const MAX_SEGMENTS = 240;
 const MAX_TIMELINE_WORDS = 1500;
+const SUMMARY_PREFLIGHT_FORMAT = "mp4";
+const SUMMARY_PREFLIGHT_QUALITY = "high";
 
 export function buildProjectSummary({
 	project,
@@ -54,6 +58,13 @@ export function buildProjectSummary({
 			.slice(-6)
 			.map((turn) => turn.summary)
 			.filter((summary) => summary.trim().length > 0) ?? [];
+	const publishDestination =
+		project.clipforge?.chatMemory?.destinationIntent?.publishDestination ?? null;
+	const preflightSnapshot = buildExportPreflightSnapshot({
+		project,
+		mediaAssets,
+		publishDestination: publishDestination ?? "generic-export",
+	});
 
 	return {
 		total_duration_s: activeScene
@@ -106,6 +117,53 @@ export function buildProjectSummary({
 			kind: "scene-recipe" as const,
 		})),
 		media_analysis_markers: buildMediaAnalysisMarkers({ mediaAssets }),
+		available_music_assets: BUNDLED_MUSIC.map((item) => ({
+			asset_id: item.id,
+			label: item.label,
+			kind: item.kind,
+			mood: item.mood ?? null,
+			usage_kind: item.usageKind,
+			bpm: item.bpm ?? null,
+			default_duration_ms: item.defaultDurationMs ?? null,
+			tags: item.tags,
+			allowed_destinations: [
+				"generic-export",
+				"tiktok",
+				"instagram",
+				"youtube",
+			],
+			rights_profile: "universal",
+		})),
+		available_sfx_assets: BUNDLED_SFX.map((item) => ({
+			asset_id: item.id,
+			label: item.label,
+			kind: item.kind,
+			mood: item.mood ?? null,
+			usage_kind: item.usageKind,
+			bpm: item.bpm ?? null,
+			default_duration_ms: item.defaultDurationMs ?? null,
+			tags: item.tags,
+			allowed_destinations: [
+				"generic-export",
+				"tiktok",
+				"instagram",
+				"youtube",
+			],
+			rights_profile: "universal",
+		})),
+		trend_reference_summary:
+			project.clipforge?.trendSoundReferences.map((reference) => ({
+				id: reference.id,
+				label: reference.label,
+				platform: reference.platform,
+				creator: reference.creator ?? null,
+				notes: reference.notes ?? null,
+			})) ?? [],
+		publish_destination: publishDestination,
+		export_preflight_snapshot: preflightSnapshot,
+		packaging_readiness: buildPackagingReadiness({
+			preflightSnapshot,
+		}),
 		recent_ai_actions: [...recentAiActions].reverse(),
 		recent_turn_summaries: [...recentTurnSummaries].reverse(),
 		timeline_words: rankTimelineWords({
@@ -113,6 +171,72 @@ export function buildProjectSummary({
 			playheadMs,
 			selectedSegments,
 		}).slice(0, MAX_TIMELINE_WORDS),
+	};
+}
+
+function buildExportPreflightSnapshot({
+	project,
+	mediaAssets,
+	publishDestination,
+}: {
+	project: TProject;
+	mediaAssets: MediaAsset[];
+	publishDestination: "generic-export" | "tiktok" | "instagram" | "youtube";
+}) {
+	const result = evaluateExportPreflight({
+		project,
+		mediaAssets,
+		format: SUMMARY_PREFLIGHT_FORMAT,
+		quality: SUMMARY_PREFLIGHT_QUALITY,
+		includeAudio: true,
+		targetVersionId: project.settings.versionPack?.activeTargetId ?? null,
+		publishDestination,
+	});
+
+	return {
+		ready: result.ready,
+		blocking_count: result.blockingCount,
+		warning_count: result.warningCount,
+			actionable_actions: [
+				...new Set(
+					result.issues
+						.flatMap((issue) => (issue.actionable && issue.action ? [issue.action] : []))
+				),
+			],
+		issue_codes: [...new Set(result.issues.map((issue) => issue.code))],
+	};
+}
+
+function buildPackagingReadiness({
+	preflightSnapshot,
+}: {
+	preflightSnapshot: ReturnType<typeof buildExportPreflightSnapshot> | null;
+}) {
+	if (!preflightSnapshot) {
+		return {
+			ready: false,
+			status: "attention" as const,
+			reason: "Export readiness has not been evaluated.",
+		};
+	}
+	if (preflightSnapshot.blocking_count > 0) {
+		return {
+			ready: false,
+			status: "blocked" as const,
+			reason: `${preflightSnapshot.blocking_count} blocking export issues remain.`,
+		};
+	}
+	if (preflightSnapshot.warning_count > 0) {
+		return {
+			ready: true,
+			status: "attention" as const,
+			reason: `${preflightSnapshot.warning_count} export warnings should be reviewed.`,
+		};
+	}
+	return {
+		ready: true,
+		status: "ready" as const,
+		reason: "Publish packaging is clear for the active destination.",
 	};
 }
 

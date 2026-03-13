@@ -266,6 +266,8 @@ describe("buildProjectSummary", () => {
 					activeTargets: ["clip-b"],
 					styleIntent: null,
 					publishIntent: null,
+					finishIntent: null,
+					destinationIntent: null,
 					recentTurnSummaries: [
 						{
 							prompt: "add a subtle transition",
@@ -286,6 +288,7 @@ describe("buildProjectSummary", () => {
 							createdAt: "2026-03-01T10:01:00.000Z",
 						},
 					],
+					recentAssetChoices: [],
 				},
 			},
 		};

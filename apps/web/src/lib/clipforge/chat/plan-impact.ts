@@ -627,6 +627,64 @@ function buildDirectCommandImpactCard({
 				jump: null,
 			};
 		}
+		case "apply-music-track":
+		case "replace-music-track": {
+			const track = summary.available_music_assets.find(
+				(item) => item.asset_id === command.music_asset_id,
+			);
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "music-track",
+				title:
+					command.kind === "replace-music-track"
+						? "Replace music track"
+						: "Apply music track",
+				detail: `${track?.label ?? command.music_asset_id}${
+					command.loop_to_project_end === false ? "" : " · cover project"
+				}`,
+				jump: {
+					time_ms: command.start_ms ?? 0,
+					track_id: null,
+					segment_id: null,
+				},
+			};
+		}
+		case "insert-sfx-preset": {
+			const item = summary.available_sfx_assets.find(
+				(asset) => asset.asset_id === command.sfx_asset_id,
+			);
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "sfx-preset",
+				title: "Insert sound effect",
+				detail: `${item?.label ?? command.sfx_asset_id} · ${formatTimeMs(command.start_ms)}`,
+				jump: {
+					time_ms: command.start_ms,
+					track_id: null,
+					segment_id: null,
+				},
+			};
+		}
+		case "apply-polish-profile":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "polish-profile",
+				title: "Apply polish profile",
+				detail: command.profile_id,
+				jump: null,
+			};
+		case "apply-caption-reveal":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "caption-reveal",
+				title: "Apply caption reveal",
+				detail: command.preset_id,
+				jump: null,
+			};
 		case "apply-project-kit":
 			return {
 				opIndex: commandIndex,
@@ -656,6 +714,26 @@ function buildDirectCommandImpactCard({
 				kind: "auto-reframe",
 				title: "Auto reframe selection",
 				detail: `Target ${command.target_version_id}`,
+				jump: null,
+			};
+		case "set-publish-destination":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "publish-destination",
+				title: "Set publish destination",
+				detail: command.publish_destination,
+				jump: null,
+			};
+		case "run-export-preflight-fixes":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "export-preflight-fixes",
+				title: "Run export preflight fixes",
+				detail: `${command.format}/${command.quality} · ${
+					command.publish_destination ?? summary.publish_destination ?? "generic-export"
+				}`,
 				jump: null,
 			};
 	}

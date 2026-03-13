@@ -1,6 +1,7 @@
 import type {
 	CaptionStyleTemplate,
 	ClipForgeAppliedCommandSummary,
+	ClipForgeRecentAssetChoice,
 	ClipForgeChatMemory,
 	ClipForgeChatTurnSummary,
 	ClipForgeProjectData,
@@ -14,6 +15,7 @@ export const CLIPFORGE_SCHEMA_VERSION = 6;
 
 const MAX_CHAT_MEMORY_TURNS = 12;
 const MAX_CHAT_MEMORY_APPLIED_COMMANDS = 20;
+const MAX_CHAT_MEMORY_ASSET_CHOICES = 12;
 
 export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 	return {
@@ -30,8 +32,11 @@ export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 			activeTargets: [],
 			styleIntent: null,
 			publishIntent: null,
+			finishIntent: null,
+			destinationIntent: null,
 			recentTurnSummaries: [],
 			recentAppliedCommandSummaries: [],
+			recentAssetChoices: [],
 		},
 		opsAudit: [],
 	};
@@ -284,6 +289,42 @@ function normalizeAppliedCommandSummary(
 	};
 }
 
+function normalizeRecentAssetChoice(
+	value: unknown,
+): ClipForgeRecentAssetChoice | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as { assetId?: unknown }).assetId !== "string" ||
+		typeof (value as { label?: unknown }).label !== "string" ||
+		typeof (value as { createdAt?: unknown }).createdAt !== "string"
+	) {
+		return null;
+	}
+
+	const assetKind = (value as { assetKind?: unknown }).assetKind;
+	const commandKind = (value as { commandKind?: unknown }).commandKind;
+	if (
+		(assetKind !== "music" &&
+			assetKind !== "sfx" &&
+			assetKind !== "trend-reference") ||
+		(commandKind !== "apply-music-track" &&
+			commandKind !== "replace-music-track" &&
+			commandKind !== "insert-sfx-preset" &&
+			commandKind !== "apply-project-kit")
+	) {
+		return null;
+	}
+
+	return {
+		assetId: (value as { assetId: string }).assetId,
+		assetKind,
+		label: (value as { label: string }).label,
+		commandKind,
+		createdAt: (value as { createdAt: string }).createdAt,
+	};
+}
+
 function normalizeChatMemory({
 	memory,
 }: {
@@ -350,6 +391,55 @@ function normalizeChatMemory({
 								: null,
 				  }
 				: null,
+		finishIntent: memory?.finishIntent
+			? {
+					polishProfileId:
+						memory.finishIntent.polishProfileId === "clean-vlog" ||
+						memory.finishIntent.polishProfileId === "luxury-routine" ||
+						memory.finishIntent.polishProfileId === "bold-social" ||
+						memory.finishIntent.polishProfileId === "talking-head" ||
+						memory.finishIntent.polishProfileId === "product-promo"
+							? memory.finishIntent.polishProfileId
+							: null,
+					captionRevealPresetId:
+						memory.finishIntent.captionRevealPresetId === "none" ||
+						memory.finishIntent.captionRevealPresetId === "fade-line" ||
+						memory.finishIntent.captionRevealPresetId === "pop-line" ||
+						memory.finishIntent.captionRevealPresetId === "type-on-soft" ||
+						memory.finishIntent.captionRevealPresetId === "type-on-bold" ||
+						memory.finishIntent.captionRevealPresetId === "lift-in" ||
+						memory.finishIntent.captionRevealPresetId === "luxury-rise"
+							? memory.finishIntent.captionRevealPresetId
+							: null,
+					includeMusic:
+						typeof memory.finishIntent.includeMusic === "boolean"
+							? memory.finishIntent.includeMusic
+							: null,
+					includeSfx:
+						typeof memory.finishIntent.includeSfx === "boolean"
+							? memory.finishIntent.includeSfx
+							: null,
+					mood:
+						memory.finishIntent.mood === "clean" ||
+						memory.finishIntent.mood === "luxury" ||
+						memory.finishIntent.mood === "upbeat" ||
+						memory.finishIntent.mood === "energetic" ||
+						memory.finishIntent.mood === "minimal"
+							? memory.finishIntent.mood
+							: null,
+			  }
+			: null,
+		destinationIntent: memory?.destinationIntent
+			? {
+					publishDestination:
+						memory.destinationIntent.publishDestination === "generic-export" ||
+						memory.destinationIntent.publishDestination === "tiktok" ||
+						memory.destinationIntent.publishDestination === "instagram" ||
+						memory.destinationIntent.publishDestination === "youtube"
+							? memory.destinationIntent.publishDestination
+							: null,
+			  }
+			: null,
 		recentTurnSummaries: Array.isArray(memory?.recentTurnSummaries)
 			? memory.recentTurnSummaries
 					.map((value) => normalizeTurnSummary(value))
@@ -361,6 +451,12 @@ function normalizeChatMemory({
 					.map((value) => normalizeAppliedCommandSummary(value))
 					.filter((value): value is ClipForgeAppliedCommandSummary => value !== null)
 					.slice(-MAX_CHAT_MEMORY_APPLIED_COMMANDS)
+			: [],
+		recentAssetChoices: Array.isArray(memory?.recentAssetChoices)
+			? memory.recentAssetChoices
+					.map((value) => normalizeRecentAssetChoice(value))
+					.filter((value): value is ClipForgeRecentAssetChoice => value !== null)
+					.slice(-MAX_CHAT_MEMORY_ASSET_CHOICES)
 			: [],
 	};
 }

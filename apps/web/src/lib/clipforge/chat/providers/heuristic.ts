@@ -618,6 +618,12 @@ function planDirectCommandClause({
 }): DirectPlanResult {
 	const planners = [
 		planRepeatCommandClause,
+		planFinishPassClause,
+		planPublishDestinationClause,
+		planMusicTrackClause,
+		planSfxClause,
+		planPolishProfileClause,
+		planCaptionRevealClause,
 		planClipSpeedClause,
 		planTransitionClause,
 		planAudioMixClause,
@@ -719,6 +725,276 @@ function planRepeatCommandClause(args: DirectPlannerArgs): DirectPlanResult {
 	}
 
 	return emptyDirectPlan({ state: args.state });
+}
+
+function planFinishPassClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (
+		!/\bfinish\b|\bpolish\b|\bready to post\b|\bready for\b/.test(normalized) ||
+		!/\btiktok\b|\breels?\b|\bshorts?\b/.test(normalized)
+	) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const publishDestination = inferPublishDestination({ text: normalized }) ?? "tiktok";
+	const versionTarget = inferPrimaryVersionTargetForDestination({
+		publishDestination,
+		projectSummary: args.projectSummary,
+	});
+	const profileId = inferFinishPolishProfile({
+		text: normalized,
+		publishDestination,
+	});
+	const musicChoice = chooseMusicAsset({
+		projectSummary: args.projectSummary,
+		text: normalized,
+		publishDestination,
+		preferMood:
+			publishDestination === "tiktok" ||
+			publishDestination === "instagram" ||
+			publishDestination === "youtube"
+				? "energetic"
+				: "clean",
+	});
+	const sfxChoice = chooseSfxAsset({
+		projectSummary: args.projectSummary,
+		text: normalized,
+	});
+	const commands: ClipForgeEditorCommand[] = [
+		{
+			kind: "set-publish-destination",
+			publish_destination: publishDestination,
+			scope: "project",
+		},
+	];
+
+	if (args.projectSummary.version_pack) {
+		commands.push({
+			kind: "set-version-pack",
+			target_ids: [versionTarget],
+			active_target_id: versionTarget,
+			scope: "project",
+		});
+	}
+
+	commands.push({
+		kind: "apply-polish-profile",
+		profile_id: profileId,
+		scope: "scene",
+	});
+	commands.push({
+		kind: "apply-caption-reveal",
+		preset_id: inferCaptionRevealPreset({
+			text: normalized,
+			profileId,
+		}),
+		scope: "scene",
+	});
+
+	if (musicChoice) {
+		commands.push({
+			kind:
+				hasRecentMusicTrack(args.projectSummary) ? "replace-music-track" : "apply-music-track",
+			music_asset_id: musicChoice.asset_id,
+			start_ms: 0,
+			loop_to_project_end: true,
+			scope: "project",
+		});
+	}
+
+	if (sfxChoice) {
+		commands.push({
+			kind: "insert-sfx-preset",
+			sfx_asset_id: sfxChoice.asset_id,
+			start_ms: inferSfxInsertStartMs({ projectSummary: args.projectSummary }),
+			scope: "scene",
+		});
+	}
+
+	const preflightActions = args.projectSummary.export_preflight_snapshot?.actionable_actions ?? [];
+	if (preflightActions.length > 0) {
+		commands.push({
+			kind: "run-export-preflight-fixes",
+			format: "mp4",
+			quality: "high",
+			include_audio: true,
+			target_version_id: versionTarget,
+			publish_destination: publishDestination,
+			actions: preflightActions as Array<
+				| "remove-missing-segments"
+				| "remove-invalid-ranges"
+				| "normalize-duration"
+				| "switch-format-mp4"
+				| "switch-quality-medium"
+				| "scan-media-compatibility"
+				| "disable-export-audio"
+			>,
+			scope: "project",
+		});
+	}
+
+	return {
+		ops: [],
+		commands,
+		state: args.state,
+		clarification: null,
+	};
+}
+
+function planPublishDestinationClause(args: DirectPlannerArgs): DirectPlanResult {
+	const publishDestination = inferPublishDestination({ text: args.clause });
+	if (!publishDestination) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		ops: [],
+		commands: [
+			{
+				kind: "set-publish-destination",
+				publish_destination: publishDestination,
+				scope: "project",
+			},
+		],
+		state: args.state,
+		clarification: null,
+	};
+}
+
+function planMusicTrackClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (/\bduck\b/.test(normalized)) {
+		return emptyDirectPlan({ state: args.state });
+	}
+	const mentionsMusic = /\bmusic\b|\btrack\b|\bsong\b/.test(normalized);
+	if (!mentionsMusic) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const publishDestination =
+		inferPublishDestination({ text: normalized }) ??
+		args.projectSummary.publish_destination ??
+		"generic-export";
+	const musicChoice = chooseMusicAsset({
+		projectSummary: args.projectSummary,
+		text: normalized,
+		publishDestination,
+		preferMood:
+			inferMusicMood({ text: normalized }) ??
+			(normalized.includes("energetic") || normalized.includes("more energy")
+				? "energetic"
+				: normalized.includes("clean") || normalized.includes("soft")
+					? "clean"
+					: args.projectSummary.audio_mix?.audioPolishPresetId === "music-forward"
+						? "energetic"
+						: null),
+	});
+	if (!musicChoice) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		ops: [],
+		commands: [
+			{
+				kind:
+					hasRecentMusicTrack(args.projectSummary) || /\breplace\b|\bswap\b|\buse\b/.test(normalized)
+						? "replace-music-track"
+						: "apply-music-track",
+				music_asset_id: musicChoice.asset_id,
+				start_ms: 0,
+				loop_to_project_end: true,
+				scope: "project",
+			},
+		],
+		state: args.state,
+		clarification: null,
+	};
+}
+
+function planSfxClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	const requestsSfx =
+		/\bsfx\b|\bsound effects?\b/.test(normalized) ||
+		(/\b(?:add|use|insert)\b/.test(normalized) &&
+			/\bwhoosh\b|\bpop\b|\briser\b|\bhit\b/.test(normalized));
+	if (!requestsSfx || /\bon graphics\b|\bon captions?\b/.test(normalized)) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const sfxChoice = chooseSfxAsset({
+		projectSummary: args.projectSummary,
+		text: normalized,
+	});
+	if (!sfxChoice) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		ops: [],
+		commands: [
+			{
+				kind: "insert-sfx-preset",
+				sfx_asset_id: sfxChoice.asset_id,
+				start_ms: inferSfxInsertStartMs({ projectSummary: args.projectSummary }),
+				scope: "scene",
+			},
+		],
+		state: args.state,
+		clarification: null,
+	};
+}
+
+function planPolishProfileClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (!/\bpolish\b|\bfinish\b|\bmake this feel finished\b/.test(normalized)) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		ops: [],
+		commands: [
+			{
+				kind: "apply-polish-profile",
+				profile_id: inferFinishPolishProfile({
+					text: normalized,
+					publishDestination:
+						inferPublishDestination({ text: normalized }) ??
+						args.projectSummary.publish_destination ??
+						"generic-export",
+				}),
+				scope: "scene",
+			},
+		],
+		state: args.state,
+		clarification: null,
+	};
+}
+
+function planCaptionRevealClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (
+		!/\bcaptions?\b/.test(normalized) ||
+		!/\bpop\b|\breveal\b|\banimate\b|\btype on\b/.test(normalized)
+	) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		ops: [],
+		commands: [
+			{
+				kind: "apply-caption-reveal",
+				preset_id: inferCaptionRevealPreset({
+					text: normalized,
+					profileId: null,
+				}),
+				scope: resolveCaptionScope({ clause: normalized }),
+			},
+		],
+		state: args.state,
+		clarification: null,
+	};
 }
 
 function planClipSpeedClause(args: DirectPlannerArgs): DirectPlanResult {
@@ -1591,6 +1867,217 @@ function inferSoundSyncPreset({ text }: { text: string }) {
 	if (normalized.includes("air fahhh bold")) return "air-fahhh-bold" as const;
 	if (normalized.includes("whoosh pop")) return "whoosh-pop" as const;
 	return null;
+}
+
+function inferPublishDestination({
+	text,
+}: {
+	text: string;
+}) {
+	const normalized = text.toLowerCase();
+	if (normalized.includes("tiktok")) return "tiktok" as const;
+	if (normalized.includes("reels") || normalized.includes("instagram")) {
+		return "instagram" as const;
+	}
+	if (normalized.includes("shorts") || normalized.includes("youtube")) {
+		return "youtube" as const;
+	}
+	if (normalized.includes("generic export") || normalized.includes("export")) {
+		return "generic-export" as const;
+	}
+	return null;
+}
+
+function inferPrimaryVersionTargetForDestination({
+	publishDestination,
+	projectSummary,
+}: {
+	publishDestination: "generic-export" | "tiktok" | "instagram" | "youtube";
+	projectSummary: ProjectSummary;
+}) {
+	if (!projectSummary.version_pack) {
+		return "9:16" as const;
+	}
+	if (
+		publishDestination === "tiktok" ||
+		publishDestination === "instagram" ||
+		publishDestination === "youtube"
+	) {
+		return "9:16" as const;
+	}
+	return projectSummary.version_pack.activeTargetId ?? "16:9";
+}
+
+function inferFinishPolishProfile({
+	text,
+	publishDestination,
+}: {
+	text: string;
+	publishDestination: "generic-export" | "tiktok" | "instagram" | "youtube";
+}) {
+	const normalized = text.toLowerCase();
+	if (normalized.includes("luxury")) return "luxury-routine" as const;
+	if (normalized.includes("talking head")) return "talking-head" as const;
+	if (normalized.includes("product")) return "product-promo" as const;
+	if (
+		normalized.includes("bold") ||
+		publishDestination === "tiktok" ||
+		publishDestination === "instagram"
+	) {
+		return "bold-social" as const;
+	}
+	return "clean-vlog" as const;
+}
+
+function inferCaptionRevealPreset({
+	text,
+	profileId,
+}: {
+	text: string;
+	profileId:
+		| "clean-vlog"
+		| "luxury-routine"
+		| "bold-social"
+		| "talking-head"
+		| "product-promo"
+		| null;
+}) {
+	const normalized = text.toLowerCase();
+	if (normalized.includes("soft")) return "fade-line" as const;
+	if (normalized.includes("bold")) return "type-on-bold" as const;
+	if (normalized.includes("pop")) return "pop-line" as const;
+	if (normalized.includes("lift")) return "lift-in" as const;
+	if (normalized.includes("luxury")) return "luxury-rise" as const;
+	if (profileId === "luxury-routine") return "luxury-rise" as const;
+	if (profileId === "bold-social" || profileId === "product-promo") {
+		return "pop-line" as const;
+	}
+	if (profileId === "talking-head") return "lift-in" as const;
+	return "fade-line" as const;
+}
+
+function inferMusicMood({ text }: { text: string }) {
+	const normalized = text.toLowerCase();
+	if (normalized.includes("energetic") || normalized.includes("hype")) {
+		return "energetic" as const;
+	}
+	if (normalized.includes("upbeat")) return "upbeat" as const;
+	if (normalized.includes("luxury")) return "luxury" as const;
+	if (normalized.includes("minimal")) return "minimal" as const;
+	if (normalized.includes("clean") || normalized.includes("soft")) {
+		return "clean" as const;
+	}
+	return null;
+}
+
+function chooseMusicAsset({
+	projectSummary,
+	text,
+	publishDestination,
+	preferMood,
+}: {
+	projectSummary: ProjectSummary;
+	text: string;
+	publishDestination: "generic-export" | "tiktok" | "instagram" | "youtube";
+	preferMood: "clean" | "luxury" | "upbeat" | "energetic" | "minimal" | null;
+}) {
+	const normalized = text.toLowerCase();
+	const exact = projectSummary.available_music_assets.find(
+		(asset) =>
+			normalized.includes(asset.label.toLowerCase()) &&
+			asset.allowed_destinations.includes(publishDestination),
+	);
+	if (exact) {
+		return exact;
+	}
+
+	const compatible = projectSummary.available_music_assets.filter((asset) =>
+		asset.allowed_destinations.includes(publishDestination),
+	);
+	const moodFiltered = preferMood
+		? compatible.filter((asset) => asset.mood === preferMood)
+		: compatible;
+	const ranked = (moodFiltered.length > 0 ? moodFiltered : compatible).sort((left, right) => {
+		const bpmDelta = (right.bpm ?? 0) - (left.bpm ?? 0);
+		if (bpmDelta !== 0) {
+			return bpmDelta;
+		}
+		return left.label.localeCompare(right.label);
+	});
+	return ranked[0] ?? null;
+}
+
+function chooseSfxAsset({
+	projectSummary,
+	text,
+}: {
+	projectSummary: ProjectSummary;
+	text: string;
+}) {
+	const normalized = text.toLowerCase();
+	const exact = projectSummary.available_sfx_assets.find((asset) =>
+		normalized.includes(asset.label.toLowerCase()),
+	);
+	if (exact) {
+		return exact;
+	}
+	if (normalized.includes("subtle")) {
+		return (
+			projectSummary.available_sfx_assets.find(
+				(asset) => asset.asset_id === "subtle-hit" || asset.asset_id === "whoosh-soft",
+			) ?? null
+		);
+	}
+	if (normalized.includes("whoosh") || normalized.includes("transition")) {
+		return (
+			projectSummary.available_sfx_assets.find(
+				(asset) => asset.usage_kind === "transition-air",
+			) ?? null
+		);
+	}
+	if (normalized.includes("caption") || normalized.includes("pop")) {
+		return (
+			projectSummary.available_sfx_assets.find(
+				(asset) => asset.usage_kind === "caption-pop",
+			) ?? null
+		);
+	}
+	return projectSummary.available_sfx_assets[0] ?? null;
+}
+
+function inferSfxInsertStartMs({
+	projectSummary,
+}: {
+	projectSummary: ProjectSummary;
+}) {
+	const videos = getCurrentSceneVideos({ projectSummary });
+	return videos[1]?.start_ms ?? projectSummary.playhead_neighborhood.playhead_ms ?? 0;
+}
+
+function hasRecentMusicTrack(projectSummary: ProjectSummary) {
+	return (
+		projectSummary.recent_ai_actions.some(
+			(action) =>
+				action.kind === "apply-music-track" || action.kind === "replace-music-track",
+		) ||
+		projectSummary.current_scene_segments.some(
+			(segment) => segment.segment_kind === "audio",
+		)
+	);
+}
+
+function resolveCaptionScope({
+	clause,
+}: {
+	clause: string;
+}) {
+	if (clause.includes("project") || clause.includes("all captions")) {
+		return "project" as const;
+	}
+	if (clause.includes("selected") || clause.includes("selection")) {
+		return "selection" as const;
+	}
+	return "scene" as const;
 }
 
 function extractVersionTargets({ text }: { text: string }) {

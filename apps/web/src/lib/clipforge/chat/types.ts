@@ -5,6 +5,7 @@ import type {
 	ClipForgeEditorCommand,
 	TimelineDiffOp,
 } from "@/types/clipforge";
+import type { PublishDestination } from "@/types/export";
 import type {
 	ProjectAudioSettings,
 	ProjectBrandKit,
@@ -64,6 +65,41 @@ export interface ProjectMediaAnalysisMarkerSummary {
 	activity_window_count: number;
 }
 
+export interface ProjectAudioLibraryAssetSummary {
+	asset_id: string;
+	label: string;
+	kind: "music" | "sfx";
+	mood?: "clean" | "luxury" | "upbeat" | "energetic" | "minimal" | null;
+	usage_kind: string;
+	bpm?: number | null;
+	default_duration_ms?: number | null;
+	tags: string[];
+	allowed_destinations: PublishDestination[];
+	rights_profile: "universal";
+}
+
+export interface ProjectTrendReferenceSummary {
+	id: string;
+	label: string;
+	platform: PublishDestination;
+	creator: string | null;
+	notes: string | null;
+}
+
+export interface ProjectExportPreflightSnapshotSummary {
+	ready: boolean;
+	blocking_count: number;
+	warning_count: number;
+	actionable_actions: string[];
+	issue_codes: string[];
+}
+
+export interface ProjectPackagingReadinessSummary {
+	ready: boolean;
+	status: "ready" | "attention" | "blocked";
+	reason: string;
+}
+
 export interface ProjectSelectionSummary {
 	selected_segment_ids: string[];
 	selected_segments: ProjectSegmentSummary[];
@@ -95,6 +131,12 @@ export interface ProjectSummary {
 	available_project_kits: ProjectTemplateSummary[];
 	available_scene_recipes: ProjectTemplateSummary[];
 	media_analysis_markers: ProjectMediaAnalysisMarkerSummary[];
+	available_music_assets: ProjectAudioLibraryAssetSummary[];
+	available_sfx_assets: ProjectAudioLibraryAssetSummary[];
+	trend_reference_summary: ProjectTrendReferenceSummary[];
+	publish_destination: PublishDestination | null;
+	export_preflight_snapshot: ProjectExportPreflightSnapshotSummary | null;
+	packaging_readiness: ProjectPackagingReadinessSummary;
 	recent_ai_actions: ClipForgeAppliedCommandSummary[];
 	recent_turn_summaries: string[];
 	timeline_words: TimelineTranscriptWord[];
@@ -217,9 +259,15 @@ export type ChatPlanImpactKind =
 	| "motion-preset"
 	| "sound-sync"
 	| "audio-mix"
+	| "music-track"
+	| "sfx-preset"
+	| "polish-profile"
+	| "caption-reveal"
 	| "project-kit"
 	| "version-pack"
 	| "auto-reframe"
+	| "publish-destination"
+	| "export-preflight-fixes"
 	| "unknown";
 
 export interface ChatPlanImpactJumpTarget {

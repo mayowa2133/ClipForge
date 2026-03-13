@@ -7,6 +7,12 @@ import type {
 	ProjectVersionPack,
 } from "./project";
 import type {
+	ExportFormat,
+	ExportPreflightAction,
+	ExportQuality,
+	PublishDestination,
+} from "./export";
+import type {
 	AnimationSfxPresetId,
 	OverlayStyleVariantId,
 	OverlayTextSlot,
@@ -498,6 +504,45 @@ export interface SetAudioMixEditorCommand {
 	scope?: ClipForgeCommandScope;
 }
 
+export interface ApplyMusicTrackEditorCommand {
+	kind: "apply-music-track";
+	music_asset_id: string;
+	start_ms?: number;
+	volume?: number | null;
+	loop_to_project_end?: boolean;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ReplaceMusicTrackEditorCommand {
+	kind: "replace-music-track";
+	music_asset_id: string;
+	start_ms?: number;
+	volume?: number | null;
+	loop_to_project_end?: boolean;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface InsertSfxPresetEditorCommand {
+	kind: "insert-sfx-preset";
+	sfx_asset_id: string;
+	start_ms: number;
+	duration_ms?: number | null;
+	volume?: number | null;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ApplyPolishProfileEditorCommand {
+	kind: "apply-polish-profile";
+	profile_id: PolishProfileId;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ApplyCaptionRevealEditorCommand {
+	kind: "apply-caption-reveal";
+	preset_id: CaptionRevealPresetId;
+	scope?: ClipForgeCommandScope;
+}
+
 export interface ApplyProjectKitEditorCommand {
 	kind: "apply-project-kit";
 	kit_id: string;
@@ -517,6 +562,23 @@ export interface AutoReframeSelectionEditorCommand {
 	scope?: ClipForgeCommandScope;
 }
 
+export interface SetPublishDestinationEditorCommand {
+	kind: "set-publish-destination";
+	publish_destination: PublishDestination;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface RunExportPreflightFixesEditorCommand {
+	kind: "run-export-preflight-fixes";
+	format: ExportFormat;
+	quality: ExportQuality;
+	include_audio: boolean;
+	target_version_id?: ProjectVersionTarget | null;
+	publish_destination?: PublishDestination | null;
+	actions?: ExportPreflightAction[];
+	scope?: ClipForgeCommandScope;
+}
+
 export type ClipForgeEditorCommand =
 	| TimelineOpEditorCommand
 	| SetClipSpeedEditorCommand
@@ -530,9 +592,16 @@ export type ClipForgeEditorCommand =
 	| ApplyMotionPresetEditorCommand
 	| ApplySoundSyncEditorCommand
 	| SetAudioMixEditorCommand
+	| ApplyMusicTrackEditorCommand
+	| ReplaceMusicTrackEditorCommand
+	| InsertSfxPresetEditorCommand
+	| ApplyPolishProfileEditorCommand
+	| ApplyCaptionRevealEditorCommand
 	| ApplyProjectKitEditorCommand
 	| SetVersionPackEditorCommand
-	| AutoReframeSelectionEditorCommand;
+	| AutoReframeSelectionEditorCommand
+	| SetPublishDestinationEditorCommand
+	| RunExportPreflightFixesEditorCommand;
 
 export interface ClipForgeChatMemoryStyleIntent {
 	captionStyleId?: string | null;
@@ -545,6 +614,30 @@ export interface ClipForgeChatMemoryStyleIntent {
 export interface ClipForgeChatMemoryPublishIntent {
 	versionTargets: ProjectVersionTarget[];
 	activeTargetId: ProjectVersionTarget | null;
+}
+
+export interface ClipForgeChatMemoryFinishIntent {
+	polishProfileId?: PolishProfileId | null;
+	captionRevealPresetId?: CaptionRevealPresetId | null;
+	includeMusic?: boolean | null;
+	includeSfx?: boolean | null;
+	mood?: "clean" | "luxury" | "upbeat" | "energetic" | "minimal" | null;
+}
+
+export interface ClipForgeChatMemoryDestinationIntent {
+	publishDestination: PublishDestination | null;
+}
+
+export interface ClipForgeRecentAssetChoice {
+	assetId: string;
+	assetKind: "music" | "sfx" | "trend-reference";
+	label: string;
+	commandKind:
+		| "apply-music-track"
+		| "replace-music-track"
+		| "insert-sfx-preset"
+		| "apply-project-kit";
+	createdAt: string;
 }
 
 export interface ClipForgeChatTurnSummary {
@@ -568,8 +661,11 @@ export interface ClipForgeChatMemory {
 	activeTargets: string[];
 	styleIntent: ClipForgeChatMemoryStyleIntent | null;
 	publishIntent: ClipForgeChatMemoryPublishIntent | null;
+	finishIntent: ClipForgeChatMemoryFinishIntent | null;
+	destinationIntent: ClipForgeChatMemoryDestinationIntent | null;
 	recentTurnSummaries: ClipForgeChatTurnSummary[];
 	recentAppliedCommandSummaries: ClipForgeAppliedCommandSummary[];
+	recentAssetChoices: ClipForgeRecentAssetChoice[];
 }
 
 export type TimelineDiffOpSource = "chat" | "auto-edit" | "manual";

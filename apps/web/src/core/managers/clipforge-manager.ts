@@ -47,12 +47,15 @@ import {
 	buildPlanImpactPreview,
 } from "@/lib/clipforge/chat/plan-impact";
 import { reconcileValidatorErrors } from "@/lib/clipforge/chat/validator-reconciliation";
+import { ensureBundledAudioAsset } from "@/lib/library/bundled-media";
+import { BUNDLED_MUSIC, BUNDLED_SFX } from "@/lib/library/content-packs";
 import { extractMediaAssetAudioToFloat32 } from "@/lib/media/audio";
 import {
 	ApplyTimelineDiffOpsCommand,
 	AutoEditTikTokDraftCommand,
 	CaptionProjectSnapshotCommand,
 } from "@/lib/commands";
+import { buildUploadAudioElement } from "@/lib/timeline";
 import {
 	findAdjacentVisualIncomingTransitionTarget,
 	getAnimationSfxPairingById,
@@ -64,6 +67,7 @@ import type {
 	ClipForgeAppliedCommandSummary,
 	ClipForgeChatMemory,
 	ClipForgeEditorCommand,
+	ClipForgeRecentAssetChoice,
 	ClipMediaMetadata,
 	CaptionSegmentView,
 	CreativeBrief,
@@ -86,7 +90,8 @@ import type {
 } from "@/types/export";
 import type { ProjectVersionTarget } from "@/types/project";
 import type { TProject } from "@/types/project";
-import type { TimelineElement } from "@/types/timeline";
+import type { AudioLibraryItem } from "@/types/library";
+import type { TimelineElement, TextElement } from "@/types/timeline";
 import type {
 	ChatClarificationRequest,
 	ChatPlannerContext,
@@ -2595,6 +2600,86 @@ export class ClipForgeManager {
 					},
 				});
 			}
+			case "apply-music-track":
+			case "replace-music-track": {
+				const musicItem = this.resolveBundledMusicItem({
+					itemId: command.music_asset_id,
+				});
+				if (!musicItem) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "unknown_music_asset",
+							message: "The requested bundled music track does not exist.",
+						}),
+					];
+				}
+				if ((command.start_ms ?? 0) < 0) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "invalid_music_start",
+							message: "Music start time must be zero or greater.",
+						}),
+					];
+				}
+				const publishDestination = this.getPreferredPublishDestination();
+				if (
+					publishDestination &&
+					!this.isBundledAudioDestinationSafe({
+						item: musicItem,
+						publishDestination,
+					})
+				) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "music_destination_incompatible",
+							message: "The selected music track is not safe for the current publish destination.",
+						}),
+					];
+				}
+				return [];
+			}
+			case "insert-sfx-preset":
+				if (!this.resolveBundledSfxItem({ itemId: command.sfx_asset_id })) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "unknown_sfx_asset",
+							message: "The requested bundled sound effect does not exist.",
+						}),
+					];
+				}
+				return command.start_ms >= 0
+					? []
+					: [
+							buildCommandValidationError({
+								commandIndex,
+								code: "invalid_sfx_start",
+								message: "Sound effect start time must be zero or greater.",
+							}),
+					  ];
+			case "apply-polish-profile":
+				return getPolishProfileById({ profileId: command.profile_id })
+					? []
+					: [
+							buildCommandValidationError({
+								commandIndex,
+								code: "unknown_polish_profile",
+								message: "The requested polish profile could not be found.",
+							}),
+					  ];
+			case "apply-caption-reveal":
+				return this.getCaptionRevealTargets({ scope: command.scope }).length > 0
+					? []
+					: [
+							buildCommandValidationError({
+								commandIndex,
+								code: "caption_reveal_requires_captions",
+								message: "Generate or select captions before applying a reveal preset.",
+							}),
+					  ];
 			case "set-audio-mix":
 				return [];
 			case "apply-project-kit":
@@ -2652,6 +2737,31 @@ export class ClipForgeManager {
 					];
 				}
 				return [];
+			}
+			case "set-publish-destination":
+				return [];
+			case "run-export-preflight-fixes": {
+				const preflight = this.runExportPreflight({
+					format: command.format,
+					quality: command.quality,
+					includeAudio: command.include_audio,
+					targetVersionId: command.target_version_id ?? null,
+					publishDestination:
+						command.publish_destination ?? this.getPreferredPublishDestination() ?? "generic-export",
+				});
+				const actions =
+					command.actions && command.actions.length > 0
+						? command.actions
+						: this.extractPreflightActions({ preflight });
+				return actions.length > 0
+					? []
+					: [
+							buildCommandValidationError({
+								commandIndex,
+								code: "no_preflight_actions",
+								message: "No safe export preflight fixes are currently available.",
+							}),
+					  ];
 			}
 		}
 	}
@@ -2788,6 +2898,43 @@ export class ClipForgeManager {
 					targetElementIds: command.target_element_ids,
 				});
 				break;
+			case "apply-music-track":
+				await this.insertBundledMusicTrack({
+					itemId: command.music_asset_id,
+					startMs: command.start_ms ?? 0,
+					volume: command.volume ?? null,
+					loopToProjectEnd: command.loop_to_project_end ?? true,
+					replaceExisting: false,
+				});
+				break;
+			case "replace-music-track":
+				await this.insertBundledMusicTrack({
+					itemId: command.music_asset_id,
+					startMs: command.start_ms ?? 0,
+					volume: command.volume ?? null,
+					loopToProjectEnd: command.loop_to_project_end ?? true,
+					replaceExisting: true,
+				});
+				break;
+			case "insert-sfx-preset":
+				await this.insertBundledSfx({
+					itemId: command.sfx_asset_id,
+					startMs: command.start_ms,
+					durationMs: command.duration_ms ?? null,
+					volume: command.volume ?? null,
+				});
+				break;
+			case "apply-polish-profile":
+				await this.applyPolishProfile({
+					profileId: command.profile_id,
+				});
+				break;
+			case "apply-caption-reveal":
+				await this.applyCaptionRevealByScope({
+					presetId: command.preset_id,
+					scope: command.scope,
+				});
+				break;
 			case "set-audio-mix": {
 				const activeProject = this.editor.project.getActive();
 				await this.editor.project.updateSettings({
@@ -2836,10 +2983,313 @@ export class ClipForgeManager {
 				});
 				break;
 			}
+			case "set-publish-destination":
+				this.updateChatMemoryDestination({
+					publishDestination: command.publish_destination,
+				});
+				break;
+			case "run-export-preflight-fixes": {
+				const preflight = this.runExportPreflight({
+					format: command.format,
+					quality: command.quality,
+					includeAudio: command.include_audio,
+					targetVersionId: command.target_version_id ?? null,
+					publishDestination:
+						command.publish_destination ?? this.getPreferredPublishDestination() ?? "generic-export",
+				});
+				const actions =
+					command.actions && command.actions.length > 0
+						? command.actions
+						: this.extractPreflightActions({ preflight });
+				if (actions.length > 0) {
+					this.applyExportPreflightFixes({ actions });
+				}
+				break;
+			}
 		}
 
 		this.invalidateSceneFootageIntelligence();
 		this.stabilizePreview();
+	}
+
+	private resolveBundledMusicItem({
+		itemId,
+	}: {
+		itemId: string;
+	}): AudioLibraryItem | null {
+		return BUNDLED_MUSIC.find((item) => item.id === itemId) ?? null;
+	}
+
+	private resolveBundledSfxItem({
+		itemId,
+	}: {
+		itemId: string;
+	}): AudioLibraryItem | null {
+		return BUNDLED_SFX.find((item) => item.id === itemId) ?? null;
+	}
+
+	private isBundledAudioDestinationSafe({
+		item,
+		publishDestination,
+	}: {
+		item: AudioLibraryItem;
+		publishDestination: PublishDestination;
+	}): boolean {
+		return (
+			item.kind === "music" &&
+			["generic-export", "tiktok", "instagram", "youtube"].includes(
+				publishDestination,
+			)
+		);
+	}
+
+	private getPreferredPublishDestination(): PublishDestination | null {
+		return (
+			this.editor.project.getActiveOrNull()?.clipforge?.chatMemory?.destinationIntent
+				?.publishDestination ?? null
+		);
+	}
+
+	private updateChatMemoryDestination({
+		publishDestination,
+	}: {
+		publishDestination: PublishDestination;
+	}): void {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			return;
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		this.editor.project.setActiveProject({
+			project: {
+				...project,
+				metadata: {
+					...project.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...project.clipforge,
+					chatMemory: {
+						...project.clipforge.chatMemory,
+						destinationIntent: {
+							publishDestination,
+						},
+					},
+				},
+			},
+		});
+		this.editor.save.markDirty();
+	}
+
+	private extractPreflightActions({
+		preflight,
+	}: {
+		preflight: ExportPreflightResult;
+	}): ExportPreflightAction[] {
+		return [
+			...new Set(
+				preflight.issues.flatMap((issue) =>
+					issue.actionable && issue.action ? [issue.action] : [],
+				),
+			),
+		];
+	}
+
+	private getOrCreateAudioTrackId(): string {
+		return (
+			this.editor.timeline.getTracks().find((track) => track.type === "audio")?.id ??
+			this.editor.timeline.addTrack({ type: "audio" })
+		);
+	}
+
+	private getSceneAudioElementsByRole({
+		role,
+	}: {
+		role: "music" | "sfx" | "audio" | "voiceover";
+	}): Array<{ trackId: string; elementId: string }> {
+		return this.editor.timeline
+			.getTracks()
+			.filter((track): track is Extract<typeof track, { type: "audio" }> => track.type === "audio")
+			.flatMap((track) =>
+				track.elements.flatMap((element) =>
+					element.type === "audio" && (element.role ?? "audio") === role
+						? [{ trackId: track.id, elementId: element.id }]
+						: [],
+				),
+			);
+	}
+
+	private async insertBundledMusicTrack({
+		itemId,
+		startMs,
+		volume,
+		loopToProjectEnd,
+		replaceExisting,
+	}: {
+		itemId: string;
+		startMs: number;
+		volume: number | null;
+		loopToProjectEnd: boolean;
+		replaceExisting: boolean;
+	}): Promise<void> {
+		const item = this.resolveBundledMusicItem({ itemId });
+		if (!item) {
+			throw new Error("Bundled music track not found.");
+		}
+		if (replaceExisting) {
+			const existingMusic = this.getSceneAudioElementsByRole({ role: "music" });
+			if (existingMusic.length > 0) {
+				this.editor.timeline.deleteElements({ elements: existingMusic });
+			}
+		}
+
+		const asset = await ensureBundledAudioAsset({
+			editor: this.editor,
+			item,
+		});
+		const projectDurationMs = Math.max(
+			Math.round(this.editor.timeline.getTotalDuration() * 1000),
+			Math.round(item.duration * 1000),
+		);
+		const desiredEndMs = loopToProjectEnd ? projectDurationMs : startMs + Math.round(item.duration * 1000);
+		const trackId = this.getOrCreateAudioTrackId();
+		let cursorMs = Math.max(0, startMs);
+
+		while (cursorMs < desiredEndMs) {
+			const element = buildUploadAudioElement({
+				mediaId: asset.id,
+				name: asset.name,
+				duration: asset.duration ?? item.duration,
+				startTime: cursorMs / 1000,
+			});
+			element.role = "music";
+			if (typeof volume === "number") {
+				element.volume = Number(Math.max(0, Math.min(2, volume)).toFixed(3));
+			}
+			this.editor.timeline.insertElement({
+				placement: { mode: "explicit", trackId },
+				element,
+			});
+			cursorMs += Math.max(1, Math.round((asset.duration ?? item.duration) * 1000));
+			if (!loopToProjectEnd) {
+				break;
+			}
+		}
+	}
+
+	private async insertBundledSfx({
+		itemId,
+		startMs,
+		durationMs,
+		volume,
+	}: {
+		itemId: string;
+		startMs: number;
+		durationMs: number | null;
+		volume: number | null;
+	}): Promise<void> {
+		const item = this.resolveBundledSfxItem({ itemId });
+		if (!item) {
+			throw new Error("Bundled sound effect not found.");
+		}
+		const asset = await ensureBundledAudioAsset({
+			editor: this.editor,
+			item,
+		});
+		const element = buildUploadAudioElement({
+			mediaId: asset.id,
+			name: asset.name,
+			duration:
+				Math.max(1, durationMs ?? item.defaultDurationMs ?? Math.round(item.duration * 1000)) /
+				1000,
+			startTime: Math.max(0, startMs) / 1000,
+		});
+		element.role = "sfx";
+		if (typeof volume === "number") {
+			element.volume = Number(Math.max(0, Math.min(2, volume)).toFixed(3));
+		}
+		this.editor.timeline.insertElement({
+			placement: {
+				mode: "explicit",
+				trackId: this.getOrCreateAudioTrackId(),
+			},
+			element,
+		});
+	}
+
+	private getCaptionRevealTargets({
+		scope,
+	}: {
+		scope?: import("@/types/clipforge").ClipForgeCommandScope;
+	}): Array<{ trackId: string; element: TextElement }> {
+		if (scope === "selection") {
+			const selectedIds = new Set(
+				this.editor.selection.getSelectedElements().map((selection) => selection.elementId),
+			);
+			const selectedCaptions = this.editor.timeline
+				.getTracks()
+				.filter((track): track is Extract<typeof track, { type: "text" }> => track.type === "text")
+				.flatMap((track) =>
+					track.elements.flatMap((element) =>
+						element.type === "text" &&
+						element.role === "caption" &&
+						selectedIds.has(element.id)
+							? [{ trackId: track.id, element }]
+							: [],
+					),
+				);
+			if (selectedCaptions.length > 0) {
+				return selectedCaptions;
+			}
+		}
+
+		return this.getSceneCaptions().flatMap((segment) => {
+			const track = this.editor.timeline.getTrackById({ trackId: segment.trackId });
+			const element =
+				track?.type === "text"
+					? (track.elements.find(
+							(candidate) =>
+								candidate.type === "text" && candidate.id === segment.elementId,
+					  ) as TextElement | undefined)
+					: undefined;
+			return element ? [{ trackId: segment.trackId, element }] : [];
+		});
+	}
+
+	private async applyCaptionRevealByScope({
+		presetId,
+		scope,
+	}: {
+		presetId: import("@/types/clipforge").CaptionRevealPresetId;
+		scope?: import("@/types/clipforge").ClipForgeCommandScope;
+	}): Promise<void> {
+		const targets = this.getCaptionRevealTargets({ scope });
+		if (targets.length === 0) {
+			throw new Error("Generate or select captions before applying a reveal preset.");
+		}
+		const updates = targets.map(({ trackId, element }) => ({
+			trackId,
+			elementId: element.id,
+			updates: {
+				keyframes: buildCaptionRevealKeyframes({
+					element,
+					presetId,
+				}),
+			},
+		}));
+		this.editor.timeline.updateElements({ updates });
+		const captionIds = targets.map(({ element }) => element.id);
+		this.editor.timeline.clearAnimationSfxPairing({
+			targetElementIds: captionIds,
+			expectedKind: "caption",
+		});
+		const soundSyncPresetId = getCaptionRevealSoundSyncPreset({ presetId });
+		if (soundSyncPresetId) {
+			await this.editor.timeline.applyAnimationSfxPairing({
+				pairingId: soundSyncPresetId,
+				targetElementIds: captionIds,
+			});
+		}
 	}
 
 	private resolveCurrentSceneElement({
@@ -2967,6 +3417,50 @@ export class ClipForgeManager {
 					activeTargetId: project.settings.versionPack?.activeTargetId ?? null,
 			  }
 			: existingMemory.publishIntent;
+		const finishIntent = shouldRefreshFinishIntent({ commands })
+			? {
+					polishProfileId:
+						findLatestPolishProfileId({ commands }) ??
+						project.settings.polishProfileId ??
+						existingMemory.finishIntent?.polishProfileId ??
+						null,
+					captionRevealPresetId:
+						findLatestCaptionRevealPresetId({ commands }) ??
+						existingMemory.finishIntent?.captionRevealPresetId ??
+						null,
+					includeMusic:
+						commands.some(
+							(command) =>
+								command.kind === "apply-music-track" ||
+								command.kind === "replace-music-track",
+						)
+							? true
+							: existingMemory.finishIntent?.includeMusic ?? null,
+					includeSfx:
+						commands.some((command) => command.kind === "insert-sfx-preset")
+							? true
+							: existingMemory.finishIntent?.includeSfx ?? null,
+					mood:
+						findLatestMusicMood({ commands }) ??
+						project.settings.libraryDefaults?.musicMood ??
+						existingMemory.finishIntent?.mood ??
+						null,
+			  }
+			: existingMemory.finishIntent;
+		const destinationIntent = shouldRefreshDestinationIntent({ commands })
+			? {
+					publishDestination:
+						findLatestPublishDestination({ commands }) ??
+						existingMemory.destinationIntent?.publishDestination ??
+						null,
+			  }
+			: existingMemory.destinationIntent;
+		const recentAssetChoices = [
+			...existingMemory.recentAssetChoices,
+			...commands
+				.map((command) => buildRecentAssetChoice({ command }))
+				.filter((choice): choice is ClipForgeRecentAssetChoice => choice !== null),
+		].slice(-12);
 
 		const nextMemory: ClipForgeChatMemory = {
 			activeTargets:
@@ -2975,11 +3469,14 @@ export class ClipForgeManager {
 					: existingMemory.activeTargets,
 			styleIntent,
 			publishIntent,
+			finishIntent,
+			destinationIntent,
 			recentTurnSummaries: nextTurnSummaries.slice(-12),
 			recentAppliedCommandSummaries: [
 				...existingMemory.recentAppliedCommandSummaries,
 				...nextAppliedSummaries,
 			].slice(-20),
+			recentAssetChoices,
 		};
 
 		this.editor.project.setActiveProject({
@@ -3265,12 +3762,26 @@ function summarizeSingleCommand(command: ClipForgeEditorCommand): string {
 			return `Applied the ${command.pairing_id} sound sync preset.`;
 		case "set-audio-mix":
 			return `Updated project audio mix settings (${Object.keys(command.settings).join(", ") || "defaults"}).`;
+		case "apply-music-track":
+			return `Added bundled music ${command.music_asset_id}.`;
+		case "replace-music-track":
+			return `Replaced the music bed with ${command.music_asset_id}.`;
+		case "insert-sfx-preset":
+			return `Inserted SFX ${command.sfx_asset_id}.`;
+		case "apply-polish-profile":
+			return `Applied polish profile ${command.profile_id}.`;
+		case "apply-caption-reveal":
+			return `Applied the ${command.preset_id} caption reveal.`;
 		case "apply-project-kit":
 			return `Applied project kit ${command.kit_id}.`;
 		case "set-version-pack":
 			return `Updated publish targets to ${command.target_ids.join(", ")}.`;
 		case "auto-reframe-selection":
 			return `Auto reframed the selection for ${command.target_version_id}.`;
+		case "set-publish-destination":
+			return `Set the publish destination to ${command.publish_destination}.`;
+		case "run-export-preflight-fixes":
+			return "Applied safe export preflight fixes.";
 	}
 }
 
@@ -3301,6 +3812,8 @@ function shouldRefreshStyleIntent({
 			command.kind === "apply-overlay-style" ||
 			command.kind === "apply-motion-preset" ||
 			command.kind === "set-audio-mix" ||
+			command.kind === "apply-polish-profile" ||
+			command.kind === "apply-caption-reveal" ||
 			command.kind === "apply-project-kit"
 		);
 	});
@@ -3320,6 +3833,68 @@ function findLatestFinishingLookId({
 	return null;
 }
 
+function findLatestPolishProfileId({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}) {
+	for (let index = commands.length - 1; index >= 0; index -= 1) {
+		const command = commands[index];
+		if (command?.kind === "apply-polish-profile") {
+			return command.profile_id;
+		}
+	}
+	return null;
+}
+
+function findLatestCaptionRevealPresetId({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}) {
+	for (let index = commands.length - 1; index >= 0; index -= 1) {
+		const command = commands[index];
+		if (command?.kind === "apply-caption-reveal") {
+			return command.preset_id;
+		}
+	}
+	return null;
+}
+
+function findLatestPublishDestination({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}) {
+	for (let index = commands.length - 1; index >= 0; index -= 1) {
+		const command = commands[index];
+		if (command?.kind === "set-publish-destination") {
+			return command.publish_destination;
+		}
+	}
+	return null;
+}
+
+function findLatestMusicMood({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}) {
+	for (let index = commands.length - 1; index >= 0; index -= 1) {
+		const command = commands[index];
+		if (
+			command?.kind === "apply-music-track" ||
+			command?.kind === "replace-music-track"
+		) {
+			const item = BUNDLED_MUSIC.find((candidate) => candidate.id === command.music_asset_id);
+			if (item?.mood) {
+				return item.mood;
+			}
+		}
+	}
+	return null;
+}
+
 function shouldRefreshPublishIntent({
 	commands,
 }: {
@@ -3331,4 +3906,71 @@ function shouldRefreshPublishIntent({
 			command.kind === "auto-reframe-selection" ||
 			command.kind === "apply-project-kit",
 	);
+}
+
+function shouldRefreshFinishIntent({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}): boolean {
+	return commands.some(
+		(command) =>
+			command.kind === "apply-polish-profile" ||
+			command.kind === "apply-caption-reveal" ||
+			command.kind === "apply-music-track" ||
+			command.kind === "replace-music-track" ||
+			command.kind === "insert-sfx-preset",
+	);
+}
+
+function shouldRefreshDestinationIntent({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}): boolean {
+	return commands.some((command) => command.kind === "set-publish-destination");
+}
+
+function buildRecentAssetChoice({
+	command,
+}: {
+	command: ClipForgeEditorCommand;
+}): ClipForgeRecentAssetChoice | null {
+	switch (command.kind) {
+		case "apply-music-track":
+		case "replace-music-track": {
+			const item = BUNDLED_MUSIC.find((candidate) => candidate.id === command.music_asset_id);
+			return item
+				? {
+						assetId: item.id,
+						assetKind: "music",
+						label: item.label,
+						commandKind: command.kind,
+						createdAt: new Date().toISOString(),
+				  }
+				: null;
+		}
+		case "insert-sfx-preset": {
+			const item = BUNDLED_SFX.find((candidate) => candidate.id === command.sfx_asset_id);
+			return item
+				? {
+						assetId: item.id,
+						assetKind: "sfx",
+						label: item.label,
+						commandKind: command.kind,
+						createdAt: new Date().toISOString(),
+				  }
+				: null;
+		}
+		case "apply-project-kit":
+			return {
+				assetId: command.kit_id,
+				assetKind: "trend-reference",
+				label: command.kit_id,
+				commandKind: command.kind,
+				createdAt: new Date().toISOString(),
+			};
+		default:
+			return null;
+	}
 }
