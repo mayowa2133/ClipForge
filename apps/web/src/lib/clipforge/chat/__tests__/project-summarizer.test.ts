@@ -268,6 +268,7 @@ describe("buildProjectSummary", () => {
 					publishIntent: null,
 					finishIntent: null,
 					destinationIntent: null,
+					referenceIntent: null,
 					recentTurnSummaries: [
 						{
 							prompt: "add a subtle transition",
@@ -289,6 +290,7 @@ describe("buildProjectSummary", () => {
 						},
 					],
 					recentAssetChoices: [],
+					recentReferenceComparisons: [],
 				},
 			},
 		};
@@ -312,5 +314,117 @@ describe("buildProjectSummary", () => {
 		expect(summary.available_scene_recipes[0]?.id).toBe("recipe-1");
 		expect(summary.recent_ai_actions[0]?.kind).toBe("set-transition-in");
 		expect(summary.recent_turn_summaries[0]).toContain("add a subtle transition");
+	});
+
+	test("surfaces the active reference video and readiness snapshot", () => {
+		const project: TProject = {
+			metadata: {
+				id: "project-reference",
+				name: "Reference Summary",
+				duration: 6,
+				createdAt: new Date("2026-03-01T00:00:00.000Z"),
+				updatedAt: new Date("2026-03-01T00:00:00.000Z"),
+			},
+			scenes: [
+				{
+					id: "scene-main",
+					name: "Main",
+					isMain: true,
+					bookmarks: [],
+					createdAt: new Date("2026-03-01T00:00:00.000Z"),
+					updatedAt: new Date("2026-03-01T00:00:00.000Z"),
+					tracks: [],
+				},
+			],
+			currentSceneId: "scene-main",
+			settings: {
+				fps: 30,
+				canvasSize: { width: 1080, height: 1920 },
+				background: { type: "color", color: "#000" },
+			},
+			version: 8,
+			clipforge: {
+				...buildDefaultClipForgeProjectData(),
+				activeReferenceVideoAssetId: "reference-1",
+				mediaMetadataById: {
+					"reference-1": {
+						words: [
+							{ text: "watch", start_ms: 0, end_ms: 200 },
+							{ text: "this", start_ms: 200, end_ms: 420 },
+						],
+						segments: [{ text: "watch this", start_ms: 0, end_ms: 420 }],
+						silenceRegions: [],
+						transcriptionStatus: "ready",
+						transcriptionProvider: "browser-whisper",
+						transcriptionLanguage: "en",
+						transcriptionError: null,
+						indexedAt: "2026-03-01T00:00:00.000Z",
+					},
+				},
+				referenceAnalysisByAssetId: {
+					"reference-1": {
+						analyzedAt: "2026-03-01T00:00:00.000Z",
+						status: "ready",
+						sectionPlan: [
+							{ label: "Hook", start_ms: 0, end_ms: 1000, role: "hook" },
+						],
+						shotPattern: {
+							average_shot_ms: 1200,
+							transition_cadence: "fast",
+							scene_cut_count: 5,
+							activity_intensity: "high",
+						},
+						captionProfile: {
+							presence: "heavy",
+							reveal_preset_id: "pop-line",
+							tone: "bold",
+							average_words_per_segment: 3.2,
+						},
+						audioProfile: {
+							music_mood: "energetic",
+							recommended_music_asset_id: "energetic-bounce",
+							recommended_sfx_asset_id: "subtle-hit",
+							bpm: 128,
+							energy: "high",
+						},
+						overlayProfile: {
+							density: "light",
+							variant_id: "bold-social",
+							motion_preset_id: "slide-up",
+						},
+						finishingProfile: {
+							polish_profile_id: "bold-social",
+							finishing_look_id: "dramatic",
+						},
+						publishProfile: {
+							publish_destination: "tiktok",
+							target_version_id: "9:16",
+							packaging_hint: "Short-form packaging.",
+							hook_pattern: "front-loaded hook",
+						},
+						warnings: [],
+					},
+				},
+			},
+		};
+
+		const summary = buildProjectSummary({
+			project,
+			mediaAssets: [
+				{
+					id: "reference-1",
+					name: "reference.mp4",
+					type: "video",
+					duration: 6,
+					width: 1080,
+					height: 1920,
+					file: new File(["video"], "reference.mp4", { type: "video/mp4" }),
+				},
+			],
+		});
+
+		expect(summary.active_reference_video?.asset_id).toBe("reference-1");
+		expect(summary.reference_analysis_snapshot?.caption_tone).toBe("bold");
+		expect(summary.reference_match_readiness.ready).toBe(true);
 	});
 });

@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { buildDefaultClipForgeProjectData } from "@/lib/clipforge";
 import {
 	buildProjectSegmentSummaryFixture,
 	buildProjectSummaryFixture,
 } from "@/lib/clipforge/__tests__/fixtures";
 import { ClipForgeManager } from "@/core/managers/clipforge-manager";
 import type { ChatPlannerContext, ProjectSummary } from "@/lib/clipforge/chat/types";
-import type { TimelineDiffOp } from "@/types/clipforge";
+import type { ClipForgeEditorCommand } from "@/types/clipforge";
 
 const context: ChatPlannerContext = {
 	playhead_ms: 1000,
@@ -70,6 +71,9 @@ function createFakeEditor({ activeProject }: { activeProject: any | null }) {
 	return {
 		project: {
 			getActive: () => activeProject,
+			getActiveOrNull: () => activeProject,
+			getProjectKitTemplates: () => [],
+			getSceneRecipeTemplates: () => [],
 		},
 		media: {
 			getAssets: () => [
@@ -85,13 +89,47 @@ function createFakeEditor({ activeProject }: { activeProject: any | null }) {
 					type: "video",
 					ephemeral: false,
 				},
+				{
+					id: "reference-1",
+					name: "broll-1.mp4",
+					type: "video",
+					ephemeral: false,
+				},
 			],
+		},
+		selection: {
+			getSelectedElements: () => [],
+		},
+		timeline: {
+			getTracks: () =>
+				activeProject
+					? (activeProject.scenes.find(
+							(scene: any) => scene.id === activeProject.currentSceneId,
+					  )?.tracks ?? [])
+					: [],
+			getTrackById: ({ trackId }: { trackId: string }) =>
+				activeProject
+					? (activeProject.scenes
+							.find((scene: any) => scene.id === activeProject.currentSceneId)
+							?.tracks.find((track: any) => track.id === trackId) ?? null)
+					: null,
+		},
+		playback: {
+			getCurrentTime: () => 0,
 		},
 	} as any;
 }
 
 function createActiveProject(): any {
+	const clipforge = buildDefaultClipForgeProjectData();
 	return {
+		metadata: {
+			id: "project-1",
+			name: "ClipForge Reference Test",
+			duration: 8,
+			createdAt: new Date("2026-03-13T00:00:00.000Z"),
+			updatedAt: new Date("2026-03-13T00:00:00.000Z"),
+		},
 		id: "project-1",
 		currentSceneId: "scene-1",
 		scenes: [
@@ -145,9 +183,99 @@ function createActiveProject(): any {
 							},
 						],
 					},
+					{
+						id: "track-text",
+						name: "Captions",
+						type: "text",
+						muted: false,
+						hidden: false,
+						elements: [
+							{
+								id: "caption-1",
+								type: "text",
+								role: "caption",
+								content: "clipforge one",
+								startTime: 0,
+								duration: 3.5,
+								fontFamily: "System",
+								fontSize: 48,
+								fontWeight: "normal",
+								textAlign: "center",
+								color: "#ffffff",
+								background: {
+									color: "transparent",
+									paddingX: 0,
+									paddingY: 0,
+								},
+								transform: {
+									scale: 1,
+									position: { x: 0, y: 0 },
+									rotate: 0,
+								},
+								opacity: 1,
+							},
+						],
+					},
 				],
 			},
 		],
+		settings: {
+			fps: 30,
+			canvasSize: { width: 1080, height: 1920 },
+			background: { type: "color", color: "#000000" },
+			versionPack: null,
+			audio: null,
+			overlayDefaults: null,
+			brandKit: null,
+		},
+		version: 8,
+		clipforge: {
+			...clipforge,
+			activeReferenceVideoAssetId: "reference-1",
+			referenceAnalysisByAssetId: {
+				...clipforge.referenceAnalysisByAssetId,
+				"reference-1": {
+					analyzedAt: "2026-03-13T00:00:00.000Z",
+					status: "ready",
+					sectionPlan: [],
+					shotPattern: {
+						average_shot_ms: 1800,
+						transition_cadence: "medium",
+						scene_cut_count: 0,
+						activity_intensity: "medium",
+					},
+					captionProfile: {
+						presence: "none",
+						reveal_preset_id: null,
+						tone: "clean",
+						average_words_per_segment: null,
+					},
+					audioProfile: {
+						music_mood: "clean",
+						recommended_music_asset_id: "clean-cut",
+						recommended_sfx_asset_id: "subtle-hit",
+						bpm: null,
+						energy: "medium",
+					},
+					overlayProfile: {
+						density: "light",
+						variant_id: "clean-vlog",
+						motion_preset_id: "fade-up",
+					},
+					finishingProfile: {
+						polish_profile_id: "clean-vlog",
+						finishing_look_id: "warm",
+					},
+					publishProfile: {
+						publish_destination: "instagram",
+						target_version_id: "9:16",
+						packaging_hint: "Vertical short-form packaging.",
+						hook_pattern: "front-loaded hook",
+					},
+					warnings: [],
+				},
+			},
+		},
 	};
 }
 
@@ -218,5 +346,36 @@ describe("ClipForgeManager.reconcileAndValidateOps", () => {
 		expect(result.blocked).toBe(true);
 		expect(result.clarification?.kind).toBe("target");
 		expect(result.ops).toEqual([]);
+	});
+});
+
+describe("ClipForgeManager.reconcileAndValidateCommands", () => {
+	test("keeps reference caption matching apply-ready when the reference has inferred tone but no transcript", () => {
+		const manager = new ClipForgeManager(
+			createFakeEditor({ activeProject: createActiveProject() }),
+		);
+		const result = manager.reconcileAndValidateCommands({
+			userText: "only match the captions from the example",
+			projectSummary: createProjectSummary(),
+			context,
+			commands: [
+				{
+					kind: "match-reference-captions",
+					reference_asset_id: "reference-1",
+					scope: "scene",
+				} satisfies ClipForgeEditorCommand,
+			],
+		});
+
+		expect(result.blocked).toBe(false);
+		expect(result.firstPassErrors).toEqual([]);
+		expect(result.secondPassErrors).toEqual([]);
+		expect(result.commands).toEqual([
+			{
+				kind: "match-reference-captions",
+				reference_asset_id: "reference-1",
+				scope: "scene",
+			},
+		]);
 	});
 });

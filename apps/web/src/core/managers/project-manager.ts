@@ -206,7 +206,16 @@ export class ProjectManager {
 		if (!this.active) return;
 
 		try {
-			const scenes = this.editor.scenes.getScenes();
+			const timelineTracks = this.editor.timeline.getTracks();
+			const scenes = this.editor.scenes.getScenes().map((scene) =>
+				scene.id === this.active?.currentSceneId
+					? {
+							...scene,
+							tracks: timelineTracks,
+							updatedAt: new Date(),
+					  }
+					: scene,
+			);
 			const updatedProject = {
 				...this.active,
 				scenes,

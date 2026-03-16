@@ -36,6 +36,8 @@ import {
 	DemoProjectCreationError,
 	type IncompatibleMediaReference,
 	type MissingMediaReference,
+	getReferenceVideoAnalysisStatus,
+	summarizeReferenceAnalysis,
 } from "@/lib/clipforge";
 import { useFileUpload } from "@/hooks/use-file-upload";
 import { useRevealItem } from "@/hooks/use-reveal-item";
@@ -89,6 +91,21 @@ export function MediaView() {
 	const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 	const srtInputRef = useRef<HTMLInputElement>(null);
 	const missingMediaRelinkInputRef = useRef<HTMLInputElement>(null);
+	const activeReferenceAssetId = activeProject?.clipforge?.activeReferenceVideoAssetId ?? null;
+	const activeReferenceAsset =
+		mediaFiles.find((asset) => asset.id === activeReferenceAssetId) ?? null;
+	const activeReferenceAnalysis =
+		activeReferenceAssetId && activeProject?.clipforge?.referenceAnalysisByAssetId
+			? activeProject.clipforge.referenceAnalysisByAssetId[activeReferenceAssetId] ?? null
+			: null;
+	const activeReferenceStatus = getReferenceVideoAnalysisStatus({
+		analysis: activeReferenceAnalysis,
+		asset: activeReferenceAsset,
+		metadata:
+			activeReferenceAssetId && activeProject?.clipforge?.mediaMetadataById
+				? activeProject.clipforge.mediaMetadataById[activeReferenceAssetId] ?? null
+				: null,
+	});
 
 	const runIndexing = async ({
 		mediaIds,
@@ -203,6 +220,22 @@ export function MediaView() {
 			projectId: activeProject.metadata.id,
 			id,
 		});
+	};
+
+	const handleSetReference = async ({ mediaId }: { mediaId: string }) => {
+		try {
+			await editor.clipforge.setActiveReferenceVideo({ assetId: mediaId });
+			toast.success("Reference video updated.");
+		} catch (error) {
+			toast.error("Failed to set reference video.", {
+				description: error instanceof Error ? error.message : "Please try again.",
+			});
+		}
+	};
+
+	const handleClearReference = () => {
+		editor.clipforge.clearActiveReferenceVideo();
+		toast.success("Reference video cleared.");
 	};
 
 	const addElementAtTime = ({
@@ -609,6 +642,58 @@ export function MediaView() {
 				className={isDragOver ? "bg-accent/30" : ""}
 				{...dragProps}
 			>
+				{activeReferenceAssetId ? (
+					<div className="mb-3 rounded-md border p-3">
+						<div className="flex items-center justify-between gap-3">
+							<div>
+								<p className="text-sm font-medium">Reference Video</p>
+								<p className="text-muted-foreground text-xs">
+									{activeReferenceAsset?.name ?? activeReferenceAssetId}
+								</p>
+							</div>
+							<Button
+								variant="outline"
+								size="sm"
+								className="h-7 text-xs"
+								onClick={handleClearReference}
+							>
+								Clear
+							</Button>
+						</div>
+						<p className="mt-2 text-xs uppercase tracking-wide text-muted-foreground">
+							Status: {activeReferenceStatus}
+						</p>
+						<p className="mt-1 text-xs">
+							{summarizeReferenceAnalysis({
+								analysis: activeReferenceAnalysis,
+							})}
+						</p>
+						{activeReferenceAnalysis ? (
+							<div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+								<p>Pacing: {activeReferenceAnalysis.shotPattern.transition_cadence}</p>
+								<p>
+									Captions: {activeReferenceAnalysis.captionProfile.tone ?? "inferred"}
+								</p>
+								<p>
+									Transitions: {activeReferenceAnalysis.shotPattern.scene_cut_count} cuts
+								</p>
+								<p>
+									Look:{" "}
+									{activeReferenceAnalysis.finishingProfile.finishing_look_id ??
+										"adaptable"}
+								</p>
+								<p>
+									Music feel: {activeReferenceAnalysis.audioProfile.music_mood ?? "none"}
+								</p>
+								<p>
+									Packaging:{" "}
+									{activeReferenceAnalysis.publishProfile.target_version_id ??
+										"flexible"}
+								</p>
+							</div>
+						) : null}
+					</div>
+				) : null}
 				{missingMediaReferences.length > 0 ? (
 					<MissingMediaSection
 						references={missingMediaReferences}
@@ -656,6 +741,9 @@ export function MediaView() {
 						onRemove={handleRemove}
 						onIndexClip={handleIndexClip}
 						onImportSrt={handleImportSrt}
+						onSetReference={handleSetReference}
+						onClearReference={handleClearReference}
+						activeReferenceAssetId={activeReferenceAssetId}
 						onAddToTimeline={addElementAtTime}
 						highlightedId={highlightedId}
 						registerElement={registerElement}
@@ -667,6 +755,9 @@ export function MediaView() {
 						onRemove={handleRemove}
 						onIndexClip={handleIndexClip}
 						onImportSrt={handleImportSrt}
+						onSetReference={handleSetReference}
+						onClearReference={handleClearReference}
+						activeReferenceAssetId={activeReferenceAssetId}
 						onAddToTimeline={addElementAtTime}
 						highlightedId={highlightedId}
 						registerElement={registerElement}
@@ -683,18 +774,32 @@ function MediaItemWithContextMenu({
 	onRemove,
 	onIndexClip,
 	onImportSrt,
+	onSetReference,
+	onClearReference,
+	activeReferenceAssetId,
 }: {
 	item: MediaAsset;
 	children: React.ReactNode;
 	onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
 	onIndexClip: ({ mediaId }: { mediaId: string }) => void;
 	onImportSrt: ({ mediaId }: { mediaId: string }) => void;
+	onSetReference: ({ mediaId }: { mediaId: string }) => void;
+	onClearReference: () => void;
+	activeReferenceAssetId: string | null;
 }) {
 	return (
 		<ContextMenu>
 			<ContextMenuTrigger>{children}</ContextMenuTrigger>
 			<ContextMenuContent>
 				<ContextMenuItem>Export clips</ContextMenuItem>
+				{item.type === "video" && activeReferenceAssetId !== item.id && (
+					<ContextMenuItem onClick={() => onSetReference({ mediaId: item.id })}>
+						Use as reference
+					</ContextMenuItem>
+				)}
+				{item.type === "video" && activeReferenceAssetId === item.id && (
+					<ContextMenuItem onClick={onClearReference}>Clear reference</ContextMenuItem>
+				)}
 				{(item.type === "video" || item.type === "audio") && (
 					<ContextMenuItem onClick={() => onIndexClip({ mediaId: item.id })}>
 						Index Clip
@@ -722,6 +827,9 @@ function GridView({
 	onRemove,
 	onIndexClip,
 	onImportSrt,
+	onSetReference,
+	onClearReference,
+	activeReferenceAssetId,
 	onAddToTimeline,
 	highlightedId,
 	registerElement,
@@ -731,6 +839,9 @@ function GridView({
 	onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
 	onIndexClip: ({ mediaId }: { mediaId: string }) => void;
 	onImportSrt: ({ mediaId }: { mediaId: string }) => void;
+	onSetReference: ({ mediaId }: { mediaId: string }) => void;
+	onClearReference: () => void;
+	activeReferenceAssetId: string | null;
 	onAddToTimeline: ({
 		asset,
 		startTime,
@@ -755,6 +866,9 @@ function GridView({
 						onRemove={onRemove}
 						onIndexClip={onIndexClip}
 						onImportSrt={onImportSrt}
+						onSetReference={onSetReference}
+						onClearReference={onClearReference}
+						activeReferenceAssetId={activeReferenceAssetId}
 					>
 						<DraggableItem
 							name={item.name}
@@ -786,6 +900,9 @@ function ListView({
 	onRemove,
 	onIndexClip,
 	onImportSrt,
+	onSetReference,
+	onClearReference,
+	activeReferenceAssetId,
 	onAddToTimeline,
 	highlightedId,
 	registerElement,
@@ -795,6 +912,9 @@ function ListView({
 	onRemove: ({ event, id }: { event: React.MouseEvent; id: string }) => void;
 	onIndexClip: ({ mediaId }: { mediaId: string }) => void;
 	onImportSrt: ({ mediaId }: { mediaId: string }) => void;
+	onSetReference: ({ mediaId }: { mediaId: string }) => void;
+	onClearReference: () => void;
+	activeReferenceAssetId: string | null;
 	onAddToTimeline: ({
 		asset,
 		startTime,
@@ -814,6 +934,9 @@ function ListView({
 						onRemove={onRemove}
 						onIndexClip={onIndexClip}
 						onImportSrt={onImportSrt}
+						onSetReference={onSetReference}
+						onClearReference={onClearReference}
+						activeReferenceAssetId={activeReferenceAssetId}
 					>
 						<DraggableItem
 							name={item.name}

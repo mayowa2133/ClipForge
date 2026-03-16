@@ -3,6 +3,11 @@ import {
 	buildTimelineTranscriptWords,
 	buildTranscriptSnippetForElement,
 } from "@/lib/clipforge/timeline-transcript";
+import {
+	buildReferenceReadiness,
+	getReferenceVideoAnalysisStatus,
+	summarizeReferenceAnalysis,
+} from "@/lib/clipforge/reference-video";
 import { evaluateExportPreflight } from "@/lib/clipforge/export-preflight";
 import { BUNDLED_MUSIC, BUNDLED_SFX } from "@/lib/library/content-packs";
 import type { MediaAsset } from "@/types/assets";
@@ -64,6 +69,26 @@ export function buildProjectSummary({
 		project,
 		mediaAssets,
 		publishDestination: publishDestination ?? "generic-export",
+	});
+	const activeReferenceAssetId = project.clipforge?.activeReferenceVideoAssetId ?? null;
+	const activeReferenceAsset =
+		mediaAssets.find((asset) => asset.id === activeReferenceAssetId) ?? null;
+	const activeReferenceAnalysis =
+		activeReferenceAssetId && project.clipforge?.referenceAnalysisByAssetId
+			? project.clipforge.referenceAnalysisByAssetId[activeReferenceAssetId] ?? null
+			: null;
+	const activeReferenceMetadata =
+		activeReferenceAssetId && project.clipforge?.mediaMetadataById
+			? project.clipforge.mediaMetadataById[activeReferenceAssetId] ?? null
+			: null;
+	const activeReferenceStatus = getReferenceVideoAnalysisStatus({
+		analysis: activeReferenceAnalysis,
+		asset: activeReferenceAsset,
+		metadata: activeReferenceMetadata,
+	});
+	const referenceReadiness = buildReferenceReadiness({
+		status: activeReferenceStatus,
+		analysis: activeReferenceAnalysis,
 	});
 
 	return {
@@ -164,6 +189,43 @@ export function buildProjectSummary({
 		packaging_readiness: buildPackagingReadiness({
 			preflightSnapshot,
 		}),
+		active_reference_video: activeReferenceAssetId
+			? {
+					asset_id: activeReferenceAssetId,
+					name: activeReferenceAsset?.name ?? activeReferenceAssetId,
+					status: activeReferenceStatus,
+					analyzed_at: activeReferenceAnalysis?.analyzedAt ?? null,
+					intent_summary: summarizeReferenceAnalysis({
+						analysis: activeReferenceAnalysis,
+					}),
+					warnings: activeReferenceAnalysis?.warnings ?? [],
+			  }
+			: null,
+		reference_analysis_snapshot: activeReferenceAnalysis
+			? {
+					transition_cadence: activeReferenceAnalysis.shotPattern.transition_cadence,
+					average_shot_ms: activeReferenceAnalysis.shotPattern.average_shot_ms,
+					caption_tone: activeReferenceAnalysis.captionProfile.tone,
+					caption_reveal_preset_id:
+						activeReferenceAnalysis.captionProfile.reveal_preset_id,
+					audio_mood: activeReferenceAnalysis.audioProfile.music_mood,
+					recommended_music_asset_id:
+						activeReferenceAnalysis.audioProfile.recommended_music_asset_id,
+					recommended_sfx_asset_id:
+						activeReferenceAnalysis.audioProfile.recommended_sfx_asset_id,
+					overlay_variant_id: activeReferenceAnalysis.overlayProfile.variant_id,
+					polish_profile_id:
+						activeReferenceAnalysis.finishingProfile.polish_profile_id,
+					finishing_look_id:
+						activeReferenceAnalysis.finishingProfile.finishing_look_id,
+					publish_destination:
+						activeReferenceAnalysis.publishProfile.publish_destination,
+					target_version_id:
+						activeReferenceAnalysis.publishProfile.target_version_id,
+					hook_pattern: activeReferenceAnalysis.publishProfile.hook_pattern,
+			  }
+			: null,
+		reference_match_readiness: referenceReadiness,
 		recent_ai_actions: [...recentAiActions].reverse(),
 		recent_turn_summaries: [...recentTurnSummaries].reverse(),
 		timeline_words: rankTimelineWords({

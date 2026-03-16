@@ -736,6 +736,78 @@ function buildDirectCommandImpactCard({
 				}`,
 				jump: null,
 			};
+		case "set-active-reference-video": {
+			const asset = summary.media_assets.find(
+				(item) => item.asset_id === command.asset_id,
+			);
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-video",
+				title: "Set reference video",
+				detail: asset?.name ?? command.asset_id,
+				jump: null,
+			};
+		}
+		case "clear-active-reference-video":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-video",
+				title: "Clear reference video",
+				detail: "Remove the active creative reference",
+				jump: null,
+			};
+		case "apply-reference-finish-pass":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-finish",
+				title: "Apply reference finish pass",
+				detail:
+					summary.active_reference_video?.name ?? command.reference_asset_id ?? "active reference",
+				jump: null,
+			};
+		case "match-reference-captions":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-captions",
+				title: "Match reference captions",
+				detail:
+					summary.active_reference_video?.name ?? command.reference_asset_id ?? "active reference",
+				jump: null,
+			};
+		case "match-reference-audio-profile":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-audio",
+				title: "Match reference audio",
+				detail:
+					summary.active_reference_video?.name ?? command.reference_asset_id ?? "active reference",
+				jump: null,
+			};
+		case "match-reference-packaging":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-packaging",
+				title: "Match reference packaging",
+				detail:
+					summary.active_reference_video?.name ?? command.reference_asset_id ?? "active reference",
+				jump: null,
+			};
+		case "match-reference-pacing":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-pacing",
+				title: "Match reference pacing",
+				detail:
+					summary.active_reference_video?.name ?? command.reference_asset_id ?? "active reference",
+				jump: null,
+			};
 	}
 }
 

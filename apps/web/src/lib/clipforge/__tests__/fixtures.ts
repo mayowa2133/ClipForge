@@ -68,6 +68,13 @@ export function buildProjectSummaryFixture(
 			status: "ready",
 			reason: "No publish blockers detected.",
 		},
+		active_reference_video: null,
+		reference_analysis_snapshot: null,
+		reference_match_readiness: {
+			ready: false,
+			status: "attention",
+			reason: "Reference analysis has not been generated yet.",
+		},
 		recent_ai_actions: [],
 		recent_turn_summaries: [],
 		timeline_words: [],

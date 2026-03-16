@@ -2,6 +2,7 @@ import { ClipForgeManager } from "@/core/managers/clipforge-manager";
 import {
 	buildProjectSummary,
 	buildDefaultClipForgeProjectData,
+	buildReferenceVideoAnalysis,
 	normalizeChatPlanResult,
 	HeuristicChatOpsProvider,
 } from "@/lib/clipforge";
@@ -36,7 +37,8 @@ type EvalSuiteName =
 	| "single-turn"
 	| "multi-turn-memory"
 	| "creative-direction"
-	| "finishing";
+	| "finishing"
+	| "reference-video";
 
 interface EvalCommandExpectation {
 	commandKinds?: ClipForgeEditorCommand["kind"][];
@@ -114,11 +116,13 @@ export interface ClipForgeChatEvalThresholds {
 	multiTurnMinPassRate: number;
 	creativeDirectionMinPassRate: number;
 	finishingMinPassRate: number;
+	referenceVideoMinPassRate: number;
 	maxUnsafeApplyFailures: number;
 	expectedSingleTurnPrompts: number;
 	expectedMultiTurnPrompts: number;
 	expectedCreativeDirectionPrompts: number;
 	expectedFinishingPrompts: number;
+	expectedReferenceVideoPrompts: number;
 }
 
 export const DEFAULT_CLIPFORGE_CHAT_EVAL_THRESHOLDS: ClipForgeChatEvalThresholds = {
@@ -126,11 +130,13 @@ export const DEFAULT_CLIPFORGE_CHAT_EVAL_THRESHOLDS: ClipForgeChatEvalThresholds
 	multiTurnMinPassRate: 0.8,
 	creativeDirectionMinPassRate: 0.8,
 	finishingMinPassRate: 0.8,
+	referenceVideoMinPassRate: 0.8,
 	maxUnsafeApplyFailures: 0,
 	expectedSingleTurnPrompts: 60,
 	expectedMultiTurnPrompts: 30,
 	expectedCreativeDirectionPrompts: 20,
 	expectedFinishingPrompts: 12,
+	expectedReferenceVideoPrompts: 8,
 };
 
 export async function runClipForgeChatEvaluationHarness({
@@ -170,12 +176,13 @@ export async function runClipForgeChatEvaluationHarness({
 			const result = normalizeChatPlanResult(rawResult);
 			const manager = new ClipForgeManager(
 				createEvaluationEditor({
-					project: fixture.project,
-					mediaAssets: fixture.mediaAssets,
-					projectKitTemplates: fixture.projectKitTemplates,
-					selectedSegmentIds: context.selected_segment_ids,
-				}),
-			);
+				project: fixture.project,
+				mediaAssets: fixture.mediaAssets,
+				projectKitTemplates: fixture.projectKitTemplates,
+				sceneRecipeTemplates: fixture.sceneRecipeTemplates,
+				selectedSegmentIds: context.selected_segment_ids,
+			}),
+		);
 
 			const turnResult = evaluateTurnResult({
 				suite: scenario.suite,
@@ -215,6 +222,7 @@ export function assertClipForgeChatEvalThresholds({
 	const multiTurn = report.suites["multi-turn-memory"];
 	const creative = report.suites["creative-direction"];
 	const finishing = report.suites.finishing;
+	const referenceVideo = report.suites["reference-video"];
 	const unsafeApplyFailures = report.turns.filter(
 		(turn) => turn.unsafeApplyFailure,
 	).length;
@@ -242,6 +250,11 @@ export function assertClipForgeChatEvalThresholds({
 			`Expected ${thresholds.expectedFinishingPrompts} finishing prompts, received ${finishing.totalPrompts}.`,
 		);
 	}
+	if (referenceVideo.totalPrompts !== thresholds.expectedReferenceVideoPrompts) {
+		errors.push(
+			`Expected ${thresholds.expectedReferenceVideoPrompts} reference-video prompts, received ${referenceVideo.totalPrompts}.`,
+		);
+	}
 	if (singleTurn.passRate < thresholds.singleTurnMinPassRate) {
 		errors.push(
 			`Single-turn pass rate ${formatRate(singleTurn.passRate)} is below ${formatRate(thresholds.singleTurnMinPassRate)}.`,
@@ -260,6 +273,11 @@ export function assertClipForgeChatEvalThresholds({
 	if (finishing.passRate < thresholds.finishingMinPassRate) {
 		errors.push(
 			`Finishing pass rate ${formatRate(finishing.passRate)} is below ${formatRate(thresholds.finishingMinPassRate)}.`,
+		);
+	}
+	if (referenceVideo.passRate < thresholds.referenceVideoMinPassRate) {
+		errors.push(
+			`Reference-video pass rate ${formatRate(referenceVideo.passRate)} is below ${formatRate(thresholds.referenceVideoMinPassRate)}.`,
 		);
 	}
 	if (unsafeApplyFailures > thresholds.maxUnsafeApplyFailures) {
@@ -284,6 +302,7 @@ export function formatClipForgeChatEvalReport({
 		"multi-turn-memory",
 		"creative-direction",
 		"finishing",
+		"reference-video",
 	] as const) {
 		const suite = report.suites[suiteName];
 		lines.push(
@@ -464,6 +483,13 @@ function extractCommandTargetIds({
 			case "auto-reframe-selection":
 			case "set-publish-destination":
 			case "run-export-preflight-fixes":
+			case "set-active-reference-video":
+			case "clear-active-reference-video":
+			case "apply-reference-finish-pass":
+			case "match-reference-captions":
+			case "match-reference-audio-profile":
+			case "match-reference-packaging":
+			case "match-reference-pacing":
 				return [];
 		}
 	});
@@ -480,6 +506,7 @@ function buildSuiteReports({
 		"multi-turn-memory",
 		"creative-direction",
 		"finishing",
+		"reference-video",
 	] as const) {
 		const suiteTurns = turns.filter((turn) => turn.suite === suiteName);
 		const passedPrompts = suiteTurns.filter((turn) => turn.pass).length;
@@ -510,11 +537,13 @@ function createEvaluationEditor({
 	project,
 	mediaAssets,
 	projectKitTemplates,
+	sceneRecipeTemplates,
 	selectedSegmentIds,
 }: {
 	project: TProject;
 	mediaAssets: MediaAsset[];
 	projectKitTemplates: ProjectKitTemplate[];
+	sceneRecipeTemplates: SceneRecipeTemplate[];
 	selectedSegmentIds: string[];
 }) {
 	return {
@@ -523,6 +552,8 @@ function createEvaluationEditor({
 			getActiveOrNull: () => project,
 			findTemplateById: ({ templateId }: { templateId: string }) =>
 				projectKitTemplates.find((template) => template.id === templateId) ?? null,
+			getProjectKitTemplates: () => projectKitTemplates,
+			getSceneRecipeTemplates: () => sceneRecipeTemplates,
 		},
 		timeline: {
 			findTrackIdForElement: ({ elementId }: { elementId: string }) =>
@@ -543,6 +574,9 @@ function createEvaluationEditor({
 		},
 		media: {
 			getAssets: () => mediaAssets,
+		},
+		playback: {
+			getCurrentTime: () => 1.6,
 		},
 	} as any;
 }
@@ -596,6 +630,22 @@ function persistEvaluationMemory({
 			].slice(-6),
 			styleIntent: clipforge.chatMemory.styleIntent,
 			publishIntent: clipforge.chatMemory.publishIntent,
+			finishIntent: clipforge.chatMemory.finishIntent,
+			destinationIntent: clipforge.chatMemory.destinationIntent,
+			referenceIntent:
+				commands.some((command) => command.kind === "apply-reference-finish-pass") ||
+				commands.some((command) => command.kind === "match-reference-captions") ||
+				commands.some((command) => command.kind === "match-reference-audio-profile") ||
+				commands.some((command) => command.kind === "match-reference-packaging") ||
+				commands.some((command) => command.kind === "match-reference-pacing")
+					? {
+							referenceAssetId:
+								clipforge.activeReferenceVideoAssetId ??
+								clipforge.chatMemory.referenceIntent?.referenceAssetId ??
+								null,
+							referenceMode: "exact-recreation" as const,
+					  }
+					: clipforge.chatMemory.referenceIntent,
 			recentTurnSummaries: [...clipforge.chatMemory.recentTurnSummaries, nextTurn].slice(
 				-12,
 			),
@@ -603,6 +653,26 @@ function persistEvaluationMemory({
 				...clipforge.chatMemory.recentAppliedCommandSummaries,
 				...summaries,
 			].slice(-20),
+			recentAssetChoices: clipforge.chatMemory.recentAssetChoices,
+			recentReferenceComparisons: [
+				...clipforge.chatMemory.recentReferenceComparisons,
+				...commands.flatMap((command) => {
+					switch (command.kind) {
+						case "apply-reference-finish-pass":
+							return ["finish pass closer to active reference"];
+						case "match-reference-captions":
+							return ["matched captions to active reference"];
+						case "match-reference-audio-profile":
+							return ["matched audio feel to active reference"];
+						case "match-reference-packaging":
+							return ["matched packaging to active reference"];
+						case "match-reference-pacing":
+							return ["matched pacing to active reference"];
+						default:
+							return [];
+					}
+				}),
+			].slice(-12),
 		},
 	};
 }
@@ -679,6 +749,20 @@ function summarizeCommandForEval({
 			return `Set publish destination to ${command.publish_destination}.`;
 		case "run-export-preflight-fixes":
 			return "Applied export preflight fixes.";
+		case "set-active-reference-video":
+			return `Set reference video to ${command.asset_id}.`;
+		case "clear-active-reference-video":
+			return "Cleared the reference video.";
+		case "apply-reference-finish-pass":
+			return "Applied a reference-guided finish pass.";
+		case "match-reference-captions":
+			return "Matched captions to the reference.";
+		case "match-reference-audio-profile":
+			return "Matched audio feel to the reference.";
+		case "match-reference-packaging":
+			return "Matched packaging to the reference.";
+		case "match-reference-pacing":
+			return "Matched pacing to the reference.";
 	}
 }
 
@@ -713,6 +797,13 @@ function extractSummarySegmentTargets({
 			case "auto-reframe-selection":
 			case "set-publish-destination":
 			case "run-export-preflight-fixes":
+			case "set-active-reference-video":
+			case "clear-active-reference-video":
+			case "apply-reference-finish-pass":
+			case "match-reference-captions":
+			case "match-reference-audio-profile":
+			case "match-reference-packaging":
+			case "match-reference-pacing":
 				return [];
 		}
 	}
@@ -746,6 +837,13 @@ function extractSummaryElementTargets({
 			case "auto-reframe-selection":
 			case "set-publish-destination":
 			case "run-export-preflight-fixes":
+			case "set-active-reference-video":
+			case "clear-active-reference-video":
+			case "apply-reference-finish-pass":
+			case "match-reference-captions":
+			case "match-reference-audio-profile":
+			case "match-reference-packaging":
+			case "match-reference-pacing":
 				return [];
 		}
 	}
@@ -773,6 +871,7 @@ function buildEvaluationScenarios(): EvalScenario[] {
 		...buildMultiTurnMemoryScenarios(),
 		...buildCreativeDirectionScenarios(),
 		...buildFinishingScenarios(),
+		...buildReferenceVideoScenarios(),
 	];
 }
 
@@ -1515,6 +1614,132 @@ function buildFinishingScenarios(): EvalScenario[] {
 	}));
 }
 
+function buildReferenceVideoScenarios(): EvalScenario[] {
+	const scenarios: EvalScenario[] = [
+		{
+			id: "reference-finish-single",
+			suite: "reference-video",
+			fixtureId: "creator-studio",
+			turns: [
+				{
+					id: "turn-1",
+					prompt: "Finish this like the reference",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["apply-reference-finish-pass"],
+						},
+					},
+				},
+			],
+		},
+		{
+			id: "reference-captions-single",
+			suite: "reference-video",
+			fixtureId: "creator-studio",
+			turns: [
+				{
+					id: "turn-1",
+					prompt: "Match the captions from the example",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["match-reference-captions"],
+						},
+					},
+				},
+			],
+		},
+		{
+			id: "reference-audio-single",
+			suite: "reference-video",
+			fixtureId: "creator-studio",
+			turns: [
+				{
+					id: "turn-1",
+					prompt: "Match the audio profile from the example",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["match-reference-audio-profile"],
+						},
+					},
+				},
+			],
+		},
+		{
+			id: "reference-pacing-single",
+			suite: "reference-video",
+			fixtureId: "creator-studio",
+			turns: [
+				{
+					id: "turn-1",
+					prompt: "Match the pacing from the example",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["match-reference-pacing"],
+						},
+					},
+				},
+			],
+		},
+		{
+			id: "reference-followup-flow",
+			suite: "reference-video",
+			fixtureId: "creator-studio",
+			turns: [
+				{
+					id: "turn-1",
+					prompt: "Finish this like the reference",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["apply-reference-finish-pass"],
+						},
+					},
+				},
+				{
+					id: "turn-2",
+					prompt: "make it even closer to the reference",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["apply-reference-finish-pass"],
+						},
+					},
+				},
+				{
+					id: "turn-3",
+					prompt: "only match the captions",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["match-reference-captions"],
+						},
+					},
+				},
+				{
+					id: "turn-4",
+					prompt: "match the packaging from the example",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["match-reference-packaging"],
+						},
+					},
+				},
+			],
+		},
+	];
+
+	const totalTurns = scenarios.reduce((sum, scenario) => sum + scenario.turns.length, 0);
+	if (totalTurns !== 8) {
+		throw new Error(`Reference-video eval suite must contain 8 prompts. Found ${totalTurns}.`);
+	}
+	return scenarios;
+}
+
 function createFrozenProject(): TProject {
 	const project = {
 		metadata: {
@@ -1597,6 +1822,7 @@ function createFrozenProject(): TProject {
 		clipforge: {
 			...buildDefaultClipForgeProjectData(),
 			activeCaptionStyleId: "clean-bottom",
+			activeReferenceVideoAssetId: "ref-style-1",
 			mediaMetadataById: {
 				"clip-1": createTranscriptMetadata({
 					words: [
@@ -1624,6 +1850,17 @@ function createFrozenProject(): TProject {
 						{ text: "cut", start_ms: 250, end_ms: 500 },
 					],
 				}),
+				"ref-style-1": createTranscriptMetadata({
+					words: [
+						{ text: "watch", start_ms: 0, end_ms: 240 },
+						{ text: "this", start_ms: 240, end_ms: 420 },
+						{ text: "right", start_ms: 420, end_ms: 620 },
+						{ text: "now", start_ms: 620, end_ms: 820 },
+					],
+				}),
+			},
+			referenceAnalysisByAssetId: {
+				"ref-style-1": createReferenceVideoAnalysisFixture(),
 			},
 		},
 	} satisfies TProject;
@@ -1923,11 +2160,72 @@ function createFrozenMediaAssets(): MediaAsset[] {
 		make({ id: "clip-2", name: "body", type: "video", duration: 3 }),
 		make({ id: "clip-3", name: "third", type: "video", duration: 2.5 }),
 		make({ id: "clip-4", name: "closer", type: "video", duration: 2.5 }),
+		{
+			...make({ id: "ref-style-1", name: "reference-style", type: "video", duration: 6 }),
+			width: 1080,
+			height: 1920,
+			beatAnalysis: {
+				bpm: 126,
+				downbeats: [0, 1.9, 3.8],
+				beats: [0, 0.48, 0.96, 1.44, 1.9, 2.38, 2.86, 3.34],
+				analyzedAt: "2026-03-10T10:00:00.000Z",
+				version: 1,
+			},
+			visualAnalysis: {
+				sceneCuts: [0.7, 1.5, 2.3, 3.1, 4.2, 5.1],
+				activityWindows: [
+					{ startTime: 0, endTime: 1.4, score: 0.82 },
+					{ startTime: 1.4, endTime: 3.2, score: 0.76 },
+					{ startTime: 3.2, endTime: 6, score: 0.68 },
+				],
+				analyzedAt: "2026-03-10T10:00:00.000Z",
+				version: 1,
+			},
+		},
 		make({ id: "beach-1", name: "beach", type: "video", duration: 4 }),
 		make({ id: "city-1", name: "city", type: "image", duration: 4 }),
 		make({ id: "music-bed", name: "music-bed", type: "audio", duration: 12 }),
 		make({ id: "voiceover-1", name: "voiceover-1", type: "audio", duration: 2 }),
 	];
+}
+
+function createReferenceVideoAnalysisFixture() {
+	return buildReferenceVideoAnalysis({
+		asset: {
+			id: "ref-style-1",
+			name: "reference-style",
+			type: "video",
+			duration: 6,
+			width: 1080,
+			height: 1920,
+			file: new File(["video"], "reference-style.mp4", { type: "video/mp4" }),
+			beatAnalysis: {
+				bpm: 126,
+				downbeats: [0, 1.9, 3.8],
+				beats: [0, 0.48, 0.96, 1.44, 1.9, 2.38, 2.86, 3.34],
+				analyzedAt: "2026-03-10T10:00:00.000Z",
+				version: 1,
+			},
+			visualAnalysis: {
+				sceneCuts: [0.7, 1.5, 2.3, 3.1, 4.2, 5.1],
+				activityWindows: [
+					{ startTime: 0, endTime: 1.4, score: 0.82 },
+					{ startTime: 1.4, endTime: 3.2, score: 0.76 },
+					{ startTime: 3.2, endTime: 6, score: 0.68 },
+				],
+				analyzedAt: "2026-03-10T10:00:00.000Z",
+				version: 1,
+			},
+		},
+		metadata: createTranscriptMetadata({
+			words: [
+				{ text: "watch", start_ms: 0, end_ms: 240 },
+				{ text: "this", start_ms: 240, end_ms: 420 },
+				{ text: "right", start_ms: 420, end_ms: 620 },
+				{ text: "now", start_ms: 620, end_ms: 820 },
+			],
+		}),
+	});
 }
 
 function createProjectKitTemplates(): ProjectKitTemplate[] {

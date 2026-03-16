@@ -3,6 +3,7 @@ import type { TimelineOpsValidationError } from "@/lib/clipforge/ops-validator";
 import type {
 	ClipForgeAppliedCommandSummary,
 	ClipForgeEditorCommand,
+	ReferenceVideoAnalysisStatus,
 	TimelineDiffOp,
 } from "@/types/clipforge";
 import type { PublishDestination } from "@/types/export";
@@ -100,6 +101,43 @@ export interface ProjectPackagingReadinessSummary {
 	reason: string;
 }
 
+export interface ProjectActiveReferenceVideoSummary {
+	asset_id: string;
+	name: string;
+	status: ReferenceVideoAnalysisStatus;
+	analyzed_at: string | null;
+	intent_summary: string;
+	warnings: string[];
+}
+
+export interface ProjectReferenceAnalysisSnapshotSummary {
+	transition_cadence: "slow" | "medium" | "fast";
+	average_shot_ms: number | null;
+	caption_tone: "soft" | "clean" | "bold" | "luxury" | null;
+	caption_reveal_preset_id: string | null;
+	audio_mood:
+		| "clean"
+		| "luxury"
+		| "upbeat"
+		| "energetic"
+		| "minimal"
+		| null;
+	recommended_music_asset_id: string | null;
+	recommended_sfx_asset_id: string | null;
+	overlay_variant_id: string | null;
+	polish_profile_id: string | null;
+	finishing_look_id: string | null;
+	publish_destination: PublishDestination | null;
+	target_version_id: ProjectVersionTarget | null;
+	hook_pattern: string;
+}
+
+export interface ProjectReferenceMatchReadinessSummary {
+	ready: boolean;
+	status: "ready" | "attention" | "blocked";
+	reason: string;
+}
+
 export interface ProjectSelectionSummary {
 	selected_segment_ids: string[];
 	selected_segments: ProjectSegmentSummary[];
@@ -137,6 +175,9 @@ export interface ProjectSummary {
 	publish_destination: PublishDestination | null;
 	export_preflight_snapshot: ProjectExportPreflightSnapshotSummary | null;
 	packaging_readiness: ProjectPackagingReadinessSummary;
+	active_reference_video: ProjectActiveReferenceVideoSummary | null;
+	reference_analysis_snapshot: ProjectReferenceAnalysisSnapshotSummary | null;
+	reference_match_readiness: ProjectReferenceMatchReadinessSummary;
 	recent_ai_actions: ClipForgeAppliedCommandSummary[];
 	recent_turn_summaries: string[];
 	timeline_words: TimelineTranscriptWord[];
@@ -268,6 +309,12 @@ export type ChatPlanImpactKind =
 	| "auto-reframe"
 	| "publish-destination"
 	| "export-preflight-fixes"
+	| "reference-video"
+	| "reference-finish"
+	| "reference-captions"
+	| "reference-audio"
+	| "reference-packaging"
+	| "reference-pacing"
 	| "unknown";
 
 export interface ChatPlanImpactJumpTarget {

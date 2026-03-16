@@ -289,6 +289,84 @@ export interface DraftImpactSummary {
 
 export type ClipForgeCommandScope = "selection" | "scene" | "project";
 
+export type ReferenceVideoAnalysisStatus =
+	| "idle"
+	| "ready"
+	| "stale"
+	| "missing"
+	| "error";
+
+export type ReferencePacingCadence = "slow" | "medium" | "fast";
+export type ReferenceEnergyLevel = "low" | "medium" | "high";
+export type ReferenceCaptionTone = "soft" | "clean" | "bold" | "luxury";
+export type ReferenceOverlayDensity = "none" | "light" | "heavy";
+
+export interface ReferenceVideoSectionPlanEntry {
+	label: string;
+	start_ms: number;
+	end_ms: number;
+	role: "hook" | "body" | "payoff";
+}
+
+export interface ReferenceVideoShotPattern {
+	average_shot_ms: number | null;
+	transition_cadence: ReferencePacingCadence;
+	scene_cut_count: number;
+	activity_intensity: ReferenceEnergyLevel;
+}
+
+export interface ReferenceVideoCaptionProfile {
+	presence: "none" | "light" | "heavy";
+	reveal_preset_id: CaptionRevealPresetId | null;
+	tone: ReferenceCaptionTone | null;
+	average_words_per_segment: number | null;
+}
+
+export interface ReferenceVideoAudioProfile {
+	music_mood:
+		| "clean"
+		| "luxury"
+		| "upbeat"
+		| "energetic"
+		| "minimal"
+		| null;
+	recommended_music_asset_id: string | null;
+	recommended_sfx_asset_id: string | null;
+	bpm: number | null;
+	energy: ReferenceEnergyLevel;
+}
+
+export interface ReferenceVideoOverlayProfile {
+	density: ReferenceOverlayDensity;
+	variant_id: OverlayStyleVariantId | null;
+	motion_preset_id: OverlayMotionPresetId | null;
+}
+
+export interface ReferenceVideoFinishingProfile {
+	polish_profile_id: PolishProfileId | null;
+	finishing_look_id: PolishFinishingLookId | null;
+}
+
+export interface ReferenceVideoPublishProfile {
+	publish_destination: PublishDestination | null;
+	target_version_id: ProjectVersionTarget | null;
+	packaging_hint: string;
+	hook_pattern: string;
+}
+
+export interface ReferenceVideoAnalysis {
+	analyzedAt: string;
+	status: ReferenceVideoAnalysisStatus;
+	sectionPlan: ReferenceVideoSectionPlanEntry[];
+	shotPattern: ReferenceVideoShotPattern;
+	captionProfile: ReferenceVideoCaptionProfile;
+	audioProfile: ReferenceVideoAudioProfile;
+	overlayProfile: ReferenceVideoOverlayProfile;
+	finishingProfile: ReferenceVideoFinishingProfile;
+	publishProfile: ReferenceVideoPublishProfile;
+	warnings: string[];
+}
+
 export interface TimelineDiffBaseOp {
 	type:
 		| "REMOVE_SILENCE"
@@ -579,6 +657,47 @@ export interface RunExportPreflightFixesEditorCommand {
 	scope?: ClipForgeCommandScope;
 }
 
+export interface SetActiveReferenceVideoEditorCommand {
+	kind: "set-active-reference-video";
+	asset_id: string;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ClearActiveReferenceVideoEditorCommand {
+	kind: "clear-active-reference-video";
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ApplyReferenceFinishPassEditorCommand {
+	kind: "apply-reference-finish-pass";
+	reference_asset_id?: string | null;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface MatchReferenceCaptionsEditorCommand {
+	kind: "match-reference-captions";
+	reference_asset_id?: string | null;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface MatchReferenceAudioProfileEditorCommand {
+	kind: "match-reference-audio-profile";
+	reference_asset_id?: string | null;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface MatchReferencePackagingEditorCommand {
+	kind: "match-reference-packaging";
+	reference_asset_id?: string | null;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface MatchReferencePacingEditorCommand {
+	kind: "match-reference-pacing";
+	reference_asset_id?: string | null;
+	scope?: ClipForgeCommandScope;
+}
+
 export type ClipForgeEditorCommand =
 	| TimelineOpEditorCommand
 	| SetClipSpeedEditorCommand
@@ -601,7 +720,14 @@ export type ClipForgeEditorCommand =
 	| SetVersionPackEditorCommand
 	| AutoReframeSelectionEditorCommand
 	| SetPublishDestinationEditorCommand
-	| RunExportPreflightFixesEditorCommand;
+	| RunExportPreflightFixesEditorCommand
+	| SetActiveReferenceVideoEditorCommand
+	| ClearActiveReferenceVideoEditorCommand
+	| ApplyReferenceFinishPassEditorCommand
+	| MatchReferenceCaptionsEditorCommand
+	| MatchReferenceAudioProfileEditorCommand
+	| MatchReferencePackagingEditorCommand
+	| MatchReferencePacingEditorCommand;
 
 export interface ClipForgeChatMemoryStyleIntent {
 	captionStyleId?: string | null;
@@ -626,6 +752,11 @@ export interface ClipForgeChatMemoryFinishIntent {
 
 export interface ClipForgeChatMemoryDestinationIntent {
 	publishDestination: PublishDestination | null;
+}
+
+export interface ClipForgeChatMemoryReferenceIntent {
+	referenceAssetId: string | null;
+	referenceMode: "exact-recreation" | null;
 }
 
 export interface ClipForgeRecentAssetChoice {
@@ -663,9 +794,11 @@ export interface ClipForgeChatMemory {
 	publishIntent: ClipForgeChatMemoryPublishIntent | null;
 	finishIntent: ClipForgeChatMemoryFinishIntent | null;
 	destinationIntent: ClipForgeChatMemoryDestinationIntent | null;
+	referenceIntent: ClipForgeChatMemoryReferenceIntent | null;
 	recentTurnSummaries: ClipForgeChatTurnSummary[];
 	recentAppliedCommandSummaries: ClipForgeAppliedCommandSummary[];
 	recentAssetChoices: ClipForgeRecentAssetChoice[];
+	recentReferenceComparisons: string[];
 }
 
 export type TimelineDiffOpSource = "chat" | "auto-edit" | "manual";
@@ -690,6 +823,8 @@ export interface ClipForgeProjectData {
 	captionTrackIdsBySceneId: Record<string, string | null>;
 	sceneFootageIntelligenceBySceneId: Record<string, FootageIntelligenceReport | null>;
 	trendSoundReferences: TrendSoundReference[];
+	activeReferenceVideoAssetId: string | null;
+	referenceAnalysisByAssetId: Record<string, ReferenceVideoAnalysis>;
 	chatMemory: ClipForgeChatMemory;
 	opsAudit: TimelineDiffAuditEntry[];
 }

@@ -21,8 +21,8 @@ export function createChatOpsProvider({
 		case "auto":
 		default:
 			baseProvider = new FallbackChatOpsProvider(
-				new OpenAIChatOpsProvider(),
 				new HeuristicChatOpsProvider(),
+				new OpenAIChatOpsProvider(),
 			);
 			break;
 	}

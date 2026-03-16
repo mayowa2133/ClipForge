@@ -26,6 +26,7 @@ export * from "./footage-intelligence";
 export * from "./polish-profiles";
 export * from "./caption-polish";
 export * from "./retention-shaping";
+export * from "./reference-video";
 export * from "./transcribers/whisper-cli";
 export * from "./demo/manifest";
 export * from "./demo/create-demo-project";

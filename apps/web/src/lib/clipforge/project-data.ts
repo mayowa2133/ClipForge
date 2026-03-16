@@ -6,12 +6,13 @@ import type {
 	ClipForgeChatTurnSummary,
 	ClipForgeProjectData,
 	ClipMediaMetadata,
+	ReferenceVideoAnalysis,
 } from "@/types/clipforge";
 import type { TProject } from "@/types/project";
 import { adoptLegacyCaptionTracks } from "./caption-studio";
 import { BUILT_IN_CAPTION_STYLE_MAP } from "./caption-style-library";
 
-export const CLIPFORGE_SCHEMA_VERSION = 6;
+export const CLIPFORGE_SCHEMA_VERSION = 7;
 
 const MAX_CHAT_MEMORY_TURNS = 12;
 const MAX_CHAT_MEMORY_APPLIED_COMMANDS = 20;
@@ -28,15 +29,19 @@ export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 		captionTrackIdsBySceneId: {},
 		sceneFootageIntelligenceBySceneId: {},
 		trendSoundReferences: [],
+		activeReferenceVideoAssetId: null,
+		referenceAnalysisByAssetId: {},
 		chatMemory: {
 			activeTargets: [],
 			styleIntent: null,
 			publishIntent: null,
 			finishIntent: null,
 			destinationIntent: null,
+			referenceIntent: null,
 			recentTurnSummaries: [],
 			recentAppliedCommandSummaries: [],
 			recentAssetChoices: [],
+			recentReferenceComparisons: [],
 		},
 		opsAudit: [],
 	};
@@ -440,6 +445,18 @@ function normalizeChatMemory({
 							: null,
 			  }
 			: null,
+		referenceIntent: memory?.referenceIntent
+			? {
+					referenceAssetId:
+						typeof memory.referenceIntent.referenceAssetId === "string"
+							? memory.referenceIntent.referenceAssetId
+							: null,
+					referenceMode:
+						memory.referenceIntent.referenceMode === "exact-recreation"
+							? memory.referenceIntent.referenceMode
+							: null,
+			  }
+			: null,
 		recentTurnSummaries: Array.isArray(memory?.recentTurnSummaries)
 			? memory.recentTurnSummaries
 					.map((value) => normalizeTurnSummary(value))
@@ -457,6 +474,262 @@ function normalizeChatMemory({
 					.map((value) => normalizeRecentAssetChoice(value))
 					.filter((value): value is ClipForgeRecentAssetChoice => value !== null)
 					.slice(-MAX_CHAT_MEMORY_ASSET_CHOICES)
+			: [],
+		recentReferenceComparisons: Array.isArray(memory?.recentReferenceComparisons)
+			? memory.recentReferenceComparisons
+					.filter((value): value is string => typeof value === "string")
+					.slice(-MAX_CHAT_MEMORY_TURNS)
+			: [],
+	};
+}
+
+function normalizeReferenceVideoAnalysis(
+	value: unknown,
+): ReferenceVideoAnalysis | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as { analyzedAt?: unknown }).analyzedAt !== "string"
+	) {
+		return null;
+	}
+
+	const status = (value as { status?: unknown }).status;
+	if (
+		status !== "idle" &&
+		status !== "ready" &&
+		status !== "stale" &&
+		status !== "missing" &&
+		status !== "error"
+	) {
+		return null;
+	}
+
+	const sectionPlan = Array.isArray((value as { sectionPlan?: unknown }).sectionPlan)
+		? ((value as { sectionPlan?: unknown }).sectionPlan as unknown[])
+				.map((entry) => {
+					if (
+						typeof entry !== "object" ||
+						entry === null ||
+						typeof (entry as { label?: unknown }).label !== "string" ||
+						typeof (entry as { start_ms?: unknown }).start_ms !== "number" ||
+						typeof (entry as { end_ms?: unknown }).end_ms !== "number" ||
+						((entry as { role?: unknown }).role !== "hook" &&
+							(entry as { role?: unknown }).role !== "body" &&
+							(entry as { role?: unknown }).role !== "payoff")
+					) {
+						return null;
+					}
+					return {
+						label: (entry as { label: string }).label,
+						start_ms: (entry as { start_ms: number }).start_ms,
+						end_ms: (entry as { end_ms: number }).end_ms,
+						role: (entry as {
+							role: "hook" | "body" | "payoff";
+						}).role,
+					};
+				})
+				.filter(
+					(
+						entry,
+					): entry is ReferenceVideoAnalysis["sectionPlan"][number] => entry !== null,
+				)
+		: [];
+
+	const shotPatternSource = (value as { shotPattern?: unknown }).shotPattern;
+	const captionProfileSource = (value as { captionProfile?: unknown }).captionProfile;
+	const audioProfileSource = (value as { audioProfile?: unknown }).audioProfile;
+	const overlayProfileSource = (value as { overlayProfile?: unknown }).overlayProfile;
+	const finishingProfileSource =
+		(value as { finishingProfile?: unknown }).finishingProfile;
+	const publishProfileSource = (value as { publishProfile?: unknown }).publishProfile;
+
+	return {
+		analyzedAt: (value as { analyzedAt: string }).analyzedAt,
+		status,
+		sectionPlan,
+		shotPattern: {
+			average_shot_ms:
+				typeof (shotPatternSource as { average_shot_ms?: unknown })?.average_shot_ms ===
+				"number"
+					? ((shotPatternSource as { average_shot_ms: number }).average_shot_ms ?? null)
+					: null,
+			transition_cadence:
+				(shotPatternSource as { transition_cadence?: unknown })?.transition_cadence ===
+					"slow" ||
+				(shotPatternSource as { transition_cadence?: unknown })?.transition_cadence ===
+					"medium" ||
+				(shotPatternSource as { transition_cadence?: unknown })?.transition_cadence ===
+					"fast"
+					? (shotPatternSource as {
+							transition_cadence: "slow" | "medium" | "fast";
+					  }).transition_cadence
+					: "medium",
+			scene_cut_count:
+				typeof (shotPatternSource as { scene_cut_count?: unknown })?.scene_cut_count ===
+				"number"
+					? (shotPatternSource as { scene_cut_count: number }).scene_cut_count
+					: 0,
+			activity_intensity:
+				(shotPatternSource as { activity_intensity?: unknown })?.activity_intensity ===
+					"low" ||
+				(shotPatternSource as { activity_intensity?: unknown })?.activity_intensity ===
+					"medium" ||
+				(shotPatternSource as { activity_intensity?: unknown })?.activity_intensity ===
+					"high"
+					? (shotPatternSource as {
+							activity_intensity: "low" | "medium" | "high";
+					  }).activity_intensity
+					: "medium",
+		},
+		captionProfile: {
+			presence:
+				(captionProfileSource as { presence?: unknown })?.presence === "none" ||
+				(captionProfileSource as { presence?: unknown })?.presence === "light" ||
+				(captionProfileSource as { presence?: unknown })?.presence === "heavy"
+					? (captionProfileSource as { presence: "none" | "light" | "heavy" }).presence
+					: "none",
+			reveal_preset_id:
+				typeof (captionProfileSource as { reveal_preset_id?: unknown })?.reveal_preset_id ===
+				"string"
+					? (captionProfileSource as { reveal_preset_id: ReferenceVideoAnalysis["captionProfile"]["reveal_preset_id"] }).reveal_preset_id
+					: null,
+			tone:
+				(captionProfileSource as { tone?: unknown })?.tone === "soft" ||
+				(captionProfileSource as { tone?: unknown })?.tone === "clean" ||
+				(captionProfileSource as { tone?: unknown })?.tone === "bold" ||
+				(captionProfileSource as { tone?: unknown })?.tone === "luxury"
+					? (captionProfileSource as {
+							tone: "soft" | "clean" | "bold" | "luxury";
+					  }).tone
+					: null,
+			average_words_per_segment:
+				typeof (captionProfileSource as { average_words_per_segment?: unknown })
+					?.average_words_per_segment === "number"
+					? (captionProfileSource as { average_words_per_segment: number })
+							.average_words_per_segment
+					: null,
+		},
+		audioProfile: {
+			music_mood:
+				(audioProfileSource as { music_mood?: unknown })?.music_mood === "clean" ||
+				(audioProfileSource as { music_mood?: unknown })?.music_mood === "luxury" ||
+				(audioProfileSource as { music_mood?: unknown })?.music_mood === "upbeat" ||
+				(audioProfileSource as { music_mood?: unknown })?.music_mood === "energetic" ||
+				(audioProfileSource as { music_mood?: unknown })?.music_mood === "minimal"
+					? (audioProfileSource as {
+							music_mood:
+								| "clean"
+								| "luxury"
+								| "upbeat"
+								| "energetic"
+								| "minimal";
+					  }).music_mood
+					: null,
+			recommended_music_asset_id:
+				typeof (audioProfileSource as { recommended_music_asset_id?: unknown })
+					?.recommended_music_asset_id === "string"
+					? (audioProfileSource as { recommended_music_asset_id: string })
+							.recommended_music_asset_id
+					: null,
+			recommended_sfx_asset_id:
+				typeof (audioProfileSource as { recommended_sfx_asset_id?: unknown })
+					?.recommended_sfx_asset_id === "string"
+					? (audioProfileSource as { recommended_sfx_asset_id: string })
+							.recommended_sfx_asset_id
+					: null,
+			bpm:
+				typeof (audioProfileSource as { bpm?: unknown })?.bpm === "number"
+					? (audioProfileSource as { bpm: number }).bpm
+					: null,
+			energy:
+				(audioProfileSource as { energy?: unknown })?.energy === "low" ||
+				(audioProfileSource as { energy?: unknown })?.energy === "medium" ||
+				(audioProfileSource as { energy?: unknown })?.energy === "high"
+					? (audioProfileSource as { energy: "low" | "medium" | "high" }).energy
+					: "medium",
+		},
+		overlayProfile: {
+			density:
+				(overlayProfileSource as { density?: unknown })?.density === "none" ||
+				(overlayProfileSource as { density?: unknown })?.density === "light" ||
+				(overlayProfileSource as { density?: unknown })?.density === "heavy"
+					? (overlayProfileSource as { density: "none" | "light" | "heavy" }).density
+					: "none",
+			variant_id:
+				typeof (overlayProfileSource as { variant_id?: unknown })?.variant_id === "string"
+					? (overlayProfileSource as {
+							variant_id: ReferenceVideoAnalysis["overlayProfile"]["variant_id"];
+					  }).variant_id
+					: null,
+			motion_preset_id:
+				typeof (overlayProfileSource as { motion_preset_id?: unknown })
+					?.motion_preset_id === "string"
+					? (overlayProfileSource as {
+							motion_preset_id: ReferenceVideoAnalysis["overlayProfile"]["motion_preset_id"];
+					  }).motion_preset_id
+					: null,
+		},
+		finishingProfile: {
+			polish_profile_id:
+				typeof (finishingProfileSource as { polish_profile_id?: unknown })
+					?.polish_profile_id === "string"
+					? (finishingProfileSource as {
+							polish_profile_id: ReferenceVideoAnalysis["finishingProfile"]["polish_profile_id"];
+					  }).polish_profile_id
+					: null,
+			finishing_look_id:
+				typeof (finishingProfileSource as { finishing_look_id?: unknown })
+					?.finishing_look_id === "string"
+					? (finishingProfileSource as {
+							finishing_look_id: ReferenceVideoAnalysis["finishingProfile"]["finishing_look_id"];
+					  }).finishing_look_id
+					: null,
+		},
+		publishProfile: {
+			publish_destination:
+				(publishProfileSource as { publish_destination?: unknown })?.publish_destination ===
+					"generic-export" ||
+				(publishProfileSource as { publish_destination?: unknown })?.publish_destination ===
+					"tiktok" ||
+				(publishProfileSource as { publish_destination?: unknown })?.publish_destination ===
+					"instagram" ||
+				(publishProfileSource as { publish_destination?: unknown })?.publish_destination ===
+					"youtube"
+					? (publishProfileSource as {
+							publish_destination:
+								| "generic-export"
+								| "tiktok"
+								| "instagram"
+								| "youtube";
+					  }).publish_destination
+					: null,
+			target_version_id:
+				(publishProfileSource as { target_version_id?: unknown })?.target_version_id ===
+					"9:16" ||
+				(publishProfileSource as { target_version_id?: unknown })?.target_version_id ===
+					"1:1" ||
+				(publishProfileSource as { target_version_id?: unknown })?.target_version_id ===
+					"16:9"
+					? (publishProfileSource as {
+							target_version_id: "9:16" | "1:1" | "16:9";
+					  }).target_version_id
+					: null,
+			packaging_hint:
+				typeof (publishProfileSource as { packaging_hint?: unknown })?.packaging_hint ===
+				"string"
+					? (publishProfileSource as { packaging_hint: string }).packaging_hint
+					: "Reference packaging remains adaptable.",
+			hook_pattern:
+				typeof (publishProfileSource as { hook_pattern?: unknown })?.hook_pattern ===
+				"string"
+					? (publishProfileSource as { hook_pattern: string }).hook_pattern
+					: "front-loaded hook",
+		},
+		warnings: Array.isArray((value as { warnings?: unknown }).warnings)
+			? ((value as { warnings?: unknown }).warnings as unknown[]).filter(
+					(warning): warning is string => typeof warning === "string",
+			  )
 			: [],
 	};
 }
@@ -499,6 +772,18 @@ export function normalizeClipForgeProjectData({
 		trendSoundReferences: normalizeTrendSoundReferences({
 			references: source.trendSoundReferences,
 		}),
+		activeReferenceVideoAssetId:
+			typeof source.activeReferenceVideoAssetId === "string"
+				? source.activeReferenceVideoAssetId
+				: null,
+		referenceAnalysisByAssetId: Object.fromEntries(
+			Object.entries(source.referenceAnalysisByAssetId ?? {}).flatMap(
+				([assetId, analysis]) => {
+					const normalized = normalizeReferenceVideoAnalysis(analysis);
+					return normalized ? [[assetId, normalized]] : [];
+				},
+			),
+		),
 		chatMemory: normalizeChatMemory({
 			memory: source.chatMemory,
 		}),

@@ -190,6 +190,13 @@ function buildSummary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
 			status: "ready",
 			reason: "No blockers.",
 		},
+		active_reference_video: null,
+		reference_analysis_snapshot: null,
+		reference_match_readiness: {
+			ready: false,
+			status: "attention",
+			reason: "Reference analysis has not been generated yet.",
+		},
 		recent_ai_actions: [],
 		recent_turn_summaries: [],
 		timeline_words: [
@@ -690,6 +697,27 @@ describe("HeuristicChatOpsProvider", () => {
 		]);
 	});
 
+	test("falls back to top-level segments when current scene video summaries are empty", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await provider.proposeEdits({
+			userText: "Speed up the opener 15%",
+			projectSummary: buildSummary({
+				current_scene_segments: [],
+			}),
+			context: buildContext(),
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "set-clip-speed",
+				target_segment_ids: ["seg-1"],
+				playback_rate: 1.15,
+				ripple: true,
+				scope: "selection",
+			},
+		]);
+	});
+
 	test("emits a transition command for next-shot follow-ups using recent memory", async () => {
 		const provider = new HeuristicChatOpsProvider();
 		const result = await provider.proposeEdits({
@@ -1092,5 +1120,100 @@ describe("HeuristicChatOpsProvider", () => {
 		expect(result.commands).toEqual([]);
 		expect(result.clarification?.kind).toBe("version-target");
 		expect(result.clarification?.referenceLabel).toBe("version-target:auto-reframe");
+	});
+
+	test("emits a reference-guided finish pass command", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await proposeWithSummary({
+			provider,
+			userText: "finish this like the reference",
+			projectSummary: buildSummary({
+				active_reference_video: {
+					asset_id: "beach-1",
+					name: "beach.mp4",
+					status: "ready",
+					analyzed_at: "2026-03-12T00:00:00.000Z",
+					intent_summary: "fast pacing · bold captions · energetic music feel",
+					warnings: [],
+				},
+				reference_analysis_snapshot: {
+					transition_cadence: "fast",
+					average_shot_ms: 1200,
+					caption_tone: "bold",
+					caption_reveal_preset_id: "pop-line",
+					audio_mood: "energetic",
+					recommended_music_asset_id: "energetic-bounce",
+					recommended_sfx_asset_id: "subtle-hit",
+					overlay_variant_id: "bold-social",
+					polish_profile_id: "bold-social",
+					finishing_look_id: "dramatic",
+					publish_destination: "tiktok",
+					target_version_id: "9:16",
+					hook_pattern: "front-loaded hook",
+				},
+				reference_match_readiness: {
+					ready: true,
+					status: "ready",
+					reason: "Reference is ready.",
+				},
+			}),
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "apply-reference-finish-pass",
+				reference_asset_id: "beach-1",
+				scope: "scene",
+			},
+		]);
+	});
+
+	test("emits a caption-only reference command for follow-up prompts", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await proposeWithSummary({
+			provider,
+			userText: "only match the captions",
+			projectSummary: buildSummary({
+				active_reference_video: {
+					asset_id: "beach-1",
+					name: "beach.mp4",
+					status: "ready",
+					analyzed_at: "2026-03-12T00:00:00.000Z",
+					intent_summary: "fast pacing · bold captions · energetic music feel",
+					warnings: [],
+				},
+				reference_match_readiness: {
+					ready: true,
+					status: "ready",
+					reason: "Reference is ready.",
+				},
+			}),
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "match-reference-captions",
+				reference_asset_id: "beach-1",
+				scope: "scene",
+			},
+		]);
+	});
+
+	test("asks for a reference asset when none is active", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await proposeWithSummary({
+			provider,
+			userText: "finish this like the reference",
+			projectSummary: buildSummary({
+				media_assets: [
+					{ asset_id: "beach-1", name: "beach.mp4", type: "video" },
+					{ asset_id: "city-clip", name: "city.mp4", type: "video" },
+				],
+			}),
+		});
+
+		expect(result.commands).toEqual([]);
+		expect(result.clarification?.kind).toBe("asset");
+		expect(result.clarification?.referenceLabel).toBe("asset:reference-video");
 	});
 });

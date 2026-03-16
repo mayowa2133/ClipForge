@@ -639,6 +639,21 @@ export function ChatContent() {
 	const playheadMs = Math.round(editor.playback.getCurrentTime() * 1000);
 	const selectedCount = editor.selection.getSelectedElements().length;
 	const activeProject = editor.project.getActiveOrNull();
+	const referenceSummary = useMemo(() => {
+		if (!activeProject) {
+			return null;
+		}
+		return buildProjectSummary({
+			project: activeProject,
+			mediaAssets: editor.media.getAssets(),
+			playheadMs,
+			selectedSegmentIds: editor.selection
+				.getSelectedElements()
+				.map((selection) => selection.elementId),
+			projectKitTemplates: editor.project.getProjectKitTemplates(),
+			sceneRecipeTemplates: editor.project.getSceneRecipeTemplates(),
+		});
+	}, [activeProject, editor, playheadMs, selectedCount]);
 	const captionStyleOptions = activeProject?.clipforge
 		? Object.values(activeProject.clipforge.captionStylesById)
 		: [];
@@ -675,6 +690,22 @@ export function ChatContent() {
 					<div className="rounded-md border border-red-300 bg-red-50 p-3">
 						<p className="mb-1 text-sm font-medium">Planner error</p>
 						<p className="text-xs">{lastPlanError}</p>
+					</div>
+				)}
+				{referenceSummary?.active_reference_video && (
+					<div className="rounded-md border p-3">
+						<div className="flex items-center justify-between gap-3">
+							<p className="text-sm font-medium">Reference video</p>
+							<span className="text-muted-foreground text-[10px] uppercase tracking-wide">
+								{referenceSummary.active_reference_video.status}
+							</span>
+						</div>
+						<p className="mt-1 text-sm">
+							{referenceSummary.active_reference_video.name}
+						</p>
+						<p className="text-muted-foreground mt-1 text-xs">
+							{referenceSummary.reference_match_readiness.reason}
+						</p>
 					</div>
 				)}
 				<textarea

@@ -17,6 +17,7 @@ import {
 	collectMissingMediaReferences,
 	collectUnverifiedMediaReferences,
 	clearSceneCaptionsFromProject,
+	buildProjectSummary,
 	createCaptionTextElements,
 	createClipForgeDemoProject,
 	type ClipForgeExportArtifact,
@@ -30,6 +31,10 @@ import {
 	splitCaptionElement,
 	type IncompatibleMediaReference,
 	type MissingMediaReference,
+	buildReferenceVideoAnalysis,
+	chooseReferenceMusicVolume,
+	getReferenceVideoAnalysisStatus,
+	inferReferenceCaptionRevealPreset,
 	resolveClipForgeTranscriber,
 	resolveMediaAssetByName,
 	resolvePolishProfileFromBrief,
@@ -75,6 +80,7 @@ import type {
 	DraftRecipe,
 	FootageIntelligenceReport,
 	PolishProfile,
+	ReferenceVideoAnalysis,
 	RetentionShapePlan,
 	TrendSoundReference,
 	TimelineDiffOp,
@@ -875,6 +881,228 @@ export class ClipForgeManager {
 					trendSoundReferences: nextProject.clipforge.trendSoundReferences.filter(
 						(reference) => reference.id !== referenceId,
 					),
+				},
+			},
+		});
+		this.editor.save.markDirty();
+	}
+
+	getActiveReferenceVideoAssetId(): string | null {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) return null;
+		return ensureClipForgeProjectData({ project: activeProject }).clipforge
+			.activeReferenceVideoAssetId;
+	}
+
+	getActiveReferenceAnalysis(): ReferenceVideoAnalysis | null {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) return null;
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		const assetId = project.clipforge.activeReferenceVideoAssetId;
+		return assetId
+			? project.clipforge.referenceAnalysisByAssetId[assetId] ?? null
+			: null;
+	}
+
+	async setActiveReferenceVideo({
+		assetId,
+	}: {
+		assetId: string;
+	}): Promise<ReferenceVideoAnalysis> {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const asset = this.editor.media.getAssets().find((candidate) => candidate.id === assetId);
+		if (!asset || asset.type !== "video") {
+			throw new Error("Reference video must be an imported video asset.");
+		}
+
+		const analysis = await this.analyzeReferenceVideo({ assetId });
+		const nextProject = ensureClipForgeProjectData({
+			project: this.editor.project.getActive(),
+		});
+		this.editor.project.setActiveProject({
+			project: {
+				...nextProject,
+				metadata: {
+					...nextProject.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...nextProject.clipforge,
+					activeReferenceVideoAssetId: assetId,
+					chatMemory: {
+						...nextProject.clipforge.chatMemory,
+						referenceIntent: {
+							referenceAssetId: assetId,
+							referenceMode: "exact-recreation",
+						},
+					},
+				},
+			},
+		});
+		this.editor.save.markDirty();
+		return analysis;
+	}
+
+	clearActiveReferenceVideo(): void {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			return;
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		this.editor.project.setActiveProject({
+			project: {
+				...project,
+				metadata: {
+					...project.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...project.clipforge,
+					activeReferenceVideoAssetId: null,
+					chatMemory: {
+						...project.clipforge.chatMemory,
+						referenceIntent: null,
+					},
+				},
+			},
+		});
+		this.editor.save.markDirty();
+	}
+
+	async analyzeReferenceVideo({
+		assetId,
+	}: {
+		assetId?: string | null;
+	} = {}): Promise<ReferenceVideoAnalysis> {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		const resolvedAssetId = assetId ?? project.clipforge.activeReferenceVideoAssetId;
+		if (!resolvedAssetId) {
+			throw new Error("Choose a reference video first.");
+		}
+
+		let asset =
+			this.editor.media.getAssets().find((candidate) => candidate.id === resolvedAssetId) ??
+			null;
+		if (!asset || asset.type !== "video") {
+			const missingAnalysis: ReferenceVideoAnalysis = {
+				analyzedAt: new Date().toISOString(),
+				status: "missing",
+				sectionPlan: [],
+				shotPattern: {
+					average_shot_ms: null,
+					transition_cadence: "medium",
+					scene_cut_count: 0,
+					activity_intensity: "medium",
+				},
+				captionProfile: {
+					presence: "none",
+					reveal_preset_id: null,
+					tone: null,
+					average_words_per_segment: null,
+				},
+				audioProfile: {
+					music_mood: null,
+					recommended_music_asset_id: null,
+					recommended_sfx_asset_id: null,
+					bpm: null,
+					energy: "medium",
+				},
+				overlayProfile: {
+					density: "none",
+					variant_id: null,
+					motion_preset_id: null,
+				},
+				finishingProfile: {
+					polish_profile_id: null,
+					finishing_look_id: null,
+				},
+				publishProfile: {
+					publish_destination: null,
+					target_version_id: null,
+					packaging_hint: "Reference asset is unavailable.",
+					hook_pattern: "unknown",
+				},
+				warnings: ["Reference asset is missing from the current project."],
+			};
+			this.persistReferenceAnalysis({
+				project,
+				assetId: resolvedAssetId,
+				analysis: missingAnalysis,
+				makeActive: assetId !== undefined,
+			});
+			return missingAnalysis;
+		}
+
+		if (!asset.visualAnalysis) {
+			try {
+				asset = (await this.editor.media.analyzeVisualActivity({
+					mediaId: resolvedAssetId,
+				})) ?? asset;
+			} catch {
+				// Gracefully degrade when visual analysis is unavailable.
+			}
+		}
+		if (!asset.beatAnalysis) {
+			try {
+				asset = (await this.editor.media.analyzeBeatGrid({
+					mediaId: resolvedAssetId,
+				})) ?? asset;
+			} catch {
+				// Gracefully degrade when beat analysis is unavailable.
+			}
+		}
+
+		const refreshedProject = ensureClipForgeProjectData({
+			project: this.editor.project.getActive(),
+		});
+		const metadata = refreshedProject.clipforge.mediaMetadataById[resolvedAssetId] ?? null;
+		const analysis = buildReferenceVideoAnalysis({
+			asset,
+			metadata,
+		});
+		this.persistReferenceAnalysis({
+			project: refreshedProject,
+			assetId: resolvedAssetId,
+			analysis,
+			makeActive: assetId !== undefined,
+		});
+		return analysis;
+	}
+
+	private persistReferenceAnalysis({
+		project,
+		assetId,
+		analysis,
+		makeActive,
+	}: {
+		project: TProject & { clipforge: import("@/types/clipforge").ClipForgeProjectData };
+		assetId: string;
+		analysis: ReferenceVideoAnalysis;
+		makeActive: boolean;
+	}): void {
+		this.editor.project.setActiveProject({
+			project: {
+				...project,
+				metadata: {
+					...project.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...project.clipforge,
+					activeReferenceVideoAssetId: makeActive
+						? assetId
+						: project.clipforge.activeReferenceVideoAssetId,
+					referenceAnalysisByAssetId: {
+						...project.clipforge.referenceAnalysisByAssetId,
+						[assetId]: analysis,
+					},
 				},
 			},
 		});
@@ -2367,6 +2595,275 @@ export class ClipForgeManager {
 		});
 	}
 
+	private resolveReferenceAssetAndAnalysis({
+		referenceAssetId,
+	}: {
+		referenceAssetId?: string | null;
+	}): {
+		assetId: string;
+		asset: MediaAsset | null;
+		analysis: ReferenceVideoAnalysis | null;
+		status: ReturnType<typeof getReferenceVideoAnalysisStatus>;
+	} | null {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			return null;
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		const assetId = referenceAssetId ?? project.clipforge.activeReferenceVideoAssetId;
+		if (!assetId) {
+			return null;
+		}
+		const asset =
+			this.editor.media.getAssets().find((candidate) => candidate.id === assetId) ?? null;
+		const analysis = project.clipforge.referenceAnalysisByAssetId[assetId] ?? null;
+		const metadata = project.clipforge.mediaMetadataById[assetId] ?? null;
+		return {
+			assetId,
+			asset,
+			analysis,
+			status: getReferenceVideoAnalysisStatus({
+				analysis,
+				asset,
+				metadata,
+			}),
+		};
+	}
+
+	private buildReferenceDerivedCommands({
+		command,
+	}: {
+		command: Extract<
+			Exclude<ClipForgeEditorCommand, { kind: "timeline-op" }>,
+			| { kind: "apply-reference-finish-pass" }
+			| { kind: "match-reference-captions" }
+			| { kind: "match-reference-audio-profile" }
+			| { kind: "match-reference-packaging" }
+			| { kind: "match-reference-pacing" }
+		>;
+	}): Exclude<ClipForgeEditorCommand, { kind: "timeline-op" }>[] {
+		const resolved = this.resolveReferenceAssetAndAnalysis({
+			referenceAssetId: command.reference_asset_id,
+		});
+		if (!resolved?.analysis) {
+			return [];
+		}
+
+		const analysis = resolved.analysis;
+		const projectSummary = buildProjectSummary({
+			project: this.editor.project.getActive(),
+			mediaAssets: this.editor.media.getAssets(),
+			playheadMs: Math.round(this.editor.playback.getCurrentTime() * 1000),
+			selectedSegmentIds: this.editor.selection
+				.getSelectedElements()
+				.map((selection) => selection.elementId),
+			projectKitTemplates: this.editor.project.getProjectKitTemplates(),
+			sceneRecipeTemplates: this.editor.project.getSceneRecipeTemplates(),
+		});
+		const scope = command.scope ?? "scene";
+		const finishCommands: Exclude<ClipForgeEditorCommand, { kind: "timeline-op" }>[] = [];
+
+		if (
+			command.kind === "apply-reference-finish-pass" ||
+			command.kind === "match-reference-packaging"
+		) {
+			if (analysis.publishProfile.publish_destination) {
+				finishCommands.push({
+					kind: "set-publish-destination",
+					publish_destination: analysis.publishProfile.publish_destination,
+					scope: "project",
+				});
+			}
+			if (analysis.publishProfile.target_version_id && projectSummary.version_pack) {
+				finishCommands.push({
+					kind: "set-version-pack",
+					target_ids: [analysis.publishProfile.target_version_id],
+					active_target_id: analysis.publishProfile.target_version_id,
+					scope: "project",
+				});
+				if (this.resolveAutoReframeTargets().length > 0) {
+					finishCommands.push({
+						kind: "auto-reframe-selection",
+						target_version_id: analysis.publishProfile.target_version_id,
+						scope: scope === "selection" ? "selection" : "scene",
+					});
+				}
+			}
+			const preflightActions = projectSummary.export_preflight_snapshot?.actionable_actions ?? [];
+			if (preflightActions.length > 0) {
+				finishCommands.push({
+					kind: "run-export-preflight-fixes",
+					format: "mp4",
+					quality: "high",
+					include_audio: true,
+					target_version_id: analysis.publishProfile.target_version_id ?? null,
+					publish_destination: analysis.publishProfile.publish_destination,
+					actions: preflightActions as import("@/types/export").ExportPreflightAction[],
+					scope: "project",
+				});
+			}
+		}
+
+		if (
+			command.kind === "apply-reference-finish-pass" ||
+			command.kind === "match-reference-captions"
+		) {
+			const captionRevealPresetId =
+				analysis.captionProfile.reveal_preset_id ??
+				inferReferenceCaptionRevealPreset({
+					tone: analysis.captionProfile.tone,
+				});
+			if (captionRevealPresetId) {
+				finishCommands.push({
+					kind: "apply-caption-reveal",
+					preset_id: captionRevealPresetId,
+					scope,
+				});
+			}
+		}
+
+		if (
+			command.kind === "apply-reference-finish-pass" ||
+			command.kind === "match-reference-audio-profile"
+		) {
+			if (analysis.audioProfile.recommended_music_asset_id) {
+				finishCommands.push({
+					kind: projectSummary.recent_ai_actions.some(
+						(action) =>
+							action.kind === "apply-music-track" ||
+							action.kind === "replace-music-track",
+					)
+						? "replace-music-track"
+						: "apply-music-track",
+					music_asset_id: analysis.audioProfile.recommended_music_asset_id,
+					start_ms: 0,
+					loop_to_project_end: true,
+					volume: chooseReferenceMusicVolume({
+						energy: analysis.audioProfile.energy,
+					}),
+					scope: "project",
+				});
+			}
+			if (analysis.audioProfile.recommended_sfx_asset_id) {
+				finishCommands.push({
+					kind: "insert-sfx-preset",
+					sfx_asset_id: analysis.audioProfile.recommended_sfx_asset_id,
+					start_ms: Math.max(
+						0,
+						projectSummary.playhead_neighborhood.nearby_segments[0]?.start_ms ?? 0,
+					),
+					scope,
+				});
+			}
+			finishCommands.push({
+				kind: "set-audio-mix",
+				settings: {
+					duckingEnabled: true,
+					duckingAmount:
+						analysis.audioProfile.energy === "high"
+							? 0.72
+							: analysis.audioProfile.energy === "medium"
+								? 0.58
+								: 0.46,
+					audioPolishPresetId:
+						analysis.audioProfile.energy === "high"
+							? "music-forward"
+							: "voice-forward",
+				},
+				scope: "project",
+			});
+		}
+
+		if (
+			command.kind === "apply-reference-finish-pass" ||
+			command.kind === "match-reference-pacing"
+		) {
+			const videoTargets = resolveReferencePacingTargets({
+				projectSummary,
+				scope,
+			});
+			if (videoTargets.length > 0) {
+				finishCommands.push({
+					kind: "set-clip-speed",
+					target_segment_ids: videoTargets,
+					playback_rate:
+						analysis.shotPattern.transition_cadence === "fast"
+							? 1.12
+							: analysis.shotPattern.transition_cadence === "slow"
+								? 0.94
+								: 1.03,
+					ripple: true,
+					scope,
+				});
+			}
+			const transitionTargets = resolveReferenceTransitionTargets({
+				projectSummary,
+				scope,
+			});
+			if (transitionTargets.length > 0) {
+				finishCommands.push({
+					kind: "set-transition-in",
+					target_segment_ids: transitionTargets,
+					preset:
+						analysis.shotPattern.transition_cadence === "slow"
+							? "cross-dissolve"
+							: "cross-dissolve",
+					duration_ms:
+						analysis.shotPattern.transition_cadence === "fast"
+							? 180
+							: analysis.shotPattern.transition_cadence === "slow"
+								? 380
+								: 260,
+					scope,
+				});
+			}
+		}
+
+		if (command.kind === "apply-reference-finish-pass") {
+			if (analysis.finishingProfile.polish_profile_id) {
+				finishCommands.push({
+					kind: "apply-polish-profile",
+					profile_id: analysis.finishingProfile.polish_profile_id,
+					scope,
+				});
+			}
+			const overlayTargets = resolveReferenceOverlayTargets({
+				projectSummary,
+				scope,
+			});
+			if (overlayTargets.length > 0 && analysis.overlayProfile.variant_id) {
+				finishCommands.push({
+					kind: "apply-overlay-style",
+					target_element_ids: overlayTargets,
+					variant_id: analysis.overlayProfile.variant_id,
+					scope,
+				});
+			}
+			if (overlayTargets.length > 0 && analysis.overlayProfile.motion_preset_id) {
+				finishCommands.push({
+					kind: "apply-motion-preset",
+					target_element_ids: overlayTargets,
+					motion_preset_id: analysis.overlayProfile.motion_preset_id,
+					scope,
+				});
+			}
+			const finishingTargets = resolveReferenceFinishingTargets({
+				projectSummary,
+				scope,
+			});
+			if (finishingTargets.length > 0 && analysis.finishingProfile.finishing_look_id) {
+				finishCommands.push({
+					kind: "apply-finishing-look",
+					target_segment_ids: finishingTargets,
+					preset_id: analysis.finishingProfile.finishing_look_id,
+					scope,
+				});
+			}
+		}
+
+		return dedupeReferenceDerivedCommands({ commands: finishCommands });
+	}
+
 	private validateDirectCommand({
 		command,
 		commandIndex,
@@ -2760,8 +3257,67 @@ export class ClipForgeManager {
 								commandIndex,
 								code: "no_preflight_actions",
 								message: "No safe export preflight fixes are currently available.",
+						}),
+					  ];
+			}
+			case "set-active-reference-video": {
+				const asset = this.editor.media.getAssets().find((candidate) => candidate.id === command.asset_id);
+				return asset?.type === "video"
+					? []
+					: [
+							buildCommandValidationError({
+								commandIndex,
+								code: "reference_video_invalid",
+								message: "Reference video must point to an imported video asset.",
 							}),
 					  ];
+			}
+			case "clear-active-reference-video":
+				return [];
+			case "apply-reference-finish-pass":
+			case "match-reference-captions":
+			case "match-reference-audio-profile":
+			case "match-reference-packaging":
+			case "match-reference-pacing": {
+				const resolved = this.resolveReferenceAssetAndAnalysis({
+					referenceAssetId: command.reference_asset_id,
+				});
+				if (!resolved) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "reference_video_required",
+							message: "Choose a reference video before matching it.",
+						}),
+					];
+				}
+				if (resolved.status === "missing") {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "reference_video_missing",
+							message: "The selected reference video is missing from the project.",
+						}),
+					];
+				}
+				const derivedCommands = this.buildReferenceDerivedCommands({
+					command,
+				});
+				if (derivedCommands.length === 0) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "reference_match_empty",
+							message: "The reference did not produce any safe deterministic commands.",
+						}),
+					];
+				}
+				return derivedCommands.flatMap((derivedCommand, derivedIndex) =>
+					this.validateDirectCommand({
+						command: derivedCommand,
+						commandIndex: commandIndex + derivedIndex,
+					}),
+				);
 			}
 		}
 	}
@@ -3003,6 +3559,29 @@ export class ClipForgeManager {
 						: this.extractPreflightActions({ preflight });
 				if (actions.length > 0) {
 					this.applyExportPreflightFixes({ actions });
+				}
+				break;
+			}
+			case "set-active-reference-video":
+				await this.setActiveReferenceVideo({
+					assetId: command.asset_id,
+				});
+				break;
+			case "clear-active-reference-video":
+				this.clearActiveReferenceVideo();
+				break;
+			case "apply-reference-finish-pass":
+			case "match-reference-captions":
+			case "match-reference-audio-profile":
+			case "match-reference-packaging":
+			case "match-reference-pacing": {
+				const derivedCommands = this.buildReferenceDerivedCommands({
+					command,
+				});
+				for (const derivedCommand of derivedCommands) {
+					await this.executeDirectCommand({
+						command: derivedCommand,
+					});
 				}
 				break;
 			}
@@ -3455,11 +4034,25 @@ export class ClipForgeManager {
 						null,
 			  }
 			: existingMemory.destinationIntent;
+		const referenceIntent = shouldRefreshReferenceIntent({ commands })
+			? {
+					referenceAssetId:
+						findLatestReferenceAssetId({ commands }) ??
+						existingMemory.referenceIntent?.referenceAssetId ??
+						project.clipforge.activeReferenceVideoAssetId ??
+						null,
+					referenceMode: "exact-recreation" as const,
+			  }
+			: existingMemory.referenceIntent;
 		const recentAssetChoices = [
 			...existingMemory.recentAssetChoices,
 			...commands
 				.map((command) => buildRecentAssetChoice({ command }))
 				.filter((choice): choice is ClipForgeRecentAssetChoice => choice !== null),
+		].slice(-12);
+		const recentReferenceComparisons = [
+			...existingMemory.recentReferenceComparisons,
+			...commands.flatMap((command) => buildRecentReferenceComparison({ command })),
 		].slice(-12);
 
 		const nextMemory: ClipForgeChatMemory = {
@@ -3471,12 +4064,14 @@ export class ClipForgeManager {
 			publishIntent,
 			finishIntent,
 			destinationIntent,
+			referenceIntent,
 			recentTurnSummaries: nextTurnSummaries.slice(-12),
 			recentAppliedCommandSummaries: [
 				...existingMemory.recentAppliedCommandSummaries,
 				...nextAppliedSummaries,
 			].slice(-20),
 			recentAssetChoices,
+			recentReferenceComparisons,
 		};
 
 		this.editor.project.setActiveProject({
@@ -3676,6 +4271,92 @@ function validateTargetSegments({
 	return errors;
 }
 
+function resolveReferencePacingTargets({
+	projectSummary,
+	scope,
+}: {
+	projectSummary: ProjectSummary;
+	scope: import("@/types/clipforge").ClipForgeCommandScope;
+}): string[] {
+	if (scope === "selection" && projectSummary.selection.selected_segments.length > 0) {
+		return projectSummary.selection.selected_segments
+			.filter((segment) => segment.segment_kind === "video")
+			.map((segment) => segment.segment_id);
+	}
+	return projectSummary.current_scene_segments
+		.filter((segment) => segment.segment_kind === "video")
+		.slice(0, 3)
+		.map((segment) => segment.segment_id);
+}
+
+function resolveReferenceTransitionTargets({
+	projectSummary,
+	scope,
+}: {
+	projectSummary: ProjectSummary;
+	scope: import("@/types/clipforge").ClipForgeCommandScope;
+}): string[] {
+	const sourceSegments =
+		scope === "selection" && projectSummary.selection.selected_segments.length > 0
+			? projectSummary.selection.selected_segments
+			: projectSummary.current_scene_segments;
+	return sourceSegments
+		.filter((segment) => segment.segment_kind === "video")
+		.slice(1, 4)
+		.map((segment) => segment.segment_id);
+}
+
+function resolveReferenceOverlayTargets({
+	projectSummary,
+	scope,
+}: {
+	projectSummary: ProjectSummary;
+	scope: import("@/types/clipforge").ClipForgeCommandScope;
+}): string[] {
+	const sourceSegments =
+		scope === "selection" && projectSummary.selection.selected_segments.length > 0
+			? projectSummary.selection.selected_segments
+			: projectSummary.current_scene_segments;
+	return sourceSegments
+		.filter((segment) => segment.segment_kind === "text-overlay")
+		.map((segment) => segment.segment_id);
+}
+
+function resolveReferenceFinishingTargets({
+	projectSummary,
+	scope,
+}: {
+	projectSummary: ProjectSummary;
+	scope: import("@/types/clipforge").ClipForgeCommandScope;
+}): string[] {
+	if (scope === "selection" && projectSummary.selection.selected_segments.length > 0) {
+		return projectSummary.selection.selected_segments
+			.filter((segment) => segment.segment_kind === "video")
+			.map((segment) => segment.segment_id);
+	}
+	return projectSummary.current_scene_segments
+		.filter((segment) => segment.segment_kind === "video")
+		.map((segment) => segment.segment_id);
+}
+
+function dedupeReferenceDerivedCommands({
+	commands,
+}: {
+	commands: Exclude<ClipForgeEditorCommand, { kind: "timeline-op" }>[];
+}): Exclude<ClipForgeEditorCommand, { kind: "timeline-op" }>[] {
+	const seen = new Set<string>();
+	const result: Exclude<ClipForgeEditorCommand, { kind: "timeline-op" }>[] = [];
+	for (const command of commands) {
+		const key = JSON.stringify(command);
+		if (seen.has(key)) {
+			continue;
+		}
+		seen.add(key);
+		result.push(command);
+	}
+	return result;
+}
+
 function buildAppliedCommandSummary({
 	command,
 	sceneId,
@@ -3782,6 +4463,20 @@ function summarizeSingleCommand(command: ClipForgeEditorCommand): string {
 			return `Set the publish destination to ${command.publish_destination}.`;
 		case "run-export-preflight-fixes":
 			return "Applied safe export preflight fixes.";
+		case "set-active-reference-video":
+			return `Set ${command.asset_id} as the active reference video.`;
+		case "clear-active-reference-video":
+			return "Cleared the active reference video.";
+		case "apply-reference-finish-pass":
+			return "Applied a reference-guided finish pass.";
+		case "match-reference-captions":
+			return "Matched caption styling to the active reference.";
+		case "match-reference-audio-profile":
+			return "Matched audio feel to the active reference.";
+		case "match-reference-packaging":
+			return "Matched packaging to the active reference.";
+		case "match-reference-pacing":
+			return "Matched pacing to the active reference.";
 	}
 }
 
@@ -3814,7 +4509,9 @@ function shouldRefreshStyleIntent({
 			command.kind === "set-audio-mix" ||
 			command.kind === "apply-polish-profile" ||
 			command.kind === "apply-caption-reveal" ||
-			command.kind === "apply-project-kit"
+			command.kind === "apply-project-kit" ||
+			command.kind === "apply-reference-finish-pass" ||
+			command.kind === "match-reference-captions"
 		);
 	});
 }
@@ -3904,7 +4601,10 @@ function shouldRefreshPublishIntent({
 		(command) =>
 			command.kind === "set-version-pack" ||
 			command.kind === "auto-reframe-selection" ||
-			command.kind === "apply-project-kit",
+			command.kind === "apply-project-kit" ||
+			command.kind === "apply-reference-finish-pass" ||
+			command.kind === "match-reference-packaging" ||
+			command.kind === "match-reference-pacing",
 	);
 }
 
@@ -3919,7 +4619,10 @@ function shouldRefreshFinishIntent({
 			command.kind === "apply-caption-reveal" ||
 			command.kind === "apply-music-track" ||
 			command.kind === "replace-music-track" ||
-			command.kind === "insert-sfx-preset",
+			command.kind === "insert-sfx-preset" ||
+			command.kind === "apply-reference-finish-pass" ||
+			command.kind === "match-reference-captions" ||
+			command.kind === "match-reference-audio-profile",
 	);
 }
 
@@ -3928,7 +4631,51 @@ function shouldRefreshDestinationIntent({
 }: {
 	commands: ClipForgeEditorCommand[];
 }): boolean {
-	return commands.some((command) => command.kind === "set-publish-destination");
+	return commands.some(
+		(command) =>
+			command.kind === "set-publish-destination" ||
+			command.kind === "apply-reference-finish-pass" ||
+			command.kind === "match-reference-packaging",
+	);
+}
+
+function shouldRefreshReferenceIntent({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}): boolean {
+	return commands.some(
+		(command) =>
+			command.kind === "set-active-reference-video" ||
+			command.kind === "apply-reference-finish-pass" ||
+			command.kind === "match-reference-captions" ||
+			command.kind === "match-reference-audio-profile" ||
+			command.kind === "match-reference-packaging" ||
+			command.kind === "match-reference-pacing",
+	);
+}
+
+function findLatestReferenceAssetId({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}): string | null {
+	for (let index = commands.length - 1; index >= 0; index -= 1) {
+		const command = commands[index];
+		if (command?.kind === "set-active-reference-video") {
+			return command.asset_id;
+		}
+		if (
+			command?.kind === "apply-reference-finish-pass" ||
+			command?.kind === "match-reference-captions" ||
+			command?.kind === "match-reference-audio-profile" ||
+			command?.kind === "match-reference-packaging" ||
+			command?.kind === "match-reference-pacing"
+		) {
+			return command.reference_asset_id ?? null;
+		}
+	}
+	return null;
 }
 
 function buildRecentAssetChoice({
@@ -3972,5 +4719,26 @@ function buildRecentAssetChoice({
 			};
 		default:
 			return null;
+	}
+}
+
+function buildRecentReferenceComparison({
+	command,
+}: {
+	command: ClipForgeEditorCommand;
+}): string[] {
+	switch (command.kind) {
+		case "apply-reference-finish-pass":
+			return ["finish pass closer to active reference"];
+		case "match-reference-captions":
+			return ["matched captions to active reference"];
+		case "match-reference-audio-profile":
+			return ["matched audio feel to active reference"];
+		case "match-reference-packaging":
+			return ["matched packaging to active reference"];
+		case "match-reference-pacing":
+			return ["matched pacing to active reference"];
+		default:
+			return [];
 	}
 }

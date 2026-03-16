@@ -6,6 +6,7 @@ import { resolveMediaAssetByName } from "@/lib/clipforge/media-resolver";
 import {
 	createEmptyResolutionState,
 	findImplicitCandidates,
+	resolveImplicitReference,
 	updateResolutionStateFromSegment,
 	type ChatResolutionState,
 } from "@/lib/clipforge/chat/context-resolution";
@@ -618,6 +619,12 @@ function planDirectCommandClause({
 }): DirectPlanResult {
 	const planners = [
 		planRepeatCommandClause,
+		planReferenceSelectionClause,
+		planReferenceFinishPassClause,
+		planReferenceCaptionClause,
+		planReferenceAudioClause,
+		planReferencePackagingClause,
+		planReferencePacingClause,
 		planFinishPassClause,
 		planPublishDestinationClause,
 		planMusicTrackClause,
@@ -725,6 +732,205 @@ function planRepeatCommandClause(args: DirectPlannerArgs): DirectPlanResult {
 	}
 
 	return emptyDirectPlan({ state: args.state });
+}
+
+function planReferenceSelectionClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (!/\b(reference|example)\b/.test(normalized) || !/\buse\b|\bset\b|\bmake\b/.test(normalized)) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const explicitAsset = args.projectSummary.media_assets.find(
+		(asset) =>
+			asset.type === "video" &&
+			normalized.includes(asset.name.toLowerCase()) &&
+			!args.projectSummary.current_scene_segments.some(
+				(segment) => segment.asset_id === asset.asset_id,
+			),
+	);
+	if (explicitAsset) {
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			commands: [
+				{
+					kind: "set-active-reference-video",
+					asset_id: explicitAsset.asset_id,
+					scope: "project",
+				},
+			],
+		};
+	}
+
+	return emptyDirectPlan({ state: args.state });
+}
+
+function planReferenceFinishPassClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (
+		!/\b(reference|example)\b/.test(normalized) ||
+		!/\bfinish\b|\bpolish\b|\bready to post\b|\bcloser\b|\blike the reference\b/.test(normalized)
+	) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const referenceTarget = resolveReferenceAssetCommand({
+		projectSummary: args.projectSummary,
+		referenceLabel: "asset:reference-video",
+		overrides: args.overrides,
+	});
+	if (referenceTarget.clarification) {
+		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+	}
+	if (!referenceTarget.assetId) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		...emptyDirectPlan({ state: args.state }),
+		commands: [
+			{
+				kind: "apply-reference-finish-pass",
+				reference_asset_id: referenceTarget.assetId,
+				scope: inferReferenceScope({ text: normalized }),
+			},
+		],
+	};
+}
+
+function planReferenceCaptionClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (
+		(!/\b(reference|example)\b/.test(normalized) &&
+			!(args.projectSummary.active_reference_video && /\b(match|only)\b/.test(normalized))) ||
+		!/\bcaption/.test(normalized)
+	) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const referenceTarget = resolveReferenceAssetCommand({
+		projectSummary: args.projectSummary,
+		referenceLabel: "asset:reference-video",
+		overrides: args.overrides,
+	});
+	if (referenceTarget.clarification) {
+		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+	}
+	if (!referenceTarget.assetId) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		...emptyDirectPlan({ state: args.state }),
+		commands: [
+			{
+				kind: "match-reference-captions",
+				reference_asset_id: referenceTarget.assetId,
+				scope: inferReferenceScope({ text: normalized }),
+			},
+		],
+	};
+}
+
+function planReferenceAudioClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (
+		(!/\b(reference|example)\b/.test(normalized) &&
+			!(args.projectSummary.active_reference_video && /\bmatch\b/.test(normalized))) ||
+		!/\baudio\b|\bmusic\b|\btrack\b|\bsound\b/.test(normalized)
+	) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const referenceTarget = resolveReferenceAssetCommand({
+		projectSummary: args.projectSummary,
+		referenceLabel: "asset:reference-video",
+		overrides: args.overrides,
+	});
+	if (referenceTarget.clarification) {
+		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+	}
+	if (!referenceTarget.assetId) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		...emptyDirectPlan({ state: args.state }),
+		commands: [
+			{
+				kind: "match-reference-audio-profile",
+				reference_asset_id: referenceTarget.assetId,
+				scope: "project",
+			},
+		],
+	};
+}
+
+function planReferencePackagingClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (
+		(!/\b(reference|example)\b/.test(normalized) &&
+			!(args.projectSummary.active_reference_video && /\bmatch\b/.test(normalized))) ||
+		!/\bpackage\b|\bpackaging\b|\bdestination\b|\bformat\b/.test(normalized)
+	) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const referenceTarget = resolveReferenceAssetCommand({
+		projectSummary: args.projectSummary,
+		referenceLabel: "asset:reference-video",
+		overrides: args.overrides,
+	});
+	if (referenceTarget.clarification) {
+		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+	}
+	if (!referenceTarget.assetId) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		...emptyDirectPlan({ state: args.state }),
+		commands: [
+			{
+				kind: "match-reference-packaging",
+				reference_asset_id: referenceTarget.assetId,
+				scope: "project",
+			},
+		],
+	};
+}
+
+function planReferencePacingClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (
+		(!/\b(reference|example)\b/.test(normalized) &&
+			!(args.projectSummary.active_reference_video && /\bpace\b|\bpacing\b|\bcloser\b/.test(normalized))) ||
+		!/\bpacing\b|\bpace\b|\bcloser\b|\bmatch\b/.test(normalized)
+	) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const referenceTarget = resolveReferenceAssetCommand({
+		projectSummary: args.projectSummary,
+		referenceLabel: "asset:reference-video",
+		overrides: args.overrides,
+	});
+	if (referenceTarget.clarification) {
+		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+	}
+	if (!referenceTarget.assetId) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		...emptyDirectPlan({ state: args.state }),
+		commands: [
+			{
+				kind: "match-reference-pacing",
+				reference_asset_id: referenceTarget.assetId,
+				scope: inferReferenceScope({ text: normalized }),
+			},
+		],
+	};
 }
 
 function planFinishPassClause(args: DirectPlannerArgs): DirectPlanResult {
@@ -1009,7 +1215,7 @@ function planClipSpeedClause(args: DirectPlannerArgs): DirectPlanResult {
 		return emptyDirectPlan({ state: args.state });
 	}
 
-	const target = resolveVideoReferenceFromText({
+	const target = resolvePreferredVideoTarget({
 		rawReference: match[1],
 		projectSummary: args.projectSummary,
 		context: args.context,
@@ -1697,12 +1903,81 @@ function resolveVideoReferenceFromText({
 	});
 }
 
+function resolvePreferredVideoTarget({
+	rawReference,
+	projectSummary,
+	context,
+	overrides,
+	state,
+	deletedSegmentIds,
+}: {
+	rawReference: string;
+	projectSummary: ProjectSummary;
+	context: ChatPlannerContext;
+	overrides?: ChatPlannerOverrides;
+	state: ChatResolutionState;
+	deletedSegmentIds: Set<string>;
+}) {
+	const direct = resolveVideoReferenceFromText({
+		rawReference,
+		projectSummary,
+		context,
+		overrides,
+		state,
+		deletedSegmentIds,
+	});
+	if (direct.segment || direct.clarification) {
+		return direct;
+	}
+
+	const normalized = rawReference.trim().toLowerCase();
+	if (
+		normalized.length === 0 ||
+		/\b(it|this|clip|shot|current clip|current shot|opener|opening|intro|hook)\b/.test(
+			normalized,
+		)
+	) {
+		const implicit =
+			resolveImplicitReference({
+				projectSummary,
+				context,
+				state,
+				allowedKinds: ["video"],
+				token: "selection",
+			}) ??
+			resolveImplicitReference({
+				projectSummary,
+				context,
+				state,
+				allowedKinds: ["video"],
+				token: "playhead",
+			});
+		if (implicit) {
+			return { segment: implicit, clarification: null };
+		}
+	}
+
+	const currentSceneVideos = getCurrentSceneVideos({ projectSummary });
+	if (currentSceneVideos.length === 1) {
+		return {
+			segment: currentSceneVideos[0] ?? null,
+			clarification: null,
+		};
+	}
+
+	return direct;
+}
+
 function getCurrentSceneVideos({
 	projectSummary,
 }: {
 	projectSummary: ProjectSummary;
 }) {
-	return (projectSummary.current_scene_segments ?? projectSummary.segments)
+	const sourceSegments =
+		projectSummary.current_scene_segments.length > 0
+			? projectSummary.current_scene_segments
+			: projectSummary.segments;
+	return sourceSegments
 		.filter((segment) => segment.segment_kind === "video")
 		.sort((left, right) => left.start_ms - right.start_ms);
 }
@@ -2091,6 +2366,74 @@ function extractVersionTargets({ text }: { text: string }) {
 function extractReferenceSuffix({ clause }: { clause: string }) {
 	const match = clause.match(/\b(?:on|to|for)\s+(.+)$/i);
 	return match?.[1] ?? null;
+}
+
+function inferReferenceScope({ text }: { text: string }) {
+	const normalized = text.toLowerCase();
+	if (normalized.includes("project") || normalized.includes("whole project")) {
+		return "project" as const;
+	}
+	if (normalized.includes("selection") || normalized.includes("selected")) {
+		return "selection" as const;
+	}
+	return "scene" as const;
+}
+
+function resolveReferenceAssetCommand({
+	projectSummary,
+	referenceLabel,
+	overrides,
+}: {
+	projectSummary: ProjectSummary;
+	referenceLabel: string;
+	overrides?: ChatPlannerOverrides;
+}): {
+	assetId: string | null;
+	clarification: ChatClarificationRequest | null;
+} {
+	const forcedChoice = overrides?.forced_choice_values_by_reference?.[referenceLabel];
+	if (forcedChoice) {
+		return {
+			assetId: forcedChoice,
+			clarification: null,
+		};
+	}
+
+	if (projectSummary.active_reference_video?.asset_id) {
+		return {
+			assetId: projectSummary.active_reference_video.asset_id,
+			clarification: null,
+		};
+	}
+
+	const videoAssets = projectSummary.media_assets.filter((asset) => asset.type === "video");
+	if (videoAssets.length === 1) {
+		return {
+			assetId: videoAssets[0]?.asset_id ?? null,
+			clarification: null,
+		};
+	}
+	if (videoAssets.length <= 1) {
+		return {
+			assetId: null,
+			clarification: null,
+		};
+	}
+
+	return {
+		assetId: null,
+		clarification: buildChoiceClarificationRequest({
+			kind: "asset",
+			prompt: "Which imported video should ClipForge use as the reference?",
+			referenceLabel,
+			options: videoAssets.slice(0, 6).map((asset) => ({
+				id: asset.asset_id,
+				value: asset.asset_id,
+				label: asset.name,
+				text_preview: `Use ${asset.name} as the active reference video.`,
+			})),
+		}),
+	};
 }
 
 function resolveRequestedScope({
