@@ -19,7 +19,7 @@ export async function generateMetadata({
 
 	const data = await getSinglePost({ slug });
 
-	if (!data || !data.post) return {};
+	if (!data?.post) return {};
 
 	return {
 		title: data.post.title,
@@ -57,7 +57,7 @@ export async function generateMetadata({
 
 export async function generateStaticParams() {
 	const data = await getPosts();
-	if (!data || !data.posts.length) return [];
+	if (!data.posts.length) return [];
 
 	return data.posts.map((post) => ({
 		slug: post.slug,
@@ -67,7 +67,7 @@ export async function generateStaticParams() {
 export default async function BlogPostPage({ params }: PageProps) {
 	const slug = (await params).slug;
 	const data = await getSinglePost({ slug });
-	if (!data || !data.post) return notFound();
+	if (!data?.post) return notFound();
 
 	const html = await processHtmlContent({ html: data.post.content });
 
