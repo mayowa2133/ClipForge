@@ -6,7 +6,7 @@ import {
 } from "@/lib/clipforge/chat";
 
 describe("ClipForge chat evaluation harness", () => {
-	test("meets the M53 benchmark thresholds", async () => {
+	test("meets the M54 benchmark thresholds", async () => {
 		const report = await runClipForgeChatEvaluationHarness();
 
 		expect(report.suites["single-turn"].totalPrompts).toBe(
@@ -23,6 +23,9 @@ describe("ClipForge chat evaluation harness", () => {
 		);
 		expect(report.suites["reference-video"].totalPrompts).toBe(
 			DEFAULT_CLIPFORGE_CHAT_EVAL_THRESHOLDS.expectedReferenceVideoPrompts,
+		);
+		expect(report.suites["reference-assembly"].totalPrompts).toBe(
+			DEFAULT_CLIPFORGE_CHAT_EVAL_THRESHOLDS.expectedReferenceAssemblyPrompts,
 		);
 		expect(() =>
 			assertClipForgeChatEvalThresholds({

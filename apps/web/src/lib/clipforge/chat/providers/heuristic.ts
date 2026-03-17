@@ -619,7 +619,12 @@ function planDirectCommandClause({
 }): DirectPlanResult {
 	const planners = [
 		planRepeatCommandClause,
+		planAssemblySourcePoolClause,
 		planReferenceSelectionClause,
+		planReferenceDraftAssemblyClause,
+		planReferenceDraftSwapClause,
+		planReferenceDraftLockClause,
+		planReferenceDraftUnlockClause,
 		planReferenceFinishPassClause,
 		planReferenceCaptionClause,
 		planReferenceAudioClause,
@@ -734,6 +739,36 @@ function planRepeatCommandClause(args: DirectPlannerArgs): DirectPlanResult {
 	return emptyDirectPlan({ state: args.state });
 }
 
+function planAssemblySourcePoolClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (!/\b(source footage|source pool|assembly source|source clips)\b/.test(normalized)) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const assetIds = args.projectSummary.media_assets
+		.filter(
+			(asset) =>
+				asset.type === "video" &&
+				asset.asset_id !== args.projectSummary.active_reference_video?.asset_id &&
+				normalized.includes(asset.name.toLowerCase()),
+		)
+		.map((asset) => asset.asset_id);
+	if (assetIds.length === 0) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		...emptyDirectPlan({ state: args.state }),
+		commands: [
+			{
+				kind: "set-assembly-source-pool",
+				asset_ids: assetIds,
+				scope: "project",
+			},
+		],
+	};
+}
+
 function planReferenceSelectionClause(args: DirectPlannerArgs): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
 	if (!/\b(reference|example)\b/.test(normalized) || !/\buse\b|\bset\b|\bmake\b/.test(normalized)) {
@@ -762,6 +797,161 @@ function planReferenceSelectionClause(args: DirectPlannerArgs): DirectPlanResult
 	}
 
 	return emptyDirectPlan({ state: args.state });
+}
+
+function planReferenceDraftAssemblyClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	const asksForDraft =
+		/\b(build|make|create|rebuild)\b/.test(normalized) &&
+		/\b(draft|first cut|cut)\b/.test(normalized);
+	const asksToGetCloser =
+		/\bcloser to the reference\b|\bcloser to the example\b/.test(normalized);
+	if (
+		(!/\b(reference|example)\b/.test(normalized) && !args.projectSummary.active_reference_video) ||
+		(!asksForDraft && !asksToGetCloser)
+	) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const referenceTarget = resolveReferenceAssetCommand({
+		projectSummary: args.projectSummary,
+		referenceLabel: "asset:reference-video",
+		overrides: args.overrides,
+	});
+	if (referenceTarget.clarification) {
+		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+	}
+	if (!referenceTarget.assetId) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const focusMatchIds = inferAssemblyFocusMatchIds({
+		text: normalized,
+		projectSummary: args.projectSummary,
+	});
+	const matches = selectReferenceDraftMatches({
+		projectSummary: args.projectSummary,
+		focusMatchIds,
+	});
+	if (matches.length === 0) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		...emptyDirectPlan({ state: args.state }),
+		commands: [
+			{
+				kind: "build-reference-draft",
+				reference_asset_id: referenceTarget.assetId,
+				source_asset_ids: resolveAssemblySourceAssetIds({
+					projectSummary: args.projectSummary,
+					referenceAssetId: referenceTarget.assetId,
+				}),
+				matches,
+				focus_match_ids: focusMatchIds,
+				include_finish_pass: /\bfinish\b|\bpolish\b|\bready to post\b/.test(normalized),
+				scope: "project",
+			},
+			...(/\bfinish\b|\bpolish\b|\bready to post\b/.test(normalized)
+				? [
+						{
+							kind: "apply-reference-finish-pass" as const,
+							reference_asset_id: referenceTarget.assetId,
+							scope: "project" as const,
+						},
+				  ]
+				: []),
+		],
+	};
+}
+
+function planReferenceDraftSwapClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (
+		args.projectSummary.candidate_source_matches.length === 0 ||
+		!/\b(use|swap|replace)\b/.test(normalized) ||
+		!/\binstead\b/.test(normalized)
+	) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const targetMatch = resolveReferenceAssemblyMatchTarget({
+		projectSummary: args.projectSummary,
+		text: normalized,
+	});
+	if (!targetMatch) {
+		return emptyDirectPlan({ state: args.state });
+	}
+	const asset = resolveAssemblySourceAssetFromPrompt({
+		projectSummary: args.projectSummary,
+		text: normalized,
+	});
+	if (!asset) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		...emptyDirectPlan({ state: args.state }),
+		commands: [
+			{
+				kind: "replace-with-source-match",
+				match_id: targetMatch.match_id,
+				asset_id: asset.asset_id,
+				scope: "scene",
+			},
+		],
+	};
+}
+
+function planReferenceDraftLockClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (
+		args.projectSummary.candidate_source_matches.length === 0 ||
+		!/\bkeep\b|\block\b/.test(normalized) ||
+		!/\b(hook|opener|ending|outro|payoff|cta|current)\b/.test(normalized)
+	) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const targetMatch = resolveReferenceAssemblyMatchTarget({
+		projectSummary: args.projectSummary,
+		text: normalized,
+	});
+	if (!targetMatch) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		...emptyDirectPlan({ state: args.state }),
+		commands: [
+			{
+				kind: "lock-reference-match",
+				match_id: targetMatch.match_id,
+				scope: "project",
+			},
+		],
+	};
+}
+
+function planReferenceDraftUnlockClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	if (
+		args.projectSummary.candidate_source_matches.length === 0 ||
+		!/\b(clear|unlock|reset)\b/.test(normalized) ||
+		!/\blocks?\b/.test(normalized)
+	) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	return {
+		...emptyDirectPlan({ state: args.state }),
+		commands: [
+			{
+				kind: "clear-reference-match-locks",
+				scope: "project",
+			},
+		],
+	};
 }
 
 function planReferenceFinishPassClause(args: DirectPlannerArgs): DirectPlanResult {
@@ -931,6 +1121,156 @@ function planReferencePacingClause(args: DirectPlannerArgs): DirectPlanResult {
 			},
 		],
 	};
+}
+
+function resolveAssemblySourceAssetIds({
+	projectSummary,
+	referenceAssetId,
+}: {
+	projectSummary: ProjectSummary;
+	referenceAssetId: string;
+}) {
+	const explicitPool = projectSummary.assembly_source_pool.map((asset) => asset.asset_id);
+	if (explicitPool.length > 0) {
+		return explicitPool;
+	}
+	return projectSummary.media_assets
+		.filter(
+			(asset) => asset.type === "video" && asset.asset_id !== referenceAssetId,
+		)
+		.map((asset) => asset.asset_id);
+}
+
+function inferAssemblyFocusMatchIds({
+	text,
+	projectSummary,
+}: {
+	text: string;
+	projectSummary: ProjectSummary;
+}) {
+	if (/\bhook\b|\bopener\b/.test(text)) {
+		return projectSummary.candidate_source_matches
+			.filter((match) => match.section_role === "hook")
+			.map((match) => match.match_id);
+	}
+	if (/\bending\b|\boutro\b|\bpayoff\b|\bcta\b/.test(text)) {
+		return projectSummary.candidate_source_matches
+			.filter((match) => match.section_role === "payoff" || match.section_role === "cta")
+			.map((match) => match.match_id);
+	}
+	return [];
+}
+
+function selectReferenceDraftMatches({
+	projectSummary,
+	focusMatchIds,
+}: {
+	projectSummary: ProjectSummary;
+	focusMatchIds: string[];
+}) {
+	const matches = projectSummary.candidate_source_matches.map((match) => ({
+		match_id: match.match_id,
+		section_label: match.section_label,
+		section_role: match.section_role,
+		target_start_ms: 0,
+		target_duration_ms:
+			projectSummary.reference_shot_plan?.sections.find(
+				(section) => section.match_id === match.match_id,
+			)?.target_duration_ms ?? 1200,
+		selected_asset_id: match.selected_asset_id,
+		selected_asset_name: match.selected_asset_name,
+		selected_range_id: `${match.selected_asset_id}:${match.match_id}`,
+		selected_start_ms: 0,
+		selected_end_ms:
+			projectSummary.reference_shot_plan?.sections.find(
+				(section) => section.match_id === match.match_id,
+			)?.target_duration_ms ?? 1200,
+		reasons: match.reasons,
+		candidates: match.candidate_asset_ids.map((assetId, index) => ({
+			asset_id: assetId,
+			asset_name:
+				projectSummary.assembly_source_pool.find((asset) => asset.asset_id === assetId)?.name ??
+				assetId,
+			range_id: `${assetId}:${match.match_id}:${index + 1}`,
+			start_ms: 0,
+			end_ms:
+				projectSummary.reference_shot_plan?.sections.find(
+					(section) => section.match_id === match.match_id,
+				)?.target_duration_ms ?? 1200,
+			score: Math.max(0.1, 1 - index * 0.15),
+			reasons: match.reasons,
+		})),
+		locked: match.locked,
+	}));
+	if (focusMatchIds.length === 0) {
+		return matches;
+	}
+	return matches.map((match) => ({
+		...match,
+		locked: match.locked || !focusMatchIds.includes(match.match_id),
+	}));
+}
+
+function resolveReferenceAssemblyMatchTarget({
+	projectSummary,
+	text,
+}: {
+	projectSummary: ProjectSummary;
+	text: string;
+}) {
+	const byRole =
+		/\bhook\b|\bopener\b/.test(text)
+			? projectSummary.candidate_source_matches.find((match) => match.section_role === "hook")
+			: /\bending\b|\boutro\b|\bpayoff\b|\bcta\b/.test(text)
+				? projectSummary.candidate_source_matches.find(
+						(match) => match.section_role === "payoff" || match.section_role === "cta",
+				  )
+				: /\bbody\b|\bmiddle\b/.test(text)
+					? projectSummary.candidate_source_matches.find((match) => match.section_role === "body")
+					: null;
+	return byRole ?? projectSummary.candidate_source_matches[0] ?? null;
+}
+
+function resolveAssemblySourceAssetFromPrompt({
+	projectSummary,
+	text,
+}: {
+	projectSummary: ProjectSummary;
+	text: string;
+}) {
+	const ordinal = /\bthird\b/.test(text)
+		? 2
+		: /\bsecond\b/.test(text)
+			? 1
+			: /\blast\b/.test(text)
+				? -1
+				: 0;
+	const keywordMatch = text.match(/\b(?:first|second|third|last)?\s*([a-z0-9_-]+)\s+clip\b/);
+	const keyword = keywordMatch?.[1] ?? null;
+	const poolSource =
+		projectSummary.assembly_source_pool.length > 0
+			? projectSummary.assembly_source_pool
+			: projectSummary.media_assets
+					.filter(
+						(asset) =>
+							asset.type === "video" &&
+							asset.asset_id !== projectSummary.active_reference_video?.asset_id,
+					)
+					.map((asset) => ({
+						asset_id: asset.asset_id,
+						name: asset.name,
+						descriptor_summary: "",
+					}));
+	const pool = poolSource.filter((asset) =>
+		keyword ? asset.name.toLowerCase().includes(keyword.toLowerCase()) : true,
+	);
+	if (pool.length === 0) {
+		return null;
+	}
+	if (ordinal === -1) {
+		return pool[pool.length - 1] ?? null;
+	}
+	return pool[Math.min(ordinal, pool.length - 1)] ?? null;
 }
 
 function planFinishPassClause(args: DirectPlannerArgs): DirectPlanResult {

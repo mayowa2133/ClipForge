@@ -138,6 +138,43 @@ export interface ProjectReferenceMatchReadinessSummary {
 	reason: string;
 }
 
+export interface ProjectAssemblySourceSummary {
+	asset_id: string;
+	name: string;
+	descriptor_summary: string;
+}
+
+export interface ProjectFootageMatchReadinessSummary {
+	ready: boolean;
+	status: "ready" | "attention" | "blocked";
+	reason: string;
+}
+
+export interface ProjectReferenceShotPlanSectionSummary {
+	match_id: string;
+	label: string;
+	role: "hook" | "body" | "payoff" | "cta";
+	target_duration_ms: number;
+	description: string;
+}
+
+export interface ProjectReferenceShotPlanSummary {
+	hook_pattern: string;
+	ending_shape: "payoff" | "cta" | "open-ended";
+	sections: ProjectReferenceShotPlanSectionSummary[];
+}
+
+export interface ProjectCandidateSourceMatchSummary {
+	match_id: string;
+	section_label: string;
+	section_role: "hook" | "body" | "payoff" | "cta";
+	selected_asset_id: string;
+	selected_asset_name: string;
+	reasons: string[];
+	candidate_asset_ids: string[];
+	locked: boolean;
+}
+
 export interface ProjectSelectionSummary {
 	selected_segment_ids: string[];
 	selected_segments: ProjectSegmentSummary[];
@@ -178,6 +215,10 @@ export interface ProjectSummary {
 	active_reference_video: ProjectActiveReferenceVideoSummary | null;
 	reference_analysis_snapshot: ProjectReferenceAnalysisSnapshotSummary | null;
 	reference_match_readiness: ProjectReferenceMatchReadinessSummary;
+	assembly_source_pool: ProjectAssemblySourceSummary[];
+	footage_match_readiness: ProjectFootageMatchReadinessSummary;
+	reference_shot_plan: ProjectReferenceShotPlanSummary | null;
+	candidate_source_matches: ProjectCandidateSourceMatchSummary[];
 	recent_ai_actions: ClipForgeAppliedCommandSummary[];
 	recent_turn_summaries: string[];
 	timeline_words: TimelineTranscriptWord[];
@@ -310,6 +351,10 @@ export type ChatPlanImpactKind =
 	| "publish-destination"
 	| "export-preflight-fixes"
 	| "reference-video"
+	| "reference-assembly-pool"
+	| "reference-draft"
+	| "reference-draft-swap"
+	| "reference-draft-lock"
 	| "reference-finish"
 	| "reference-captions"
 	| "reference-audio"

@@ -197,6 +197,14 @@ function buildSummary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
 			status: "attention",
 			reason: "Reference analysis has not been generated yet.",
 		},
+		assembly_source_pool: [],
+		footage_match_readiness: {
+			ready: false,
+			status: "attention",
+			reason: "Choose source clips for AI draft assembly.",
+		},
+		reference_shot_plan: null,
+		candidate_source_matches: [],
 		recent_ai_actions: [],
 		recent_turn_summaries: [],
 		timeline_words: [
@@ -1215,5 +1223,269 @@ describe("HeuristicChatOpsProvider", () => {
 		expect(result.commands).toEqual([]);
 		expect(result.clarification?.kind).toBe("asset");
 		expect(result.clarification?.referenceLabel).toBe("asset:reference-video");
+	});
+
+	test("builds a reference-guided draft plan", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await proposeWithSummary({
+			provider,
+			userText: "build my draft like the reference",
+			projectSummary: buildSummary({
+				active_reference_video: {
+					asset_id: "beach-1",
+					name: "beach.mp4",
+					status: "ready",
+					analyzed_at: "2026-03-12T00:00:00.000Z",
+					intent_summary: "tight hook · fast body cadence · payoff ending",
+					warnings: [],
+				},
+				reference_match_readiness: {
+					ready: true,
+					status: "ready",
+					reason: "Reference is ready.",
+				},
+				assembly_source_pool: [
+					{
+						asset_id: "gym-clip-1",
+						name: "gym clip 1",
+						descriptor_summary: "steady medium-energy gym push shot",
+					},
+					{
+						asset_id: "gym-clip-2",
+						name: "gym clip 2",
+						descriptor_summary: "faster gym sprint shot",
+					},
+					{
+						asset_id: "street-clip-1",
+						name: "street clip 1",
+						descriptor_summary: "wider street b-roll",
+					},
+				],
+				footage_match_readiness: {
+					ready: true,
+					status: "ready",
+					reason: "Source pool is ready for assembly.",
+				},
+				reference_shot_plan: {
+					hook_pattern: "front-loaded hook",
+					ending_shape: "payoff",
+					sections: [
+						{
+							match_id: "match-hook",
+							label: "Hook",
+							role: "hook",
+							target_duration_ms: 900,
+							description: "Fast first punch-in hook.",
+						},
+						{
+							match_id: "match-payoff",
+							label: "Payoff",
+							role: "payoff",
+							target_duration_ms: 1200,
+							description: "Clean payoff ending.",
+						},
+					],
+				},
+				candidate_source_matches: [
+					{
+						match_id: "match-hook",
+						section_label: "Hook",
+						section_role: "hook",
+						selected_asset_id: "gym-clip-1",
+						selected_asset_name: "gym clip 1",
+						reasons: ["Strong early activity."],
+						candidate_asset_ids: ["gym-clip-1", "gym-clip-2"],
+						locked: false,
+					},
+					{
+						match_id: "match-payoff",
+						section_label: "Payoff",
+						section_role: "payoff",
+						selected_asset_id: "street-clip-1",
+						selected_asset_name: "street clip 1",
+						reasons: ["Longest stable payoff clip."],
+						candidate_asset_ids: ["street-clip-1", "gym-clip-2"],
+						locked: false,
+					},
+				],
+			}),
+		});
+
+		expect(result.commands ?? []).toHaveLength(1);
+		expect(result.commands?.[0]).toMatchObject({
+			kind: "build-reference-draft",
+			reference_asset_id: "beach-1",
+			source_asset_ids: ["gym-clip-1", "gym-clip-2", "street-clip-1"],
+		});
+	});
+
+	test("focuses the hook when refining a reference draft", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await proposeWithSummary({
+			provider,
+			userText: "make the hook closer to the reference",
+			projectSummary: buildSummary({
+				active_reference_video: {
+					asset_id: "beach-1",
+					name: "beach.mp4",
+					status: "ready",
+					analyzed_at: "2026-03-12T00:00:00.000Z",
+					intent_summary: "tight hook · fast body cadence · payoff ending",
+					warnings: [],
+				},
+				reference_match_readiness: {
+					ready: true,
+					status: "ready",
+					reason: "Reference is ready.",
+				},
+				assembly_source_pool: [
+					{
+						asset_id: "gym-clip-1",
+						name: "gym clip 1",
+						descriptor_summary: "steady medium-energy gym push shot",
+					},
+					{
+						asset_id: "gym-clip-2",
+						name: "gym clip 2",
+						descriptor_summary: "faster gym sprint shot",
+					},
+				],
+				footage_match_readiness: {
+					ready: true,
+					status: "ready",
+					reason: "Source pool is ready for assembly.",
+				},
+				reference_shot_plan: {
+					hook_pattern: "front-loaded hook",
+					ending_shape: "payoff",
+					sections: [
+						{
+							match_id: "match-hook",
+							label: "Hook",
+							role: "hook",
+							target_duration_ms: 900,
+							description: "Fast first punch-in hook.",
+						},
+					],
+				},
+				candidate_source_matches: [
+					{
+						match_id: "match-hook",
+						section_label: "Hook",
+						section_role: "hook",
+						selected_asset_id: "gym-clip-1",
+						selected_asset_name: "gym clip 1",
+						reasons: ["Strong early activity."],
+						candidate_asset_ids: ["gym-clip-1", "gym-clip-2"],
+						locked: false,
+					},
+				],
+			}),
+		});
+
+		expect(result.commands ?? []).toHaveLength(1);
+		expect(result.commands?.[0]).toMatchObject({
+			kind: "build-reference-draft",
+			focus_match_ids: ["match-hook"],
+		});
+	});
+
+	test("swaps a reference draft section to the second named source clip", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await proposeWithSummary({
+			provider,
+			userText: "use the second gym clip instead",
+			projectSummary: buildSummary({
+				active_reference_video: {
+					asset_id: "beach-1",
+					name: "beach.mp4",
+					status: "ready",
+					analyzed_at: "2026-03-12T00:00:00.000Z",
+					intent_summary: "tight hook · fast body cadence · payoff ending",
+					warnings: [],
+				},
+				assembly_source_pool: [
+					{
+						asset_id: "gym-clip-1",
+						name: "gym clip 1",
+						descriptor_summary: "steady medium-energy gym push shot",
+					},
+					{
+						asset_id: "gym-clip-2",
+						name: "gym clip 2",
+						descriptor_summary: "faster gym sprint shot",
+					},
+				],
+				candidate_source_matches: [
+					{
+						match_id: "match-hook",
+						section_label: "Hook",
+						section_role: "hook",
+						selected_asset_id: "gym-clip-1",
+						selected_asset_name: "gym clip 1",
+						reasons: ["Strong early activity."],
+						candidate_asset_ids: ["gym-clip-1", "gym-clip-2"],
+						locked: false,
+					},
+				],
+			}),
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "replace-with-source-match",
+				match_id: "match-hook",
+				asset_id: "gym-clip-2",
+				scope: "scene",
+			},
+		]);
+	});
+
+	test("locks the ending match for reference assembly follow-ups", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await proposeWithSummary({
+			provider,
+			userText: "keep the current ending",
+			projectSummary: buildSummary({
+				active_reference_video: {
+					asset_id: "beach-1",
+					name: "beach.mp4",
+					status: "ready",
+					analyzed_at: "2026-03-12T00:00:00.000Z",
+					intent_summary: "tight hook · fast body cadence · payoff ending",
+					warnings: [],
+				},
+				candidate_source_matches: [
+					{
+						match_id: "match-hook",
+						section_label: "Hook",
+						section_role: "hook",
+						selected_asset_id: "gym-clip-1",
+						selected_asset_name: "gym clip 1",
+						reasons: ["Strong early activity."],
+						candidate_asset_ids: ["gym-clip-1", "gym-clip-2"],
+						locked: false,
+					},
+					{
+						match_id: "match-ending",
+						section_label: "Ending",
+						section_role: "payoff",
+						selected_asset_id: "street-clip-1",
+						selected_asset_name: "street clip 1",
+						reasons: ["Clean payoff ending."],
+						candidate_asset_ids: ["street-clip-1", "gym-clip-2"],
+						locked: false,
+					},
+				],
+			}),
+		});
+
+		expect(result.commands).toEqual([
+			{
+				kind: "lock-reference-match",
+				match_id: "match-ending",
+				scope: "project",
+			},
+		]);
 	});
 });

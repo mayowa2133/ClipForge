@@ -38,7 +38,8 @@ type EvalSuiteName =
 	| "multi-turn-memory"
 	| "creative-direction"
 	| "finishing"
-	| "reference-video";
+	| "reference-video"
+	| "reference-assembly";
 
 interface EvalCommandExpectation {
 	commandKinds?: ClipForgeEditorCommand["kind"][];
@@ -117,12 +118,14 @@ export interface ClipForgeChatEvalThresholds {
 	creativeDirectionMinPassRate: number;
 	finishingMinPassRate: number;
 	referenceVideoMinPassRate: number;
+	referenceAssemblyMinPassRate: number;
 	maxUnsafeApplyFailures: number;
 	expectedSingleTurnPrompts: number;
 	expectedMultiTurnPrompts: number;
 	expectedCreativeDirectionPrompts: number;
 	expectedFinishingPrompts: number;
 	expectedReferenceVideoPrompts: number;
+	expectedReferenceAssemblyPrompts: number;
 }
 
 export const DEFAULT_CLIPFORGE_CHAT_EVAL_THRESHOLDS: ClipForgeChatEvalThresholds = {
@@ -131,12 +134,14 @@ export const DEFAULT_CLIPFORGE_CHAT_EVAL_THRESHOLDS: ClipForgeChatEvalThresholds
 	creativeDirectionMinPassRate: 0.8,
 	finishingMinPassRate: 0.8,
 	referenceVideoMinPassRate: 0.8,
+	referenceAssemblyMinPassRate: 0.8,
 	maxUnsafeApplyFailures: 0,
 	expectedSingleTurnPrompts: 60,
 	expectedMultiTurnPrompts: 30,
 	expectedCreativeDirectionPrompts: 20,
 	expectedFinishingPrompts: 12,
 	expectedReferenceVideoPrompts: 8,
+	expectedReferenceAssemblyPrompts: 8,
 };
 
 export async function runClipForgeChatEvaluationHarness({
@@ -223,6 +228,7 @@ export function assertClipForgeChatEvalThresholds({
 	const creative = report.suites["creative-direction"];
 	const finishing = report.suites.finishing;
 	const referenceVideo = report.suites["reference-video"];
+	const referenceAssembly = report.suites["reference-assembly"];
 	const unsafeApplyFailures = report.turns.filter(
 		(turn) => turn.unsafeApplyFailure,
 	).length;
@@ -255,6 +261,14 @@ export function assertClipForgeChatEvalThresholds({
 			`Expected ${thresholds.expectedReferenceVideoPrompts} reference-video prompts, received ${referenceVideo.totalPrompts}.`,
 		);
 	}
+	if (
+		referenceAssembly.totalPrompts !==
+		thresholds.expectedReferenceAssemblyPrompts
+	) {
+		errors.push(
+			`Expected ${thresholds.expectedReferenceAssemblyPrompts} reference-assembly prompts, received ${referenceAssembly.totalPrompts}.`,
+		);
+	}
 	if (singleTurn.passRate < thresholds.singleTurnMinPassRate) {
 		errors.push(
 			`Single-turn pass rate ${formatRate(singleTurn.passRate)} is below ${formatRate(thresholds.singleTurnMinPassRate)}.`,
@@ -280,6 +294,13 @@ export function assertClipForgeChatEvalThresholds({
 			`Reference-video pass rate ${formatRate(referenceVideo.passRate)} is below ${formatRate(thresholds.referenceVideoMinPassRate)}.`,
 		);
 	}
+	if (
+		referenceAssembly.passRate < thresholds.referenceAssemblyMinPassRate
+	) {
+		errors.push(
+			`Reference-assembly pass rate ${formatRate(referenceAssembly.passRate)} is below ${formatRate(thresholds.referenceAssemblyMinPassRate)}.`,
+		);
+	}
 	if (unsafeApplyFailures > thresholds.maxUnsafeApplyFailures) {
 		errors.push(
 			`Unsafe-apply failures ${unsafeApplyFailures} exceed ${thresholds.maxUnsafeApplyFailures}.`,
@@ -303,6 +324,7 @@ export function formatClipForgeChatEvalReport({
 		"creative-direction",
 		"finishing",
 		"reference-video",
+		"reference-assembly",
 	] as const) {
 		const suite = report.suites[suiteName];
 		lines.push(
@@ -484,13 +506,19 @@ function extractCommandTargetIds({
 			case "set-publish-destination":
 			case "run-export-preflight-fixes":
 			case "set-active-reference-video":
+			case "set-assembly-source-pool":
 			case "clear-active-reference-video":
 			case "apply-reference-finish-pass":
 			case "match-reference-captions":
 			case "match-reference-audio-profile":
 			case "match-reference-packaging":
 			case "match-reference-pacing":
+			case "replace-with-source-match":
+			case "lock-reference-match":
+			case "clear-reference-match-locks":
 				return [];
+			case "build-reference-draft":
+				return command.matches.map((match) => match.match_id);
 		}
 	});
 }
@@ -507,6 +535,7 @@ function buildSuiteReports({
 		"creative-direction",
 		"finishing",
 		"reference-video",
+		"reference-assembly",
 	] as const) {
 		const suiteTurns = turns.filter((turn) => turn.suite === suiteName);
 		const passedPrompts = suiteTurns.filter((turn) => turn.pass).length;
@@ -621,6 +650,37 @@ function persistEvaluationMemory({
 		commandKinds: commands.map((command) => command.kind),
 		createdAt: now,
 	};
+	const recentReferenceAssemblyChoices = commands.flatMap<
+		typeof clipforge.chatMemory.recentReferenceAssemblyChoices[number]
+	>((command) => {
+		if (command.kind === "build-reference-draft") {
+			return command.matches.map((match) => ({
+				matchId: match.match_id,
+				sectionLabel: match.section_label,
+				sectionRole: match.section_role,
+				segmentId: match.match_id,
+				assetId: match.selected_asset_id,
+				assetLabel: match.selected_asset_name,
+				alternativeAssetIds: match.candidates.map((candidate) => candidate.asset_id),
+				createdAt: now,
+			}));
+		}
+		if (command.kind === "replace-with-source-match") {
+			return [
+				{
+					matchId: command.match_id,
+					sectionLabel: command.match_id,
+					sectionRole: "body" as const,
+					segmentId: command.match_id,
+					assetId: command.asset_id,
+					assetLabel: command.asset_id,
+					alternativeAssetIds: [],
+					createdAt: now,
+				},
+			];
+		}
+		return [];
+	});
 	project.clipforge = {
 		...clipforge,
 		chatMemory: {
@@ -668,11 +728,59 @@ function persistEvaluationMemory({
 							return ["matched packaging to active reference"];
 						case "match-reference-pacing":
 							return ["matched pacing to active reference"];
+						case "build-reference-draft":
+							return ["built a first cut against the active reference"];
+						case "replace-with-source-match":
+							return ["swapped a reference draft section to a different source clip"];
+						case "lock-reference-match":
+							return ["locked a reference draft section"];
 						default:
 							return [];
 					}
 				}),
 			].slice(-12),
+			assemblyIntent:
+				commands.some((command) => command.kind === "build-reference-draft") ||
+				commands.some((command) => command.kind === "replace-with-source-match") ||
+				commands.some((command) => command.kind === "lock-reference-match")
+					? {
+							referenceAssetId:
+								commands.find((command) => command.kind === "build-reference-draft")
+									?.reference_asset_id ??
+								clipforge.activeReferenceVideoAssetId ??
+								clipforge.chatMemory.referenceIntent?.referenceAssetId ??
+								null,
+							sourceAssetIds: commands.flatMap((command) =>
+								command.kind === "build-reference-draft"
+									? command.source_asset_ids ?? []
+									: [],
+							),
+							focusMatchIds: commands.flatMap((command) => {
+								if (command.kind === "build-reference-draft") {
+									return command.focus_match_ids ?? [];
+								}
+								if (command.kind === "replace-with-source-match") {
+									return [command.match_id];
+								}
+								if (command.kind === "lock-reference-match") {
+									return [command.match_id];
+								}
+								return [];
+							}),
+					  }
+					: clipforge.chatMemory.assemblyIntent,
+			lockedMatchIds: [
+				...new Set([
+					...clipforge.chatMemory.lockedMatchIds,
+					...commands.flatMap((command) =>
+						command.kind === "lock-reference-match" ? [command.match_id] : [],
+					),
+				]),
+			].slice(-12),
+			recentReferenceAssemblyChoices: [
+				...clipforge.chatMemory.recentReferenceAssemblyChoices,
+				...recentReferenceAssemblyChoices,
+			].slice(-20),
 		},
 	};
 }
@@ -751,6 +859,8 @@ function summarizeCommandForEval({
 			return "Applied export preflight fixes.";
 		case "set-active-reference-video":
 			return `Set reference video to ${command.asset_id}.`;
+		case "set-assembly-source-pool":
+			return `Set ${command.asset_ids.length} clips as the assembly source pool.`;
 		case "clear-active-reference-video":
 			return "Cleared the reference video.";
 		case "apply-reference-finish-pass":
@@ -763,6 +873,14 @@ function summarizeCommandForEval({
 			return "Matched packaging to the reference.";
 		case "match-reference-pacing":
 			return "Matched pacing to the reference.";
+		case "build-reference-draft":
+			return `Built a reference draft from ${command.matches.length} matched sections.`;
+		case "replace-with-source-match":
+			return "Swapped a matched source clip.";
+		case "lock-reference-match":
+			return "Locked a matched draft section.";
+		case "clear-reference-match-locks":
+			return "Cleared reference draft locks.";
 	}
 }
 
@@ -798,14 +916,21 @@ function extractSummarySegmentTargets({
 			case "set-publish-destination":
 			case "run-export-preflight-fixes":
 			case "set-active-reference-video":
+			case "set-assembly-source-pool":
 			case "clear-active-reference-video":
 			case "apply-reference-finish-pass":
 			case "match-reference-captions":
 			case "match-reference-audio-profile":
 			case "match-reference-packaging":
 			case "match-reference-pacing":
+			case "replace-with-source-match":
+			case "lock-reference-match":
+			case "clear-reference-match-locks":
 				return [];
+			case "build-reference-draft":
+				return command.matches.map((match) => match.match_id);
 		}
+	return [];
 	}
 
 function extractSummaryElementTargets({
@@ -838,14 +963,20 @@ function extractSummaryElementTargets({
 			case "set-publish-destination":
 			case "run-export-preflight-fixes":
 			case "set-active-reference-video":
+			case "set-assembly-source-pool":
 			case "clear-active-reference-video":
 			case "apply-reference-finish-pass":
 			case "match-reference-captions":
 			case "match-reference-audio-profile":
 			case "match-reference-packaging":
 			case "match-reference-pacing":
+			case "build-reference-draft":
+			case "replace-with-source-match":
+			case "lock-reference-match":
+			case "clear-reference-match-locks":
 				return [];
 		}
+	return [];
 	}
 
 function buildEvaluationFixtures(): EvalFixture[] {
@@ -872,6 +1003,7 @@ function buildEvaluationScenarios(): EvalScenario[] {
 		...buildCreativeDirectionScenarios(),
 		...buildFinishingScenarios(),
 		...buildReferenceVideoScenarios(),
+		...buildReferenceAssemblyScenarios(),
 	];
 }
 
@@ -1740,6 +1872,128 @@ function buildReferenceVideoScenarios(): EvalScenario[] {
 	return scenarios;
 }
 
+function buildReferenceAssemblyScenarios(): EvalScenario[] {
+	const scenarios: EvalScenario[] = [
+		{
+			id: "reference-assembly-build-single",
+			suite: "reference-assembly",
+			fixtureId: "creator-studio",
+			turns: [
+				{
+					id: "turn-1",
+					prompt: "Build my draft like the reference",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["build-reference-draft"],
+						},
+					},
+				},
+			],
+		},
+		{
+			id: "reference-assembly-build-finish-single",
+			suite: "reference-assembly",
+			fixtureId: "creator-studio",
+			turns: [
+				{
+					id: "turn-1",
+					prompt: "Build my draft like the reference and finish it",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: [
+								"build-reference-draft",
+								"apply-reference-finish-pass",
+							],
+						},
+					},
+				},
+			],
+		},
+		{
+			id: "reference-assembly-first-cut-single",
+			suite: "reference-assembly",
+			fixtureId: "creator-studio",
+			turns: [
+				{
+					id: "turn-1",
+					prompt: "Build my first cut like the example",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["build-reference-draft"],
+						},
+					},
+				},
+			],
+		},
+		{
+			id: "reference-assembly-refine-flow",
+			suite: "reference-assembly",
+			fixtureId: "creator-studio",
+			turns: [
+				{
+					id: "turn-1",
+					prompt: "Build my draft like the reference",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["build-reference-draft"],
+						},
+					},
+				},
+				{
+					id: "turn-2",
+					prompt: "make the hook closer to the reference",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["build-reference-draft"],
+						},
+					},
+				},
+				{
+					id: "turn-3",
+					prompt: "use the second gym clip instead",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["replace-with-source-match"],
+						},
+					},
+				},
+				{
+					id: "turn-4",
+					prompt: "keep the current ending",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["lock-reference-match"],
+						},
+					},
+				},
+				{
+					id: "turn-5",
+					prompt: "clear the draft locks",
+					expectation: {
+						kind: "plan",
+						command: {
+							commandKinds: ["clear-reference-match-locks"],
+						},
+					},
+				},
+			],
+		},
+	];
+
+	const totalTurns = scenarios.reduce((sum, scenario) => sum + scenario.turns.length, 0);
+	if (totalTurns !== 8) {
+		throw new Error(`Reference-assembly eval suite must contain 8 prompts. Found ${totalTurns}.`);
+	}
+	return scenarios;
+}
+
 function createFrozenProject(): TProject {
 	const project = {
 		metadata: {
@@ -1823,6 +2077,14 @@ function createFrozenProject(): TProject {
 			...buildDefaultClipForgeProjectData(),
 			activeCaptionStyleId: "clean-bottom",
 			activeReferenceVideoAssetId: "ref-style-1",
+			assemblySourceAssetIds: [
+				"clip-1",
+				"clip-2",
+				"clip-3",
+				"clip-4",
+				"gym-clip-1",
+				"gym-clip-2",
+			],
 			mediaMetadataById: {
 				"clip-1": createTranscriptMetadata({
 					words: [
@@ -2183,6 +2445,8 @@ function createFrozenMediaAssets(): MediaAsset[] {
 			},
 		},
 		make({ id: "beach-1", name: "beach", type: "video", duration: 4 }),
+		make({ id: "gym-clip-1", name: "gym clip 1", type: "video", duration: 2.2 }),
+		make({ id: "gym-clip-2", name: "gym clip 2", type: "video", duration: 2.6 }),
 		make({ id: "city-1", name: "city", type: "image", duration: 4 }),
 		make({ id: "music-bed", name: "music-bed", type: "audio", duration: 12 }),
 		make({ id: "voiceover-1", name: "voiceover-1", type: "audio", duration: 2 }),

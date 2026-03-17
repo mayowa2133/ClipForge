@@ -2,17 +2,21 @@ import type {
 	CaptionStyleTemplate,
 	ClipForgeAppliedCommandSummary,
 	ClipForgeRecentAssetChoice,
+	ClipForgeRecentReferenceAssemblyChoice,
 	ClipForgeChatMemory,
 	ClipForgeChatTurnSummary,
 	ClipForgeProjectData,
 	ClipMediaMetadata,
+	FootageDescriptor,
 	ReferenceVideoAnalysis,
+	ReferenceMatchLock,
+	ReferenceShotPlan,
 } from "@/types/clipforge";
 import type { TProject } from "@/types/project";
 import { adoptLegacyCaptionTracks } from "./caption-studio";
 import { BUILT_IN_CAPTION_STYLE_MAP } from "./caption-style-library";
 
-export const CLIPFORGE_SCHEMA_VERSION = 7;
+export const CLIPFORGE_SCHEMA_VERSION = 8;
 
 const MAX_CHAT_MEMORY_TURNS = 12;
 const MAX_CHAT_MEMORY_APPLIED_COMMANDS = 20;
@@ -31,6 +35,10 @@ export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 		trendSoundReferences: [],
 		activeReferenceVideoAssetId: null,
 		referenceAnalysisByAssetId: {},
+		assemblySourceAssetIds: [],
+		footageDescriptorsByAssetId: {},
+		referenceShotPlanByAssetId: {},
+		referenceMatchLocks: {},
 		chatMemory: {
 			activeTargets: [],
 			styleIntent: null,
@@ -38,10 +46,13 @@ export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 			finishIntent: null,
 			destinationIntent: null,
 			referenceIntent: null,
+			assemblyIntent: null,
+			lockedMatchIds: [],
 			recentTurnSummaries: [],
 			recentAppliedCommandSummaries: [],
 			recentAssetChoices: [],
 			recentReferenceComparisons: [],
+			recentReferenceAssemblyChoices: [],
 		},
 		opsAudit: [],
 	};
@@ -312,11 +323,14 @@ function normalizeRecentAssetChoice(
 	if (
 		(assetKind !== "music" &&
 			assetKind !== "sfx" &&
-			assetKind !== "trend-reference") ||
+			assetKind !== "trend-reference" &&
+			assetKind !== "source-video") ||
 		(commandKind !== "apply-music-track" &&
 			commandKind !== "replace-music-track" &&
 			commandKind !== "insert-sfx-preset" &&
-			commandKind !== "apply-project-kit")
+			commandKind !== "apply-project-kit" &&
+			commandKind !== "build-reference-draft" &&
+			commandKind !== "replace-with-source-match")
 	) {
 		return null;
 	}
@@ -326,6 +340,51 @@ function normalizeRecentAssetChoice(
 		assetKind,
 		label: (value as { label: string }).label,
 		commandKind,
+		createdAt: (value as { createdAt: string }).createdAt,
+	};
+}
+
+function normalizeRecentReferenceAssemblyChoice(
+	value: unknown,
+): ClipForgeRecentReferenceAssemblyChoice | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as { matchId?: unknown }).matchId !== "string" ||
+		typeof (value as { sectionLabel?: unknown }).sectionLabel !== "string" ||
+		typeof (value as { sectionRole?: unknown }).sectionRole !== "string" ||
+		typeof (value as { segmentId?: unknown }).segmentId !== "string" ||
+		typeof (value as { assetId?: unknown }).assetId !== "string" ||
+		typeof (value as { assetLabel?: unknown }).assetLabel !== "string" ||
+		typeof (value as { createdAt?: unknown }).createdAt !== "string"
+	) {
+		return null;
+	}
+
+	const sectionRole = (value as { sectionRole: string }).sectionRole;
+	if (
+		sectionRole !== "hook" &&
+		sectionRole !== "body" &&
+		sectionRole !== "payoff" &&
+		sectionRole !== "cta"
+	) {
+		return null;
+	}
+
+	return {
+		matchId: (value as { matchId: string }).matchId,
+		sectionLabel: (value as { sectionLabel: string }).sectionLabel,
+		sectionRole,
+		segmentId: (value as { segmentId: string }).segmentId,
+		assetId: (value as { assetId: string }).assetId,
+		assetLabel: (value as { assetLabel: string }).assetLabel,
+		alternativeAssetIds: Array.isArray(
+			(value as { alternativeAssetIds?: unknown }).alternativeAssetIds,
+		)
+			? ((value as { alternativeAssetIds: unknown[] }).alternativeAssetIds as unknown[]).filter(
+					(assetId): assetId is string => typeof assetId === "string",
+			  )
+			: [],
 		createdAt: (value as { createdAt: string }).createdAt,
 	};
 }
@@ -457,6 +516,28 @@ function normalizeChatMemory({
 							: null,
 			  }
 			: null,
+		assemblyIntent:
+			memory?.assemblyIntent && Array.isArray(memory.assemblyIntent.sourceAssetIds)
+				? {
+						referenceAssetId:
+							typeof memory.assemblyIntent.referenceAssetId === "string"
+								? memory.assemblyIntent.referenceAssetId
+								: null,
+						sourceAssetIds: memory.assemblyIntent.sourceAssetIds.filter(
+							(assetId): assetId is string => typeof assetId === "string",
+						),
+						focusMatchIds: Array.isArray(memory.assemblyIntent.focusMatchIds)
+							? memory.assemblyIntent.focusMatchIds.filter(
+									(matchId): matchId is string => typeof matchId === "string",
+							  )
+							: [],
+				  }
+				: null,
+		lockedMatchIds: Array.isArray(memory?.lockedMatchIds)
+			? memory.lockedMatchIds.filter(
+					(matchId): matchId is string => typeof matchId === "string",
+			  )
+			: [],
 		recentTurnSummaries: Array.isArray(memory?.recentTurnSummaries)
 			? memory.recentTurnSummaries
 					.map((value) => normalizeTurnSummary(value))
@@ -480,6 +561,229 @@ function normalizeChatMemory({
 					.filter((value): value is string => typeof value === "string")
 					.slice(-MAX_CHAT_MEMORY_TURNS)
 			: [],
+		recentReferenceAssemblyChoices: Array.isArray(memory?.recentReferenceAssemblyChoices)
+			? memory.recentReferenceAssemblyChoices
+					.map((value) => normalizeRecentReferenceAssemblyChoice(value))
+					.filter(
+						(
+							value,
+						): value is ClipForgeRecentReferenceAssemblyChoice => value !== null,
+					)
+					.slice(-MAX_CHAT_MEMORY_TURNS)
+			: [],
+	};
+}
+
+function normalizeFootageDescriptor(value: unknown): FootageDescriptor | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as { analyzedAt?: unknown }).analyzedAt !== "string" ||
+		typeof (value as { asset_id?: unknown }).asset_id !== "string" ||
+		typeof (value as { asset_name?: unknown }).asset_name !== "string" ||
+		typeof (value as { duration_ms?: unknown }).duration_ms !== "number"
+	) {
+		return null;
+	}
+
+	const aspectRatio = (value as { aspect_ratio?: unknown }).aspect_ratio;
+	const activityIntensity = (value as { activity_intensity?: unknown }).activity_intensity;
+	const candidateRanges = Array.isArray(
+		(value as { candidate_ranges?: unknown }).candidate_ranges,
+	)
+		? ((value as { candidate_ranges: unknown[] }).candidate_ranges as unknown[])
+				.map((range) => {
+					if (
+						typeof range !== "object" ||
+						range === null ||
+						typeof (range as { range_id?: unknown }).range_id !== "string" ||
+						typeof (range as { label?: unknown }).label !== "string" ||
+						typeof (range as { start_ms?: unknown }).start_ms !== "number" ||
+						typeof (range as { end_ms?: unknown }).end_ms !== "number" ||
+						typeof (range as { hook_score?: unknown }).hook_score !== "number" ||
+						typeof (range as { activity_score?: unknown }).activity_score !== "number" ||
+						typeof (range as { semantic_summary?: unknown }).semantic_summary !== "string"
+					) {
+						return null;
+					}
+					return {
+						range_id: (range as { range_id: string }).range_id,
+						label: (range as { label: string }).label,
+						start_ms: (range as { start_ms: number }).start_ms,
+						end_ms: (range as { end_ms: number }).end_ms,
+						hook_score: (range as { hook_score: number }).hook_score,
+						activity_score: (range as { activity_score: number }).activity_score,
+						transcript_cues: Array.isArray(
+							(range as { transcript_cues?: unknown }).transcript_cues,
+						)
+							? (
+									(range as { transcript_cues: unknown[] }).transcript_cues as unknown[]
+							  ).filter((cue): cue is string => typeof cue === "string")
+							: [],
+						semantic_summary: (range as { semantic_summary: string }).semantic_summary,
+					};
+				})
+				.filter(
+					(
+						range,
+					): range is FootageDescriptor["candidate_ranges"][number] => range !== null,
+				)
+		: [];
+
+	return {
+		analyzedAt: (value as { analyzedAt: string }).analyzedAt,
+		asset_id: (value as { asset_id: string }).asset_id,
+		asset_name: (value as { asset_name: string }).asset_name,
+		duration_ms: (value as { duration_ms: number }).duration_ms,
+		aspect_ratio:
+			aspectRatio === "9:16" ||
+			aspectRatio === "1:1" ||
+			aspectRatio === "16:9" ||
+			aspectRatio === "unknown"
+				? aspectRatio
+				: "unknown",
+		scene_cut_count:
+			typeof (value as { scene_cut_count?: unknown }).scene_cut_count === "number"
+				? (value as { scene_cut_count: number }).scene_cut_count
+				: 0,
+		activity_intensity:
+			activityIntensity === "low" ||
+			activityIntensity === "medium" ||
+			activityIntensity === "high"
+				? activityIntensity
+				: "medium",
+		beat_bpm:
+			typeof (value as { beat_bpm?: unknown }).beat_bpm === "number"
+				? (value as { beat_bpm: number }).beat_bpm
+				: null,
+		hook_score:
+			typeof (value as { hook_score?: unknown }).hook_score === "number"
+				? (value as { hook_score: number }).hook_score
+				: 0,
+		transcript_cues: Array.isArray((value as { transcript_cues?: unknown }).transcript_cues)
+			? ((value as { transcript_cues: unknown[] }).transcript_cues as unknown[]).filter(
+					(cue): cue is string => typeof cue === "string",
+			  )
+			: [],
+		semantic_summary:
+			typeof (value as { semantic_summary?: unknown }).semantic_summary === "string"
+				? (value as { semantic_summary: string }).semantic_summary
+				: "",
+		candidate_ranges: candidateRanges,
+		warnings: Array.isArray((value as { warnings?: unknown }).warnings)
+			? ((value as { warnings: unknown[] }).warnings as unknown[]).filter(
+					(warning): warning is string => typeof warning === "string",
+			  )
+			: [],
+	};
+}
+
+function normalizeReferenceShotPlan(value: unknown): ReferenceShotPlan | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as { analyzedAt?: unknown }).analyzedAt !== "string" ||
+		typeof (value as { reference_asset_id?: unknown }).reference_asset_id !== "string"
+	) {
+		return null;
+	}
+
+	const sections = Array.isArray((value as { sections?: unknown }).sections)
+		? ((value as { sections: unknown[] }).sections as unknown[])
+				.map((section) => {
+					if (
+						typeof section !== "object" ||
+						section === null ||
+						typeof (section as { match_id?: unknown }).match_id !== "string" ||
+						typeof (section as { label?: unknown }).label !== "string" ||
+						typeof (section as { target_start_ms?: unknown }).target_start_ms !== "number" ||
+						typeof (section as { target_duration_ms?: unknown }).target_duration_ms !==
+							"number" ||
+						typeof (section as { description?: unknown }).description !== "string"
+					) {
+						return null;
+					}
+					const role = (section as { role?: unknown }).role;
+					const shotCadence = (section as { shot_cadence?: unknown }).shot_cadence;
+					const desiredEnergy = (section as { desired_energy?: unknown }).desired_energy;
+					if (
+						(role !== "hook" &&
+							role !== "body" &&
+							role !== "payoff" &&
+							role !== "cta") ||
+						(shotCadence !== "slow" &&
+							shotCadence !== "medium" &&
+							shotCadence !== "fast") ||
+						(desiredEnergy !== "low" &&
+							desiredEnergy !== "medium" &&
+							desiredEnergy !== "high")
+					) {
+						return null;
+					}
+					return {
+						match_id: (section as { match_id: string }).match_id,
+						label: (section as { label: string }).label,
+						role,
+						target_start_ms: (section as { target_start_ms: number }).target_start_ms,
+						target_duration_ms: (section as { target_duration_ms: number }).target_duration_ms,
+						shot_cadence: shotCadence,
+						desired_energy: desiredEnergy,
+						overlay_moment:
+							typeof (section as { overlay_moment?: unknown }).overlay_moment === "boolean"
+								? (section as { overlay_moment: boolean }).overlay_moment
+								: false,
+						caption_moment:
+							typeof (section as { caption_moment?: unknown }).caption_moment === "boolean"
+								? (section as { caption_moment: boolean }).caption_moment
+								: false,
+						description: (section as { description: string }).description,
+					};
+				})
+				.filter(
+					(
+						section,
+					): section is ReferenceShotPlan["sections"][number] => section !== null,
+				)
+		: [];
+
+	const endingShape = (value as { ending_shape?: unknown }).ending_shape;
+	return {
+		analyzedAt: (value as { analyzedAt: string }).analyzedAt,
+		reference_asset_id: (value as { reference_asset_id: string }).reference_asset_id,
+		hook_pattern:
+			typeof (value as { hook_pattern?: unknown }).hook_pattern === "string"
+				? (value as { hook_pattern: string }).hook_pattern
+				: "front-loaded hook",
+		ending_shape:
+			endingShape === "payoff" || endingShape === "cta" || endingShape === "open-ended"
+				? endingShape
+				: "payoff",
+		sections,
+		warnings: Array.isArray((value as { warnings?: unknown }).warnings)
+			? ((value as { warnings: unknown[] }).warnings as unknown[]).filter(
+					(warning): warning is string => typeof warning === "string",
+			  )
+			: [],
+	};
+}
+
+function normalizeReferenceMatchLock(value: unknown): ReferenceMatchLock | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as { match_id?: unknown }).match_id !== "string" ||
+		typeof (value as { asset_id?: unknown }).asset_id !== "string" ||
+		typeof (value as { asset_name?: unknown }).asset_name !== "string" ||
+		typeof (value as { locked_at?: unknown }).locked_at !== "string"
+	) {
+		return null;
+	}
+
+	return {
+		match_id: (value as { match_id: string }).match_id,
+		asset_id: (value as { asset_id: string }).asset_id,
+		asset_name: (value as { asset_name: string }).asset_name,
+		locked_at: (value as { locked_at: string }).locked_at,
 	};
 }
 
@@ -783,6 +1087,33 @@ export function normalizeClipForgeProjectData({
 					return normalized ? [[assetId, normalized]] : [];
 				},
 			),
+		),
+		assemblySourceAssetIds: Array.isArray(source.assemblySourceAssetIds)
+			? source.assemblySourceAssetIds.filter(
+					(assetId): assetId is string => typeof assetId === "string",
+			  )
+			: [],
+		footageDescriptorsByAssetId: Object.fromEntries(
+			Object.entries(source.footageDescriptorsByAssetId ?? {}).flatMap(
+				([assetId, descriptor]) => {
+					const normalized = normalizeFootageDescriptor(descriptor);
+					return normalized ? [[assetId, normalized]] : [];
+				},
+			),
+		),
+		referenceShotPlanByAssetId: Object.fromEntries(
+			Object.entries(source.referenceShotPlanByAssetId ?? {}).flatMap(
+				([assetId, plan]) => {
+					const normalized = normalizeReferenceShotPlan(plan);
+					return normalized ? [[assetId, normalized]] : [];
+				},
+			),
+		),
+		referenceMatchLocks: Object.fromEntries(
+			Object.entries(source.referenceMatchLocks ?? {}).flatMap(([matchId, lock]) => {
+				const normalized = normalizeReferenceMatchLock(lock);
+				return normalized ? [[matchId, normalized]] : [];
+			}),
 		),
 		chatMemory: normalizeChatMemory({
 			memory: source.chatMemory,

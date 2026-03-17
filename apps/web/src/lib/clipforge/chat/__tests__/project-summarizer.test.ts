@@ -269,6 +269,8 @@ describe("buildProjectSummary", () => {
 					finishIntent: null,
 					destinationIntent: null,
 					referenceIntent: null,
+					assemblyIntent: null,
+					lockedMatchIds: [],
 					recentTurnSummaries: [
 						{
 							prompt: "add a subtle transition",
@@ -291,6 +293,7 @@ describe("buildProjectSummary", () => {
 					],
 					recentAssetChoices: [],
 					recentReferenceComparisons: [],
+					recentReferenceAssemblyChoices: [],
 				},
 			},
 		};
@@ -316,7 +319,7 @@ describe("buildProjectSummary", () => {
 		expect(summary.recent_turn_summaries[0]).toContain("add a subtle transition");
 	});
 
-	test("surfaces the active reference video and readiness snapshot", () => {
+	test("surfaces the active reference video, assembly pool, and draft-match readiness", () => {
 		const project: TProject = {
 			metadata: {
 				id: "project-reference",
@@ -346,6 +349,7 @@ describe("buildProjectSummary", () => {
 			clipforge: {
 				...buildDefaultClipForgeProjectData(),
 				activeReferenceVideoAssetId: "reference-1",
+				assemblySourceAssetIds: ["source-1", "source-2"],
 				mediaMetadataById: {
 					"reference-1": {
 						words: [
@@ -353,6 +357,32 @@ describe("buildProjectSummary", () => {
 							{ text: "this", start_ms: 200, end_ms: 420 },
 						],
 						segments: [{ text: "watch this", start_ms: 0, end_ms: 420 }],
+						silenceRegions: [],
+						transcriptionStatus: "ready",
+						transcriptionProvider: "browser-whisper",
+						transcriptionLanguage: "en",
+						transcriptionError: null,
+						indexedAt: "2026-03-01T00:00:00.000Z",
+					},
+					"source-1": {
+						words: [
+							{ text: "gym", start_ms: 0, end_ms: 180 },
+							{ text: "push", start_ms: 180, end_ms: 360 },
+						],
+						segments: [{ text: "gym push", start_ms: 0, end_ms: 360 }],
+						silenceRegions: [],
+						transcriptionStatus: "ready",
+						transcriptionProvider: "browser-whisper",
+						transcriptionLanguage: "en",
+						transcriptionError: null,
+						indexedAt: "2026-03-01T00:00:00.000Z",
+					},
+					"source-2": {
+						words: [
+							{ text: "street", start_ms: 0, end_ms: 220 },
+							{ text: "payoff", start_ms: 220, end_ms: 520 },
+						],
+						segments: [{ text: "street payoff", start_ms: 0, end_ms: 520 }],
 						silenceRegions: [],
 						transcriptionStatus: "ready",
 						transcriptionProvider: "browser-whisper",
@@ -418,7 +448,54 @@ describe("buildProjectSummary", () => {
 					duration: 6,
 					width: 1080,
 					height: 1920,
+					beatAnalysis: {
+						bpm: 126,
+						beats: [0, 0.5, 1, 1.5, 2],
+						downbeats: [0, 2],
+						analyzedAt: "2026-03-01T00:00:00.000Z",
+						version: 1,
+					},
+					visualAnalysis: {
+						sceneCuts: [0.6, 1.3, 2.4, 3.6, 4.8],
+						activityWindows: [
+							{ startTime: 0, endTime: 1.4, score: 0.9 },
+							{ startTime: 1.4, endTime: 3.2, score: 0.72 },
+							{ startTime: 3.2, endTime: 6, score: 0.58 },
+						],
+						analyzedAt: "2026-03-01T00:00:00.000Z",
+						version: 1,
+					},
 					file: new File(["video"], "reference.mp4", { type: "video/mp4" }),
+				},
+				{
+					id: "source-1",
+					name: "gym clip 1.mp4",
+					type: "video",
+					duration: 2.4,
+					width: 1080,
+					height: 1920,
+					visualAnalysis: {
+						sceneCuts: [0.7, 1.4],
+						activityWindows: [{ startTime: 0, endTime: 2.4, score: 0.84 }],
+						analyzedAt: "2026-03-01T00:00:00.000Z",
+						version: 1,
+					},
+					file: new File(["video"], "gym-clip-1.mp4", { type: "video/mp4" }),
+				},
+				{
+					id: "source-2",
+					name: "street payoff.mp4",
+					type: "video",
+					duration: 2.8,
+					width: 1080,
+					height: 1920,
+					visualAnalysis: {
+						sceneCuts: [0.9, 1.9],
+						activityWindows: [{ startTime: 0, endTime: 2.8, score: 0.68 }],
+						analyzedAt: "2026-03-01T00:00:00.000Z",
+						version: 1,
+					},
+					file: new File(["video"], "street-payoff.mp4", { type: "video/mp4" }),
 				},
 			],
 		});
@@ -426,5 +503,12 @@ describe("buildProjectSummary", () => {
 		expect(summary.active_reference_video?.asset_id).toBe("reference-1");
 		expect(summary.reference_analysis_snapshot?.caption_tone).toBe("bold");
 		expect(summary.reference_match_readiness.ready).toBe(true);
+		expect(summary.assembly_source_pool.map((asset) => asset.asset_id)).toEqual([
+			"source-1",
+			"source-2",
+		]);
+		expect(summary.footage_match_readiness.ready).toBe(true);
+		expect(summary.reference_shot_plan?.sections.length).toBeGreaterThan(0);
+		expect(summary.candidate_source_matches.length).toBeGreaterThan(0);
 	});
 });

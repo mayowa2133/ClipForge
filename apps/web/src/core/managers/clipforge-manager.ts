@@ -32,6 +32,9 @@ import {
 	type IncompatibleMediaReference,
 	type MissingMediaReference,
 	buildReferenceVideoAnalysis,
+	buildReferenceShotPlan,
+	buildFootageDescriptor,
+	buildReferenceCandidateMatches,
 	chooseReferenceMusicVolume,
 	getReferenceVideoAnalysisStatus,
 	inferReferenceCaptionRevealPreset,
@@ -46,6 +49,7 @@ import {
 	getAudioPolishPresetById,
 	getCaptionRevealSoundSyncPreset,
 	getPolishProfileById,
+	buildReferenceGuidedDraft,
 } from "@/lib/clipforge";
 import {
 	buildCommandPlanImpactPreview,
@@ -58,6 +62,7 @@ import { extractMediaAssetAudioToFloat32 } from "@/lib/media/audio";
 import {
 	ApplyTimelineDiffOpsCommand,
 	AutoEditTikTokDraftCommand,
+	BuildReferenceGuidedDraftCommand,
 	CaptionProjectSnapshotCommand,
 } from "@/lib/commands";
 import { buildUploadAudioElement } from "@/lib/timeline";
@@ -73,13 +78,16 @@ import type {
 	ClipForgeChatMemory,
 	ClipForgeEditorCommand,
 	ClipForgeRecentAssetChoice,
+	ClipForgeRecentReferenceAssemblyChoice,
 	ClipMediaMetadata,
 	CaptionSegmentView,
 	CreativeBrief,
 	DraftImpactSummary,
 	DraftRecipe,
+	FootageDescriptor,
 	FootageIntelligenceReport,
 	PolishProfile,
+	ReferenceDraftSectionMatch,
 	ReferenceVideoAnalysis,
 	RetentionShapePlan,
 	TrendSoundReference,
@@ -946,6 +954,76 @@ export class ClipForgeManager {
 		return analysis;
 	}
 
+	async setAssemblySourcePool({
+		assetIds,
+	}: {
+		assetIds: string[];
+	}): Promise<void> {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		const validVideoAssets = this.editor.media
+			.getAssets()
+			.filter(
+				(asset): asset is MediaAsset & { type: "video" } =>
+					asset.type === "video" && !asset.ephemeral,
+			)
+			.filter((asset) => assetIds.includes(asset.id));
+
+		const nextDescriptors: Record<string, FootageDescriptor> = {
+			...project.clipforge.footageDescriptorsByAssetId,
+		};
+		for (const asset of validVideoAssets) {
+			let hydratedAsset: MediaAsset & { type: "video" } = asset;
+			if (!hydratedAsset.visualAnalysis) {
+				try {
+					const analyzedAsset = await this.editor.media.analyzeVisualActivity({
+						mediaId: asset.id,
+					});
+					if (analyzedAsset?.type === "video") {
+						hydratedAsset = analyzedAsset as MediaAsset & { type: "video" };
+					}
+				} catch {
+					// Degrade gracefully for pool setup.
+				}
+			}
+			if (!hydratedAsset.beatAnalysis) {
+				try {
+					const analyzedAsset = await this.editor.media.analyzeBeatGrid({
+						mediaId: asset.id,
+					});
+					if (analyzedAsset?.type === "video") {
+						hydratedAsset = analyzedAsset as MediaAsset & { type: "video" };
+					}
+				} catch {
+					// Beat analysis is optional for source matching.
+				}
+			}
+			nextDescriptors[asset.id] = buildFootageDescriptor({
+				asset: hydratedAsset,
+				metadata: project.clipforge.mediaMetadataById[asset.id] ?? null,
+			});
+		}
+
+		this.editor.project.setActiveProject({
+			project: {
+				...project,
+				metadata: {
+					...project.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...project.clipforge,
+					assemblySourceAssetIds: validVideoAssets.map((asset) => asset.id),
+					footageDescriptorsByAssetId: nextDescriptors,
+				},
+			},
+		});
+		this.editor.save.markDirty();
+	}
+
 	clearActiveReferenceVideo(): void {
 		const activeProject = this.editor.project.getActiveOrNull();
 		if (!activeProject) {
@@ -965,6 +1043,11 @@ export class ClipForgeManager {
 					chatMemory: {
 						...project.clipforge.chatMemory,
 						referenceIntent: null,
+						assemblyIntent: {
+							referenceAssetId: null,
+							sourceAssetIds: project.clipforge.chatMemory.assemblyIntent?.sourceAssetIds ?? [],
+							focusMatchIds: [],
+						},
 					},
 				},
 			},
@@ -1035,6 +1118,14 @@ export class ClipForgeManager {
 				project,
 				assetId: resolvedAssetId,
 				analysis: missingAnalysis,
+				shotPlan: {
+					analyzedAt: missingAnalysis.analyzedAt,
+					reference_asset_id: resolvedAssetId,
+					hook_pattern: "unknown",
+					ending_shape: "open-ended",
+					sections: [],
+					warnings: ["Reference asset is missing from the current project."],
+				},
 				makeActive: assetId !== undefined,
 			});
 			return missingAnalysis;
@@ -1067,10 +1158,15 @@ export class ClipForgeManager {
 			asset,
 			metadata,
 		});
+		const shotPlan = buildReferenceShotPlan({
+			asset,
+			analysis,
+		});
 		this.persistReferenceAnalysis({
 			project: refreshedProject,
 			assetId: resolvedAssetId,
 			analysis,
+			shotPlan,
 			makeActive: assetId !== undefined,
 		});
 		return analysis;
@@ -1080,11 +1176,13 @@ export class ClipForgeManager {
 		project,
 		assetId,
 		analysis,
+		shotPlan,
 		makeActive,
 	}: {
 		project: TProject & { clipforge: import("@/types/clipforge").ClipForgeProjectData };
 		assetId: string;
 		analysis: ReferenceVideoAnalysis;
+		shotPlan: import("@/types/clipforge").ReferenceShotPlan;
 		makeActive: boolean;
 	}): void {
 		this.editor.project.setActiveProject({
@@ -1103,10 +1201,33 @@ export class ClipForgeManager {
 						...project.clipforge.referenceAnalysisByAssetId,
 						[assetId]: analysis,
 					},
+					referenceShotPlanByAssetId: {
+						...project.clipforge.referenceShotPlanByAssetId,
+						[assetId]: shotPlan,
+					},
 				},
 			},
 		});
 		this.editor.save.markDirty();
+	}
+
+	private getEffectiveAssemblySourceAssetIds({
+		project,
+	}: {
+		project: TProject & { clipforge: import("@/types/clipforge").ClipForgeProjectData };
+	}): string[] {
+		const selected = project.clipforge.assemblySourceAssetIds;
+		if (selected.length > 0) {
+			return selected;
+		}
+		const activeReferenceAssetId = project.clipforge.activeReferenceVideoAssetId;
+		return this.editor.media
+			.getAssets()
+			.filter(
+				(asset): asset is MediaAsset & { type: "video" } =>
+					asset.type === "video" && !asset.ephemeral && asset.id !== activeReferenceAssetId,
+			)
+			.map((asset) => asset.id);
 	}
 
 	async analyzeSceneFootageIntelligence(): Promise<FootageIntelligenceReport> {
@@ -2630,6 +2751,271 @@ export class ClipForgeManager {
 		};
 	}
 
+	private buildReferenceDraftMatches({
+		referenceAssetId,
+		sourceAssetIds,
+	}: {
+		referenceAssetId?: string | null;
+		sourceAssetIds?: string[];
+	}): ReferenceDraftSectionMatch[] {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			return [];
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		const resolved = this.resolveReferenceAssetAndAnalysis({
+			referenceAssetId,
+		});
+		if (!resolved?.asset || !resolved.analysis) {
+			return [];
+		}
+		const poolIds =
+			sourceAssetIds && sourceAssetIds.length > 0
+				? sourceAssetIds
+				: this.getEffectiveAssemblySourceAssetIds({ project });
+		const descriptors = poolIds.flatMap((assetId) => {
+			const asset = this.editor.media
+				.getAssets()
+				.find(
+					(candidate): candidate is MediaAsset & { type: "video" } =>
+						candidate.id === assetId && candidate.type === "video" && !candidate.ephemeral,
+				);
+			if (!asset) {
+				return [];
+			}
+			const persisted = project.clipforge.footageDescriptorsByAssetId[asset.id] ?? null;
+			return [
+				persisted ??
+					buildFootageDescriptor({
+						asset,
+						metadata: project.clipforge.mediaMetadataById[asset.id] ?? null,
+					}),
+			];
+		});
+		const shotPlan =
+			project.clipforge.referenceShotPlanByAssetId[resolved.assetId] ??
+			buildReferenceShotPlan({
+				asset: resolved.asset,
+				analysis: resolved.analysis,
+			});
+		return buildReferenceCandidateMatches({
+			referenceShotPlan: shotPlan,
+			footageDescriptors: descriptors,
+			locks: project.clipforge.referenceMatchLocks,
+		});
+	}
+
+	private async applyReferenceGuidedDraftCommand({
+		command,
+	}: {
+		command: Extract<
+			Exclude<ClipForgeEditorCommand, { kind: "timeline-op" }>,
+			{ kind: "build-reference-draft" }
+		>;
+	}): Promise<void> {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		const matches =
+			command.matches.length > 0
+				? command.matches
+				: this.buildReferenceDraftMatches({
+						referenceAssetId: command.reference_asset_id,
+						sourceAssetIds: command.source_asset_ids,
+				  });
+		if (matches.length === 0) {
+			throw new Error("No deterministic source matches were available for the reference draft.");
+		}
+
+		const result = buildReferenceGuidedDraft({
+			project,
+			mediaAssets: this.editor.media.getAssets(),
+			matches,
+			referenceAssetId:
+				command.reference_asset_id ?? project.clipforge.activeReferenceVideoAssetId ?? null,
+		});
+		this.editor.command.execute({
+			command: new BuildReferenceGuidedDraftCommand(result.project),
+		});
+		this.persistRecentReferenceAssemblyChoices({
+			project: ensureClipForgeProjectData({ project: this.editor.project.getActive() }),
+			choices: result.appliedChoices,
+		});
+	}
+
+	private persistRecentReferenceAssemblyChoices({
+		project,
+		choices,
+	}: {
+		project: TProject & { clipforge: import("@/types/clipforge").ClipForgeProjectData };
+		choices: ClipForgeRecentReferenceAssemblyChoice[];
+	}) {
+		this.editor.project.setActiveProject({
+			project: {
+				...project,
+				metadata: {
+					...project.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...project.clipforge,
+					chatMemory: {
+						...project.clipforge.chatMemory,
+						lockedMatchIds: [
+							...new Set([
+								...project.clipforge.chatMemory.lockedMatchIds,
+								...choices
+									.filter((choice) => project.clipforge.referenceMatchLocks[choice.matchId])
+									.map((choice) => choice.matchId),
+							]),
+						],
+						recentReferenceAssemblyChoices: choices.slice(-12),
+					},
+				},
+			},
+		});
+		this.editor.save.markDirty();
+	}
+
+	private updateRecentReferenceAssemblyChoiceAsset({
+		matchId,
+		assetId,
+	}: {
+		matchId: string;
+		assetId: string;
+	}) {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			return;
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		const asset = this.editor.media.getAssets().find((candidate) => candidate.id === assetId);
+		if (!asset) {
+			return;
+		}
+		const nextChoices = project.clipforge.chatMemory.recentReferenceAssemblyChoices.map((choice) =>
+			choice.matchId === matchId
+				? {
+						...choice,
+						assetId,
+						assetLabel: asset.name,
+						alternativeAssetIds: [
+							...new Set(
+								[...choice.alternativeAssetIds.filter((candidate) => candidate !== assetId), choice.assetId],
+							),
+						],
+						createdAt: new Date().toISOString(),
+				  }
+				: choice,
+		);
+		this.editor.project.setActiveProject({
+			project: {
+				...project,
+				metadata: {
+					...project.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...project.clipforge,
+					chatMemory: {
+						...project.clipforge.chatMemory,
+						recentReferenceAssemblyChoices: nextChoices,
+					},
+				},
+			},
+		});
+		this.editor.save.markDirty();
+	}
+
+	private resolveRecentReferenceAssemblyChoice({
+		matchId,
+	}: {
+		matchId: string;
+	}): ClipForgeRecentReferenceAssemblyChoice | null {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			return null;
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		return (
+			project.clipforge.chatMemory.recentReferenceAssemblyChoices.find(
+				(choice) => choice.matchId === matchId,
+			) ?? null
+		);
+	}
+
+	private persistReferenceMatchLock({
+		matchId,
+		assetId,
+	}: {
+		matchId: string;
+		assetId: string;
+	}): void {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			return;
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		const asset = this.editor.media.getAssets().find((candidate) => candidate.id === assetId);
+		if (!asset) {
+			return;
+		}
+		this.editor.project.setActiveProject({
+			project: {
+				...project,
+				metadata: {
+					...project.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...project.clipforge,
+					referenceMatchLocks: {
+						...project.clipforge.referenceMatchLocks,
+						[matchId]: {
+							match_id: matchId,
+							asset_id: assetId,
+							asset_name: asset.name,
+							locked_at: new Date().toISOString(),
+						},
+					},
+					chatMemory: {
+						...project.clipforge.chatMemory,
+						lockedMatchIds: [...new Set([...project.clipforge.chatMemory.lockedMatchIds, matchId])],
+					},
+				},
+			},
+		});
+		this.editor.save.markDirty();
+	}
+
+	private clearReferenceMatchLocks(): void {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			return;
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		this.editor.project.setActiveProject({
+			project: {
+				...project,
+				metadata: {
+					...project.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...project.clipforge,
+					referenceMatchLocks: {},
+					chatMemory: {
+						...project.clipforge.chatMemory,
+						lockedMatchIds: [],
+					},
+				},
+			},
+		});
+		this.editor.save.markDirty();
+	}
+
 	private buildReferenceDerivedCommands({
 		command,
 	}: {
@@ -3272,7 +3658,111 @@ export class ClipForgeManager {
 							}),
 					  ];
 			}
+			case "set-assembly-source-pool": {
+				if (command.asset_ids.length === 0) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "assembly_source_pool_empty",
+							message: "Choose at least one source clip for reference-guided draft assembly.",
+						}),
+					];
+				}
+				const invalidAssetId = command.asset_ids.find((assetId) => {
+					const asset = this.editor.media.getAssets().find((candidate) => candidate.id === assetId);
+					return !asset || asset.type !== "video" || asset.ephemeral;
+				});
+				return invalidAssetId
+					? [
+							buildCommandValidationError({
+								commandIndex,
+								code: "assembly_source_invalid",
+								message: "Assembly source pool entries must be imported video assets.",
+							}),
+					  ]
+					: [];
+			}
 			case "clear-active-reference-video":
+				return [];
+			case "build-reference-draft": {
+				const matches =
+					command.matches.length > 0
+						? command.matches
+						: this.buildReferenceDraftMatches({
+								referenceAssetId: command.reference_asset_id,
+								sourceAssetIds: command.source_asset_ids,
+						  });
+				if (matches.length === 0) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "reference_draft_matches_empty",
+							message: "No safe source-footage matches were available for the requested reference draft.",
+						}),
+					];
+				}
+				const invalidMatch = matches.find(
+					(match) =>
+						!match.selected_asset_id ||
+						!this.editor.media
+							.getAssets()
+							.some(
+								(asset) =>
+									asset.id === match.selected_asset_id &&
+									asset.type === "video" &&
+									!asset.ephemeral,
+							),
+					);
+				return invalidMatch
+					? [
+							buildCommandValidationError({
+								commandIndex,
+								code: "reference_draft_invalid_asset",
+								message: "Reference draft matches must resolve to imported video source clips.",
+							}),
+					  ]
+					: [];
+			}
+			case "replace-with-source-match": {
+				const choice = this.resolveRecentReferenceAssemblyChoice({
+					matchId: command.match_id,
+				});
+				if (!choice) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "reference_match_not_found",
+							message: "The requested reference match could not be found in the current draft.",
+						}),
+					];
+				}
+				const asset = this.editor.media
+					.getAssets()
+					.find((candidate) => candidate.id === command.asset_id);
+				if (!asset || asset.type !== "video" || asset.ephemeral) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "reference_replacement_invalid",
+							message: "Replacement matches must use imported video source clips.",
+						}),
+					];
+				}
+				return [];
+			}
+			case "lock-reference-match":
+				return this.resolveRecentReferenceAssemblyChoice({
+					matchId: command.match_id,
+				})
+					? []
+					: [
+							buildCommandValidationError({
+								commandIndex,
+								code: "reference_lock_not_found",
+								message: "The requested match is not available to lock yet.",
+							}),
+					  ];
+			case "clear-reference-match-locks":
 				return [];
 			case "apply-reference-finish-pass":
 			case "match-reference-captions":
@@ -3567,8 +4057,58 @@ export class ClipForgeManager {
 					assetId: command.asset_id,
 				});
 				break;
+			case "set-assembly-source-pool":
+				await this.setAssemblySourcePool({
+					assetIds: command.asset_ids,
+				});
+				break;
 			case "clear-active-reference-video":
 				this.clearActiveReferenceVideo();
+				break;
+			case "build-reference-draft":
+				await this.applyReferenceGuidedDraftCommand({
+					command,
+				});
+				break;
+			case "replace-with-source-match": {
+				const choice = this.resolveRecentReferenceAssemblyChoice({
+					matchId: command.match_id,
+				});
+				if (!choice) {
+					throw new Error("Reference match could not be found in the current draft.");
+				}
+				const target = this.resolveCurrentSceneElement({
+					elementId: choice.segmentId,
+				});
+				if (!target) {
+					throw new Error("The selected draft section is no longer present in the active scene.");
+				}
+				this.editor.timeline.replaceElementMedia({
+					trackId: target.trackId,
+					elementId: choice.segmentId,
+					mediaId: command.asset_id,
+				});
+				this.updateRecentReferenceAssemblyChoiceAsset({
+					matchId: command.match_id,
+					assetId: command.asset_id,
+				});
+				break;
+			}
+			case "lock-reference-match": {
+				const choice = this.resolveRecentReferenceAssemblyChoice({
+					matchId: command.match_id,
+				});
+				if (!choice) {
+					throw new Error("Reference match could not be found.");
+				}
+				this.persistReferenceMatchLock({
+					matchId: command.match_id,
+					assetId: command.asset_id ?? choice.assetId,
+				});
+				break;
+			}
+			case "clear-reference-match-locks":
+				this.clearReferenceMatchLocks();
 				break;
 			case "apply-reference-finish-pass":
 			case "match-reference-captions":
@@ -4044,6 +4584,23 @@ export class ClipForgeManager {
 					referenceMode: "exact-recreation" as const,
 			  }
 			: existingMemory.referenceIntent;
+		const assemblyIntent = shouldRefreshAssemblyIntent({ commands })
+			? {
+					referenceAssetId:
+						findLatestReferenceAssetId({ commands }) ??
+						existingMemory.assemblyIntent?.referenceAssetId ??
+						project.clipforge.activeReferenceVideoAssetId ??
+						null,
+					sourceAssetIds:
+						findLatestAssemblySourceAssetIds({ commands }) ??
+						existingMemory.assemblyIntent?.sourceAssetIds ??
+						project.clipforge.assemblySourceAssetIds,
+					focusMatchIds:
+						findLatestAssemblyFocusMatchIds({ commands }) ??
+						existingMemory.assemblyIntent?.focusMatchIds ??
+						[],
+			  }
+			: existingMemory.assemblyIntent;
 		const recentAssetChoices = [
 			...existingMemory.recentAssetChoices,
 			...commands
@@ -4065,6 +4622,8 @@ export class ClipForgeManager {
 			finishIntent,
 			destinationIntent,
 			referenceIntent,
+			assemblyIntent,
+			lockedMatchIds: [...project.clipforge.chatMemory.lockedMatchIds],
 			recentTurnSummaries: nextTurnSummaries.slice(-12),
 			recentAppliedCommandSummaries: [
 				...existingMemory.recentAppliedCommandSummaries,
@@ -4072,6 +4631,8 @@ export class ClipForgeManager {
 			].slice(-20),
 			recentAssetChoices,
 			recentReferenceComparisons,
+			recentReferenceAssemblyChoices:
+				project.clipforge.chatMemory.recentReferenceAssemblyChoices.slice(-12),
 		};
 
 		this.editor.project.setActiveProject({
@@ -4465,6 +5026,8 @@ function summarizeSingleCommand(command: ClipForgeEditorCommand): string {
 			return "Applied safe export preflight fixes.";
 		case "set-active-reference-video":
 			return `Set ${command.asset_id} as the active reference video.`;
+		case "set-assembly-source-pool":
+			return `Set ${command.asset_ids.length} clips as the source pool for reference-guided assembly.`;
 		case "clear-active-reference-video":
 			return "Cleared the active reference video.";
 		case "apply-reference-finish-pass":
@@ -4477,6 +5040,14 @@ function summarizeSingleCommand(command: ClipForgeEditorCommand): string {
 			return "Matched packaging to the active reference.";
 		case "match-reference-pacing":
 			return "Matched pacing to the active reference.";
+		case "build-reference-draft":
+			return `Built a reference-guided first draft from ${command.matches.length} matched sections.`;
+		case "replace-with-source-match":
+			return "Replaced one draft section with a different source clip.";
+		case "lock-reference-match":
+			return "Locked a reference draft section to the current source clip.";
+		case "clear-reference-match-locks":
+			return "Cleared all reference draft section locks.";
 	}
 }
 
@@ -4604,7 +5175,8 @@ function shouldRefreshPublishIntent({
 			command.kind === "apply-project-kit" ||
 			command.kind === "apply-reference-finish-pass" ||
 			command.kind === "match-reference-packaging" ||
-			command.kind === "match-reference-pacing",
+			command.kind === "match-reference-pacing" ||
+			command.kind === "build-reference-draft",
 	);
 }
 
@@ -4622,7 +5194,8 @@ function shouldRefreshFinishIntent({
 			command.kind === "insert-sfx-preset" ||
 			command.kind === "apply-reference-finish-pass" ||
 			command.kind === "match-reference-captions" ||
-			command.kind === "match-reference-audio-profile",
+			command.kind === "match-reference-audio-profile" ||
+			command.kind === "build-reference-draft",
 	);
 }
 
@@ -4635,7 +5208,8 @@ function shouldRefreshDestinationIntent({
 		(command) =>
 			command.kind === "set-publish-destination" ||
 			command.kind === "apply-reference-finish-pass" ||
-			command.kind === "match-reference-packaging",
+			command.kind === "match-reference-packaging" ||
+			command.kind === "build-reference-draft",
 	);
 }
 
@@ -4651,7 +5225,23 @@ function shouldRefreshReferenceIntent({
 			command.kind === "match-reference-captions" ||
 			command.kind === "match-reference-audio-profile" ||
 			command.kind === "match-reference-packaging" ||
-			command.kind === "match-reference-pacing",
+			command.kind === "match-reference-pacing" ||
+			command.kind === "build-reference-draft",
+	);
+}
+
+function shouldRefreshAssemblyIntent({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}) {
+	return commands.some(
+		(command) =>
+			command.kind === "set-assembly-source-pool" ||
+			command.kind === "build-reference-draft" ||
+			command.kind === "replace-with-source-match" ||
+			command.kind === "lock-reference-match" ||
+			command.kind === "clear-reference-match-locks",
 	);
 }
 
@@ -4670,9 +5260,44 @@ function findLatestReferenceAssetId({
 			command?.kind === "match-reference-captions" ||
 			command?.kind === "match-reference-audio-profile" ||
 			command?.kind === "match-reference-packaging" ||
-			command?.kind === "match-reference-pacing"
+			command?.kind === "match-reference-pacing" ||
+			command?.kind === "build-reference-draft"
 		) {
 			return command.reference_asset_id ?? null;
+		}
+	}
+	return null;
+}
+
+function findLatestAssemblySourceAssetIds({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}) {
+	for (let index = commands.length - 1; index >= 0; index -= 1) {
+		const command = commands[index];
+		if (command?.kind === "set-assembly-source-pool") {
+			return command.asset_ids;
+		}
+		if (command?.kind === "build-reference-draft" && command.source_asset_ids?.length) {
+			return command.source_asset_ids;
+		}
+	}
+	return null;
+}
+
+function findLatestAssemblyFocusMatchIds({
+	commands,
+}: {
+	commands: ClipForgeEditorCommand[];
+}) {
+	for (let index = commands.length - 1; index >= 0; index -= 1) {
+		const command = commands[index];
+		if (command?.kind === "build-reference-draft" && command.focus_match_ids?.length) {
+			return command.focus_match_ids;
+		}
+		if (command?.kind === "lock-reference-match") {
+			return [command.match_id];
 		}
 	}
 	return null;
@@ -4717,6 +5342,24 @@ function buildRecentAssetChoice({
 				commandKind: command.kind,
 				createdAt: new Date().toISOString(),
 			};
+		case "build-reference-draft":
+			return command.matches[0]
+				? {
+						assetId: command.matches[0].selected_asset_id,
+						assetKind: "source-video",
+						label: command.matches[0].selected_asset_name,
+						commandKind: command.kind,
+						createdAt: new Date().toISOString(),
+				  }
+				: null;
+		case "replace-with-source-match":
+			return {
+				assetId: command.asset_id,
+				assetKind: "source-video",
+				label: command.asset_id,
+				commandKind: command.kind,
+				createdAt: new Date().toISOString(),
+			};
 		default:
 			return null;
 	}
@@ -4738,6 +5381,12 @@ function buildRecentReferenceComparison({
 			return ["matched packaging to active reference"];
 		case "match-reference-pacing":
 			return ["matched pacing to active reference"];
+		case "build-reference-draft":
+			return ["built a first draft from reference-guided source matches"];
+		case "replace-with-source-match":
+			return ["swapped one reference-guided section to a different source clip"];
+		case "lock-reference-match":
+			return ["locked a reference-guided section to preserve the current source clip"];
 		default:
 			return [];
 	}

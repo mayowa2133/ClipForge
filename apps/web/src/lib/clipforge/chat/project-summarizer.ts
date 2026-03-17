@@ -4,8 +4,13 @@ import {
 	buildTranscriptSnippetForElement,
 } from "@/lib/clipforge/timeline-transcript";
 import {
+	buildFootageDescriptor,
+	buildFootageMatchReadiness,
+	buildReferenceCandidateMatches,
 	buildReferenceReadiness,
+	buildReferenceShotPlan,
 	getReferenceVideoAnalysisStatus,
+	summarizeFootageDescriptor,
 	summarizeReferenceAnalysis,
 } from "@/lib/clipforge/reference-video";
 import { evaluateExportPreflight } from "@/lib/clipforge/export-preflight";
@@ -89,6 +94,47 @@ export function buildProjectSummary({
 	const referenceReadiness = buildReferenceReadiness({
 		status: activeReferenceStatus,
 		analysis: activeReferenceAnalysis,
+	});
+	const assemblySourcePool = mediaAssets
+		.filter(
+			(asset): asset is MediaAsset & { type: "video" } =>
+				asset.type === "video" &&
+				!asset.ephemeral &&
+				asset.id !== activeReferenceAssetId &&
+				(project.clipforge?.assemblySourceAssetIds?.length
+					? project.clipforge.assemblySourceAssetIds.includes(asset.id)
+					: true),
+		)
+		.sort((left, right) => left.name.localeCompare(right.name));
+	const footageDescriptors = assemblySourcePool.map((asset) => {
+		const persisted = project.clipforge?.footageDescriptorsByAssetId?.[asset.id] ?? null;
+		return (
+			persisted ??
+			buildFootageDescriptor({
+				asset,
+				metadata: project.clipforge?.mediaMetadataById?.[asset.id] ?? null,
+			})
+		);
+	});
+	const referenceShotPlan =
+		(activeReferenceAssetId && project.clipforge?.referenceShotPlanByAssetId
+			? project.clipforge.referenceShotPlanByAssetId[activeReferenceAssetId] ?? null
+			: null) ??
+		(activeReferenceAsset && activeReferenceAnalysis
+			? buildReferenceShotPlan({
+					asset: activeReferenceAsset,
+					analysis: activeReferenceAnalysis,
+			  })
+			: null);
+	const candidateSourceMatches = buildReferenceCandidateMatches({
+		referenceShotPlan,
+		footageDescriptors,
+		locks: project.clipforge?.referenceMatchLocks ?? {},
+	});
+	const footageMatchReadiness = buildFootageMatchReadiness({
+		referenceShotPlan,
+		sourceAssetCount: assemblySourcePool.length,
+		candidateMatches: candidateSourceMatches,
 	});
 
 	return {
@@ -226,6 +272,37 @@ export function buildProjectSummary({
 			  }
 			: null,
 		reference_match_readiness: referenceReadiness,
+		assembly_source_pool: assemblySourcePool.map((asset, index) => ({
+			asset_id: asset.id,
+			name: asset.name,
+			descriptor_summary: summarizeFootageDescriptor({
+				descriptor: footageDescriptors[index] ?? null,
+			}),
+		})),
+		footage_match_readiness: footageMatchReadiness,
+		reference_shot_plan: referenceShotPlan
+			? {
+					hook_pattern: referenceShotPlan.hook_pattern,
+					ending_shape: referenceShotPlan.ending_shape,
+					sections: referenceShotPlan.sections.map((section) => ({
+						match_id: section.match_id,
+						label: section.label,
+						role: section.role,
+						target_duration_ms: section.target_duration_ms,
+						description: section.description,
+					})),
+			  }
+			: null,
+		candidate_source_matches: candidateSourceMatches.map((match) => ({
+			match_id: match.match_id,
+			section_label: match.section_label,
+			section_role: match.section_role,
+			selected_asset_id: match.selected_asset_id,
+			selected_asset_name: match.selected_asset_name,
+			reasons: match.reasons,
+			candidate_asset_ids: match.candidates.map((candidate) => candidate.asset_id),
+			locked: match.locked,
+		})),
 		recent_ai_actions: [...recentAiActions].reverse(),
 		recent_turn_summaries: [...recentTurnSummaries].reverse(),
 		timeline_words: rankTimelineWords({

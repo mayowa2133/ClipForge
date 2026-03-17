@@ -749,6 +749,17 @@ function buildDirectCommandImpactCard({
 				jump: null,
 			};
 		}
+		case "set-assembly-source-pool":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-assembly-pool",
+				title: "Set assembly source pool",
+				detail: `${command.asset_ids.length} source clip${
+					command.asset_ids.length === 1 ? "" : "s"
+				}`,
+				jump: null,
+			};
 		case "clear-active-reference-video":
 			return {
 				opIndex: commandIndex,
@@ -766,6 +777,51 @@ function buildDirectCommandImpactCard({
 				title: "Apply reference finish pass",
 				detail:
 					summary.active_reference_video?.name ?? command.reference_asset_id ?? "active reference",
+				jump: null,
+			};
+		case "build-reference-draft":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-draft",
+				title: "Build reference-guided draft",
+				detail:
+					command.matches.length > 0
+						? command.matches
+								.slice(0, 3)
+								.map((match) => `${match.section_label}: ${match.selected_asset_name}`)
+								.join(" · ")
+						: summary.candidate_source_matches
+								.slice(0, 3)
+								.map((match) => `${match.section_label}: ${match.selected_asset_name}`)
+								.join(" · "),
+				jump: null,
+			};
+		case "replace-with-source-match":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-draft-swap",
+				title: "Swap matched source clip",
+				detail: `${command.match_id} -> ${command.asset_id}`,
+				jump: null,
+			};
+		case "lock-reference-match":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-draft-lock",
+				title: "Lock matched section",
+				detail: command.match_id,
+				jump: null,
+			};
+		case "clear-reference-match-locks":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-draft-lock",
+				title: "Clear draft section locks",
+				detail: "Allow all matched sections to be rebuilt",
 				jump: null,
 			};
 		case "match-reference-captions":

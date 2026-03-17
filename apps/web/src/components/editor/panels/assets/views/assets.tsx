@@ -92,6 +92,18 @@ export function MediaView() {
 	const srtInputRef = useRef<HTMLInputElement>(null);
 	const missingMediaRelinkInputRef = useRef<HTMLInputElement>(null);
 	const activeReferenceAssetId = activeProject?.clipforge?.activeReferenceVideoAssetId ?? null;
+	const explicitAssemblySourceAssetIds = activeProject?.clipforge?.assemblySourceAssetIds ?? [];
+	const assemblySourceAssetIds =
+		explicitAssemblySourceAssetIds.length > 0
+			? explicitAssemblySourceAssetIds
+			: mediaFiles
+					.filter(
+						(asset) =>
+							asset.type === "video" &&
+							!asset.ephemeral &&
+							asset.id !== activeReferenceAssetId,
+					)
+					.map((asset) => asset.id);
 	const activeReferenceAsset =
 		mediaFiles.find((asset) => asset.id === activeReferenceAssetId) ?? null;
 	const activeReferenceAnalysis =
@@ -236,6 +248,24 @@ export function MediaView() {
 	const handleClearReference = () => {
 		editor.clipforge.clearActiveReferenceVideo();
 		toast.success("Reference video cleared.");
+	};
+
+	const handleToggleAssemblySource = async ({ mediaId }: { mediaId: string }) => {
+		const nextIds = assemblySourceAssetIds.includes(mediaId)
+			? assemblySourceAssetIds.filter((assetId) => assetId !== mediaId)
+			: [...assemblySourceAssetIds, mediaId];
+		try {
+			await editor.clipforge.setAssemblySourcePool({ assetIds: nextIds });
+			toast.success(
+				nextIds.includes(mediaId)
+					? "Added clip to AI draft source pool."
+					: "Removed clip from AI draft source pool.",
+			);
+		} catch (error) {
+			toast.error("Failed to update AI draft source pool.", {
+				description: error instanceof Error ? error.message : "Please try again.",
+			});
+		}
 	};
 
 	const addElementAtTime = ({
@@ -694,6 +724,16 @@ export function MediaView() {
 						) : null}
 					</div>
 				) : null}
+				{hasVideoAssets ? (
+					<div className="mb-3 rounded-md border p-3">
+						<p className="text-sm font-medium">AI Draft Source Pool</p>
+						<p className="text-muted-foreground mt-1 text-xs">
+							{assemblySourceAssetIds.length} clip
+							{assemblySourceAssetIds.length === 1 ? "" : "s"} selected for
+							reference-guided draft assembly.
+						</p>
+					</div>
+				) : null}
 				{missingMediaReferences.length > 0 ? (
 					<MissingMediaSection
 						references={missingMediaReferences}
@@ -742,8 +782,10 @@ export function MediaView() {
 						onIndexClip={handleIndexClip}
 						onImportSrt={handleImportSrt}
 						onSetReference={handleSetReference}
+						onToggleAssemblySource={handleToggleAssemblySource}
 						onClearReference={handleClearReference}
 						activeReferenceAssetId={activeReferenceAssetId}
+						assemblySourceAssetIds={assemblySourceAssetIds}
 						onAddToTimeline={addElementAtTime}
 						highlightedId={highlightedId}
 						registerElement={registerElement}
@@ -756,8 +798,10 @@ export function MediaView() {
 						onIndexClip={handleIndexClip}
 						onImportSrt={handleImportSrt}
 						onSetReference={handleSetReference}
+						onToggleAssemblySource={handleToggleAssemblySource}
 						onClearReference={handleClearReference}
 						activeReferenceAssetId={activeReferenceAssetId}
+						assemblySourceAssetIds={assemblySourceAssetIds}
 						onAddToTimeline={addElementAtTime}
 						highlightedId={highlightedId}
 						registerElement={registerElement}
@@ -775,8 +819,10 @@ function MediaItemWithContextMenu({
 	onIndexClip,
 	onImportSrt,
 	onSetReference,
+	onToggleAssemblySource,
 	onClearReference,
 	activeReferenceAssetId,
+	assemblySourceAssetIds,
 }: {
 	item: MediaAsset;
 	children: React.ReactNode;
@@ -784,8 +830,10 @@ function MediaItemWithContextMenu({
 	onIndexClip: ({ mediaId }: { mediaId: string }) => void;
 	onImportSrt: ({ mediaId }: { mediaId: string }) => void;
 	onSetReference: ({ mediaId }: { mediaId: string }) => void;
+	onToggleAssemblySource: ({ mediaId }: { mediaId: string }) => void;
 	onClearReference: () => void;
 	activeReferenceAssetId: string | null;
+	assemblySourceAssetIds: string[];
 }) {
 	return (
 		<ContextMenu>
@@ -799,6 +847,13 @@ function MediaItemWithContextMenu({
 				)}
 				{item.type === "video" && activeReferenceAssetId === item.id && (
 					<ContextMenuItem onClick={onClearReference}>Clear reference</ContextMenuItem>
+				)}
+				{item.type === "video" && item.id !== activeReferenceAssetId && (
+					<ContextMenuItem onClick={() => onToggleAssemblySource({ mediaId: item.id })}>
+						{assemblySourceAssetIds.includes(item.id)
+							? "Remove from AI draft pool"
+							: "Use for AI draft"}
+					</ContextMenuItem>
 				)}
 				{(item.type === "video" || item.type === "audio") && (
 					<ContextMenuItem onClick={() => onIndexClip({ mediaId: item.id })}>
@@ -828,8 +883,10 @@ function GridView({
 	onIndexClip,
 	onImportSrt,
 	onSetReference,
+	onToggleAssemblySource,
 	onClearReference,
 	activeReferenceAssetId,
+	assemblySourceAssetIds,
 	onAddToTimeline,
 	highlightedId,
 	registerElement,
@@ -840,8 +897,10 @@ function GridView({
 	onIndexClip: ({ mediaId }: { mediaId: string }) => void;
 	onImportSrt: ({ mediaId }: { mediaId: string }) => void;
 	onSetReference: ({ mediaId }: { mediaId: string }) => void;
+	onToggleAssemblySource: ({ mediaId }: { mediaId: string }) => void;
 	onClearReference: () => void;
 	activeReferenceAssetId: string | null;
+	assemblySourceAssetIds: string[];
 	onAddToTimeline: ({
 		asset,
 		startTime,
@@ -867,8 +926,10 @@ function GridView({
 						onIndexClip={onIndexClip}
 						onImportSrt={onImportSrt}
 						onSetReference={onSetReference}
+						onToggleAssemblySource={onToggleAssemblySource}
 						onClearReference={onClearReference}
 						activeReferenceAssetId={activeReferenceAssetId}
+						assemblySourceAssetIds={assemblySourceAssetIds}
 					>
 						<DraggableItem
 							name={item.name}
@@ -901,8 +962,10 @@ function ListView({
 	onIndexClip,
 	onImportSrt,
 	onSetReference,
+	onToggleAssemblySource,
 	onClearReference,
 	activeReferenceAssetId,
+	assemblySourceAssetIds,
 	onAddToTimeline,
 	highlightedId,
 	registerElement,
@@ -913,8 +976,10 @@ function ListView({
 	onIndexClip: ({ mediaId }: { mediaId: string }) => void;
 	onImportSrt: ({ mediaId }: { mediaId: string }) => void;
 	onSetReference: ({ mediaId }: { mediaId: string }) => void;
+	onToggleAssemblySource: ({ mediaId }: { mediaId: string }) => void;
 	onClearReference: () => void;
 	activeReferenceAssetId: string | null;
+	assemblySourceAssetIds: string[];
 	onAddToTimeline: ({
 		asset,
 		startTime,
@@ -935,8 +1000,10 @@ function ListView({
 						onIndexClip={onIndexClip}
 						onImportSrt={onImportSrt}
 						onSetReference={onSetReference}
+						onToggleAssemblySource={onToggleAssemblySource}
 						onClearReference={onClearReference}
 						activeReferenceAssetId={activeReferenceAssetId}
+						assemblySourceAssetIds={assemblySourceAssetIds}
 					>
 						<DraggableItem
 							name={item.name}

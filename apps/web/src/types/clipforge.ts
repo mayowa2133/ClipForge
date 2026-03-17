@@ -367,6 +367,99 @@ export interface ReferenceVideoAnalysis {
 	warnings: string[];
 }
 
+export interface FootageDescriptorRange {
+	range_id: string;
+	label: string;
+	start_ms: number;
+	end_ms: number;
+	hook_score: number;
+	activity_score: number;
+	transcript_cues: string[];
+	semantic_summary: string;
+}
+
+export interface FootageDescriptor {
+	analyzedAt: string;
+	asset_id: string;
+	asset_name: string;
+	duration_ms: number;
+	aspect_ratio: ClipForgeAspectRatioPreset | "unknown";
+	scene_cut_count: number;
+	activity_intensity: ReferenceEnergyLevel;
+	beat_bpm: number | null;
+	hook_score: number;
+	transcript_cues: string[];
+	semantic_summary: string;
+	candidate_ranges: FootageDescriptorRange[];
+	warnings: string[];
+}
+
+export interface ReferenceShotPlanSection {
+	match_id: string;
+	label: string;
+	role: "hook" | "body" | "payoff" | "cta";
+	target_start_ms: number;
+	target_duration_ms: number;
+	shot_cadence: ReferencePacingCadence;
+	desired_energy: ReferenceEnergyLevel;
+	overlay_moment: boolean;
+	caption_moment: boolean;
+	description: string;
+}
+
+export interface ReferenceShotPlan {
+	analyzedAt: string;
+	reference_asset_id: string;
+	hook_pattern: string;
+	ending_shape: "payoff" | "cta" | "open-ended";
+	sections: ReferenceShotPlanSection[];
+	warnings: string[];
+}
+
+export interface ReferenceDraftMatchCandidate {
+	asset_id: string;
+	asset_name: string;
+	range_id: string;
+	start_ms: number;
+	end_ms: number;
+	score: number;
+	reasons: string[];
+}
+
+export interface ReferenceDraftSectionMatch {
+	match_id: string;
+	section_label: string;
+	section_role: "hook" | "body" | "payoff" | "cta";
+	target_start_ms: number;
+	target_duration_ms: number;
+	selected_asset_id: string;
+	selected_asset_name: string;
+	selected_range_id: string;
+	selected_start_ms: number;
+	selected_end_ms: number;
+	reasons: string[];
+	candidates: ReferenceDraftMatchCandidate[];
+	locked: boolean;
+}
+
+export interface ReferenceMatchLock {
+	match_id: string;
+	asset_id: string;
+	asset_name: string;
+	locked_at: string;
+}
+
+export interface ClipForgeRecentReferenceAssemblyChoice {
+	matchId: string;
+	sectionLabel: string;
+	sectionRole: "hook" | "body" | "payoff" | "cta";
+	segmentId: string;
+	assetId: string;
+	assetLabel: string;
+	alternativeAssetIds: string[];
+	createdAt: string;
+}
+
 export interface TimelineDiffBaseOp {
 	type:
 		| "REMOVE_SILENCE"
@@ -663,6 +756,12 @@ export interface SetActiveReferenceVideoEditorCommand {
 	scope?: ClipForgeCommandScope;
 }
 
+export interface SetAssemblySourcePoolEditorCommand {
+	kind: "set-assembly-source-pool";
+	asset_ids: string[];
+	scope?: ClipForgeCommandScope;
+}
+
 export interface ClearActiveReferenceVideoEditorCommand {
 	kind: "clear-active-reference-video";
 	scope?: ClipForgeCommandScope;
@@ -698,6 +797,35 @@ export interface MatchReferencePacingEditorCommand {
 	scope?: ClipForgeCommandScope;
 }
 
+export interface BuildReferenceDraftEditorCommand {
+	kind: "build-reference-draft";
+	reference_asset_id?: string | null;
+	source_asset_ids?: string[];
+	matches: ReferenceDraftSectionMatch[];
+	focus_match_ids?: string[] | null;
+	include_finish_pass?: boolean;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ReplaceWithSourceMatchEditorCommand {
+	kind: "replace-with-source-match";
+	match_id: string;
+	asset_id: string;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface LockReferenceMatchEditorCommand {
+	kind: "lock-reference-match";
+	match_id: string;
+	asset_id?: string | null;
+	scope?: ClipForgeCommandScope;
+}
+
+export interface ClearReferenceMatchLocksEditorCommand {
+	kind: "clear-reference-match-locks";
+	scope?: ClipForgeCommandScope;
+}
+
 export type ClipForgeEditorCommand =
 	| TimelineOpEditorCommand
 	| SetClipSpeedEditorCommand
@@ -722,12 +850,17 @@ export type ClipForgeEditorCommand =
 	| SetPublishDestinationEditorCommand
 	| RunExportPreflightFixesEditorCommand
 	| SetActiveReferenceVideoEditorCommand
+	| SetAssemblySourcePoolEditorCommand
 	| ClearActiveReferenceVideoEditorCommand
 	| ApplyReferenceFinishPassEditorCommand
 	| MatchReferenceCaptionsEditorCommand
 	| MatchReferenceAudioProfileEditorCommand
 	| MatchReferencePackagingEditorCommand
-	| MatchReferencePacingEditorCommand;
+	| MatchReferencePacingEditorCommand
+	| BuildReferenceDraftEditorCommand
+	| ReplaceWithSourceMatchEditorCommand
+	| LockReferenceMatchEditorCommand
+	| ClearReferenceMatchLocksEditorCommand;
 
 export interface ClipForgeChatMemoryStyleIntent {
 	captionStyleId?: string | null;
@@ -759,15 +892,23 @@ export interface ClipForgeChatMemoryReferenceIntent {
 	referenceMode: "exact-recreation" | null;
 }
 
+export interface ClipForgeChatMemoryAssemblyIntent {
+	referenceAssetId: string | null;
+	sourceAssetIds: string[];
+	focusMatchIds: string[];
+}
+
 export interface ClipForgeRecentAssetChoice {
 	assetId: string;
-	assetKind: "music" | "sfx" | "trend-reference";
+	assetKind: "music" | "sfx" | "trend-reference" | "source-video";
 	label: string;
 	commandKind:
 		| "apply-music-track"
 		| "replace-music-track"
 		| "insert-sfx-preset"
-		| "apply-project-kit";
+		| "apply-project-kit"
+		| "build-reference-draft"
+		| "replace-with-source-match";
 	createdAt: string;
 }
 
@@ -795,10 +936,13 @@ export interface ClipForgeChatMemory {
 	finishIntent: ClipForgeChatMemoryFinishIntent | null;
 	destinationIntent: ClipForgeChatMemoryDestinationIntent | null;
 	referenceIntent: ClipForgeChatMemoryReferenceIntent | null;
+	assemblyIntent: ClipForgeChatMemoryAssemblyIntent | null;
+	lockedMatchIds: string[];
 	recentTurnSummaries: ClipForgeChatTurnSummary[];
 	recentAppliedCommandSummaries: ClipForgeAppliedCommandSummary[];
 	recentAssetChoices: ClipForgeRecentAssetChoice[];
 	recentReferenceComparisons: string[];
+	recentReferenceAssemblyChoices: ClipForgeRecentReferenceAssemblyChoice[];
 }
 
 export type TimelineDiffOpSource = "chat" | "auto-edit" | "manual";
@@ -825,6 +969,10 @@ export interface ClipForgeProjectData {
 	trendSoundReferences: TrendSoundReference[];
 	activeReferenceVideoAssetId: string | null;
 	referenceAnalysisByAssetId: Record<string, ReferenceVideoAnalysis>;
+	assemblySourceAssetIds: string[];
+	footageDescriptorsByAssetId: Record<string, FootageDescriptor>;
+	referenceShotPlanByAssetId: Record<string, ReferenceShotPlan>;
+	referenceMatchLocks: Record<string, ReferenceMatchLock>;
 	chatMemory: ClipForgeChatMemory;
 	opsAudit: TimelineDiffAuditEntry[];
 }

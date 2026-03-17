@@ -579,6 +579,69 @@ export function ChatContent() {
 		}));
 	};
 
+	const handleCycleReferenceDraftMatch = ({ matchId }: { matchId: string }) => {
+		setProposedCommands((previous) => {
+			const next = previous.map((command) => {
+				if (command.kind !== "build-reference-draft") {
+					return command;
+				}
+				return {
+					...command,
+					matches: command.matches.map((match) => {
+						if (match.match_id !== matchId || match.candidates.length <= 1) {
+							return match;
+						}
+						const currentIndex = Math.max(
+							0,
+							match.candidates.findIndex(
+								(candidate) => candidate.asset_id === match.selected_asset_id,
+							),
+						);
+						const nextCandidate =
+							match.candidates[(currentIndex + 1) % match.candidates.length] ??
+							match.candidates[0];
+						return nextCandidate
+							? {
+									...match,
+									selected_asset_id: nextCandidate.asset_id,
+									selected_asset_name: nextCandidate.asset_name,
+									selected_range_id: nextCandidate.range_id,
+									selected_start_ms: nextCandidate.start_ms,
+									selected_end_ms: nextCandidate.end_ms,
+									reasons: nextCandidate.reasons,
+							  }
+							: match;
+					}),
+				};
+			});
+			buildPreviewForCommands({ commands: next });
+			return next;
+		});
+	};
+
+	const handleToggleReferenceDraftLock = ({ matchId }: { matchId: string }) => {
+		setProposedCommands((previous) => {
+			const next = previous.map((command) => {
+				if (command.kind !== "build-reference-draft") {
+					return command;
+				}
+				return {
+					...command,
+					matches: command.matches.map((match) =>
+						match.match_id === matchId
+							? {
+									...match,
+									locked: !match.locked,
+							  }
+							: match,
+					),
+				};
+			});
+			buildPreviewForCommands({ commands: next });
+			return next;
+		});
+	};
+
 	const handleJumpToTarget = ({
 		timeMs,
 		trackId,
@@ -705,6 +768,10 @@ export function ChatContent() {
 						</p>
 						<p className="text-muted-foreground mt-1 text-xs">
 							{referenceSummary.reference_match_readiness.reason}
+						</p>
+						<p className="text-muted-foreground mt-1 text-xs">
+							Assembly pool: {referenceSummary.assembly_source_pool.length} clips ·{" "}
+							{referenceSummary.footage_match_readiness.reason}
 						</p>
 					</div>
 				)}
@@ -1231,6 +1298,71 @@ export function ChatContent() {
 										</div>
 									);
 								})}
+							</div>
+						</div>
+					)}
+					{proposedCommands.some((command) => command.kind === "build-reference-draft") && (
+						<div className="rounded-md border p-3">
+							<p className="text-sm font-medium">Reference draft matches</p>
+							<p className="text-muted-foreground mb-2 text-xs">
+								Review why each section was chosen, cycle alternates, or lock a section
+								before apply.
+							</p>
+							<div className="flex max-h-56 flex-col gap-2 overflow-auto pr-1">
+								{proposedCommands.flatMap((command) =>
+									command.kind === "build-reference-draft"
+										? command.matches.map((match) => (
+												<div
+													key={match.match_id}
+													className="rounded-md border px-3 py-2"
+												>
+													<div className="flex items-start justify-between gap-2">
+														<div>
+															<p className="text-sm font-medium">
+																{match.section_label}
+															</p>
+															<p className="text-muted-foreground text-xs">
+																{match.selected_asset_name}
+																{match.locked ? " · locked" : ""}
+															</p>
+															<ul className="text-muted-foreground mt-1 list-disc space-y-1 pl-4 text-[11px]">
+																{match.reasons.slice(0, 2).map((reason, index) => (
+																	<li key={`${match.match_id}-${index}`}>{reason}</li>
+																))}
+															</ul>
+														</div>
+														<div className="flex gap-2">
+															<Button
+																type="button"
+																variant="outline"
+																size="sm"
+																onClick={() =>
+																	handleCycleReferenceDraftMatch({
+																		matchId: match.match_id,
+																	})
+																}
+																disabled={match.candidates.length <= 1}
+															>
+																Swap
+															</Button>
+															<Button
+																type="button"
+																variant="outline"
+																size="sm"
+																onClick={() =>
+																	handleToggleReferenceDraftLock({
+																		matchId: match.match_id,
+																	})
+																}
+															>
+																{match.locked ? "Unlock" : "Lock"}
+															</Button>
+														</div>
+													</div>
+												</div>
+											))
+										: [],
+								)}
 							</div>
 						</div>
 					)}
