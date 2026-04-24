@@ -56,13 +56,14 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M48: Social SFX and animation sync library with expanded built-in SFX, typing/cursor/caption sync sounds, airy transition sounds, and one-click sound pairing for graphics and captions.
 - [x] M49: Retention-aware story shaping with hook-first assembly, payoff planning, CTA reservation, and reviewable story-shape guidance in chat.
 - [x] M50: Publish-ready polish engine with caption reveal families, audio polish presets, and final-pass style profiles.
+- [x] M51: Production foundation contracts with cloud project records, media sync state, queued job records, share links, rights receipts, and capability status surfaces.
 
 ## Production Hardening Backlog
 
-- [ ] P1: Managed transcription service with native word timestamps, queueing, retries, and privacy controls.
+- [ ] P1: Managed transcription workers with native word timestamps, retries, diarization, and privacy controls.
 - [ ] P2: Durable server-side export/render workers for long projects and publish-critical outputs.
-- [ ] P3: Account-backed project sync, backup, share links, and explicit local-only/cloud project modes.
-- [ ] P4: Model-backed creative direction for high-level briefs with schema validation and regression evals.
+- [ ] P3: Account-backed project sync UI, encrypted media upload/restore, backup, and explicit local-only/cloud project modes.
+- [ ] P4: Creative scoring for hooks, pacing, platform fit, editable assumptions, and high-level creative regression evals.
 - [ ] P5: Full ClipForge brand/legal closure across public pages, app metadata, and deployment defaults.
 - [ ] P6: Release CI that runs unit tests, ClipForge evals, lint, and production build without soft-failing.
 

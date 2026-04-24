@@ -46,6 +46,7 @@ import {
 	AccordionItem,
 	AccordionTrigger,
 } from "@/components/ui/accordion";
+import { getProductionCapabilitySnapshot } from "@/lib/clipforge/production/capabilities";
 
 export function SettingsView() {
 	const [open, setOpen] = useState(false);
@@ -77,6 +78,7 @@ export function SettingsView() {
 								</AccordionTrigger>
 								<AccordionContent className="space-y-4 pb-0">
 									{ENABLE_CLIPFORGE_CHAT ? <PlannerSettingsContent /> : null}
+									<ProductionReadinessContent />
 									<CreativeLibraryContent />
 								</AccordionContent>
 							</AccordionItem>
@@ -99,6 +101,42 @@ export function SettingsView() {
 				</Popover>
 			</div>
 		</PanelView>
+	);
+}
+
+function ProductionReadinessContent() {
+	const capabilities = getProductionCapabilitySnapshot();
+	const statusLabels = {
+		available: "Available",
+		scaffolded: "Scaffolded",
+		"needs-provider": "Needs provider",
+		planned: "Planned",
+	} as const;
+
+	return (
+		<div className="flex flex-col gap-4">
+			<div className="flex flex-col gap-1">
+				<Label>Production capabilities</Label>
+				<p className="text-muted-foreground text-xs">
+					Server-backed foundations are tracked separately from local editing tools.
+				</p>
+			</div>
+			<div className="space-y-2">
+				{capabilities.map((capability) => (
+					<div key={capability.id} className="rounded-md border p-3">
+						<div className="flex items-center justify-between gap-3">
+							<p className="text-sm font-medium">{capability.label}</p>
+							<span className="text-muted-foreground rounded border px-2 py-0.5 text-[11px]">
+								{statusLabels[capability.status]}
+							</span>
+						</div>
+						<p className="text-muted-foreground mt-1 text-xs">
+							{capability.nextStep}
+						</p>
+					</div>
+				))}
+			</div>
+		</div>
 	);
 }
 
