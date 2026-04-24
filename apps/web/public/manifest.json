@@ -1,6 +1,7 @@
 {
-	"name": "OpenCut",
-	"description": "A simple but powerful video editor that gets the job done. In your browser.",
+	"name": "ClipForge",
+	"short_name": "ClipForge",
+	"description": "AI-native short-form video editing with a familiar timeline and local-first control.",
 	"display": "standalone",
 	"start_url": "/",
 	"icons": [

@@ -68,6 +68,10 @@ export class OPFSAdapter implements StorageAdapter<File> {
 
 	// Helper method to check OPFS support
 	static isSupported(): boolean {
-		return "storage" in navigator && "getDirectory" in navigator.storage;
+		return (
+			typeof navigator !== "undefined" &&
+			"storage" in navigator &&
+			"getDirectory" in navigator.storage
+		);
 	}
 }

@@ -238,6 +238,9 @@ export function Timeline() {
 			{...dragProps}
 			aria-label="Timeline"
 		>
+			<div className="border-b px-4 py-3">
+				<p className="text-muted-foreground text-sm">Timeline</p>
+			</div>
 			<TimelineToolbar
 				zoomLevel={zoomLevel}
 				minZoom={minZoomLevel}

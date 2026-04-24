@@ -1,11 +1,11 @@
 <table width="100%">
   <tr>
     <td align="left" width="120">
-      <img src="apps/web/public/logos/opencut/1k/logo-white-black.png" alt="OpenCut Logo" width="100" />
+      <img src="apps/web/public/logos/opencut/1k/logo-white-black.png" alt="ClipForge Logo" width="100" />
     </td>
     <td align="right">
-      <h1>OpenCut</span></h1>
-      <h3 style="margin-top: -10px;">A free, open-source video editor for web, desktop, and mobile.</h3>
+      <h1>ClipForge</h1>
+      <h3 style="margin-top: -10px;">AI-native short-form video editing on top of a familiar timeline.</h3>
     </td>
   </tr>
 </table>
@@ -16,7 +16,7 @@ ClipForge is implemented as an in-place OpenCut extension (same editor shell, ti
 
 ### Enable ClipForge features
 
-Set the following in `apps/web/.env.local`:
+ClipForge is enabled by default in this fork. To make the setting explicit, use:
 
 ```bash
 NEXT_PUBLIC_ENABLE_CLIPFORGE_AUTO_EDIT=true
@@ -34,7 +34,7 @@ CLIPFORGE_OPENAI_ENDPOINT=https://api.openai.com/v1/responses
 
 Planner modes:
 
-- `auto` (default): prefer the model planner, fall back to heuristic planning if the model is unavailable or returns invalid ops
+- `auto` (default): prefer the deterministic planner for supported commands, then fall back to the model planner when deterministic planning is not definitive
 - `heuristic`: force deterministic local parsing only
 - `openai`: force the model planner and fail closed if it is unavailable
 
@@ -87,7 +87,7 @@ The preview toolbar now also surfaces a deterministic trust status (`Exact`, `Ap
    - Direct edit prompts (for example `trim this clip by 0.5s at the start`, `add text here that says "watch this"`, `replace "teh" with "the" in this caption`, or `trim the first clip by 0.5s and move it to 5s`) still produce deterministic JSON ops for review/apply.
    - High-level draft prompts (for example `make me a viral TikTok from this`, `luxury morning routine style`, or `make it shorter with bold captions`) now produce a structured `Creative brief` card first.
    - The brief shows target duration, story shape, caption/overlay style, polish profile, version targets, and explicit build steps before you click `Build first draft`.
-9. Use normal OpenCut `Undo/Redo` shortcuts.
+9. Use normal editor `Undo/Redo` shortcuts.
 10. Click the top-right `Export` button:
    - The preview toolbar shows sampled preview/export fidelity before you export.
    - Preview now supports version-target switching for enabled publish targets (`9:16`, `1:1`, `16:9`) without mutating the base edit.
@@ -216,7 +216,7 @@ The app will be available at [http://localhost:3100](http://localhost:3100).
 
 ## Sponsors
 
-Thanks to [Vercel](https://vercel.com?utm_source=github-opencut&utm_campaign=oss) and [fal.ai](https://fal.ai?utm_source=github-opencut&utm_campaign=oss) for their support of open-source software.
+Thanks to [Vercel](https://vercel.com?utm_source=github-clipforge&utm_campaign=oss) and [fal.ai](https://fal.ai?utm_source=github-clipforge&utm_campaign=oss) for their support of open-source software.
 
 <a href="https://vercel.com/oss">
   <img alt="Vercel OSS Program" src="https://vercel.com/oss/program-badge.svg" />
@@ -238,8 +238,12 @@ Thanks to [Vercel](https://vercel.com?utm_source=github-opencut&utm_campaign=oss
 - Multi-track support
 - Real-time preview
 - No watermarks or subscriptions
-- Analytics provided by [Databuddy](https://www.databuddy.cc?utm_source=opencut), 100% Anonymized & Non-invasive.
-- Blog powered by [Marble](https://marblecms.com?utm_source=opencut), Headless CMS.
+- Analytics provided by [Databuddy](https://www.databuddy.cc?utm_source=clipforge), 100% Anonymized & Non-invasive.
+- Blog powered by [Marble](https://marblecms.com?utm_source=clipforge), Headless CMS.
+
+## Production readiness
+
+The local-first editor, deterministic assistant, bundled library, and browser export path are the current shipped experience. Server-grade capabilities are tracked separately in [Production Readiness](docs/production_readiness.md), including durable cloud sync, managed transcription with native word timings, server-side rendering, and model-backed creative-direction evaluation.
 
 ## Project Structure
 
@@ -312,4 +316,4 @@ See our [Contributing Guide](.github/CONTRIBUTING.md) for detailed setup instruc
 
 ---
 
-![Star History Chart](https://api.star-history.com/svg?repos=opencut-app/opencut&type=Date)
+![Star History Chart](https://api.star-history.com/svg?repos=mayowa2133/ClipForge&type=Date)

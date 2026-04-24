@@ -109,6 +109,7 @@ import type { TimelineElement, TextElement } from "@/types/timeline";
 import type {
 	ChatClarificationRequest,
 	ChatPlannerContext,
+	ChatPlannerMode,
 	ChatPlannerOverrides,
 	ChatPlanPreviewResult,
 	ChatPlanSafetySummary,
@@ -800,6 +801,91 @@ export class ClipForgeManager {
 			prompt,
 			project: activeProject,
 		});
+	}
+
+	async buildCreativeBriefWithPlanner({
+		prompt,
+		context,
+		projectSummary,
+		plannerMode,
+	}: {
+		prompt: string;
+		context?: ChatPlannerContext;
+		projectSummary: ProjectSummary;
+		plannerMode: ChatPlannerMode;
+	}): Promise<{
+		brief: CreativeBrief;
+		provider: "heuristic" | "openai";
+		fallbackUsed: boolean;
+		warnings: string[];
+	}> {
+		const heuristicBrief = this.buildCreativeBrief({ prompt, context });
+		if (plannerMode === "heuristic") {
+			return {
+				brief: heuristicBrief,
+				provider: "heuristic",
+				fallbackUsed: false,
+				warnings: [],
+			};
+		}
+
+		try {
+			const response = await fetch("/api/clipforge/creative-brief", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					userText: prompt,
+					heuristicBrief,
+					projectSummary,
+				}),
+			});
+			const payload = (await response.json().catch(() => null)) as
+				| {
+						brief?: CreativeBrief;
+						warnings?: string[];
+				  }
+				| {
+						error?: string;
+						warnings?: string[];
+				  }
+				| null;
+
+			if (!response.ok) {
+				const message =
+					payload && "error" in payload && typeof payload.error === "string"
+						? payload.error
+						: `Creative brief planner failed with status ${response.status}.`;
+				throw new Error(message);
+			}
+
+			if (!payload || !("brief" in payload) || !payload.brief) {
+				throw new Error("Creative brief planner returned an invalid payload.");
+			}
+
+			return {
+				brief: payload.brief,
+				provider: "openai",
+				fallbackUsed: false,
+				warnings: Array.isArray(payload.warnings)
+					? payload.warnings.filter(
+							(warning): warning is string => typeof warning === "string",
+						)
+					: [],
+			};
+		} catch (error) {
+			return {
+				brief: heuristicBrief,
+				provider: "heuristic",
+				fallbackUsed: true,
+				warnings: [
+					`Creative brief model fallback: ${
+						error instanceof Error ? error.message : "Unknown error."
+					}`,
+				],
+			};
+		}
 	}
 
 	getTrendSoundReferences(): TrendSoundReference[] {

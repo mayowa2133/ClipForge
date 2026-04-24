@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+	buildExportIssueTechnicalDetails,
+	getExportIssueTitle,
 	getFixAllActions,
 	isExportBlocked,
 } from "@/components/editor/export-button";
@@ -96,5 +98,22 @@ describe("export button preflight helpers", () => {
 		});
 
 		expect(actions).toEqual(["remove-invalid-ranges"]);
+	});
+
+	test("formats human-readable preflight issue titles and hides diagnostics behind a helper", () => {
+		const issue = {
+			id: "issue-v1|missing-media-asset|missing-1|none|none",
+			code: "missing-media-asset",
+			severity: "error",
+			message: "Missing media",
+			actionable: true,
+			action: "remove-missing-segments",
+			mediaId: "missing-1",
+			referenceCount: 2,
+		} as const;
+
+		expect(getExportIssueTitle({ issue })).toBe("Missing media file");
+		expect(buildExportIssueTechnicalDetails({ issue })).toContain("missing-media-asset");
+		expect(buildExportIssueTechnicalDetails({ issue })).toContain("media=missing-1");
 	});
 });

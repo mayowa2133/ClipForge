@@ -27,11 +27,11 @@ ClipForge now resolves implicit references with this precedence:
 
 1. `HeuristicChatOpsProvider`
 2. `OpenAIChatOpsProvider` (browser client for the internal `/api/clipforge/chat/plan` route)
-3. `FallbackChatOpsProvider` (`auto` mode: OpenAI first, heuristic fallback)
+3. `FallbackChatOpsProvider` (`auto` mode: heuristic first, OpenAI fallback)
 
 Planner modes:
 
-- `auto` (default): prefers the server-backed model planner and falls back to heuristic planning if the model request fails or returns no usable ops
+- `auto` (default): prefers deterministic planning for supported edit intents and falls back to the server-backed model planner when deterministic planning is not definitive
 - `heuristic`: uses deterministic local parsing only
 - `openai`: forces the server-backed model planner and fails closed
 

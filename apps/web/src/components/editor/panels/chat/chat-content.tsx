@@ -26,6 +26,7 @@ import {
 } from "@/lib/clipforge";
 import { useClipForgeChatDraftStore } from "@/stores/clipforge-chat-draft-store";
 import { useClipForgeChatSettingsStore } from "@/stores/clipforge-chat-settings-store";
+import { useClipForgeOnboardingStore } from "@/stores/clipforge-onboarding-store";
 import type {
 	ClipForgeEditorCommand,
 	CreativeBrief,
@@ -66,6 +67,12 @@ export function ChatContent() {
 	);
 	const draft = useClipForgeChatDraftStore((state) => state.draft);
 	const clearDraft = useClipForgeChatDraftStore((state) => state.clearDraft);
+	const hasCompletedFirstAssistantAction = useClipForgeOnboardingStore(
+		(state) => state.hasCompletedFirstAssistantAction,
+	);
+	const markFirstAssistantActionCompleted = useClipForgeOnboardingStore(
+		(state) => state.markFirstAssistantActionCompleted,
+	);
 	const activeRequestIdRef = useRef(0);
 	const [prompt, setPrompt] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
@@ -87,6 +94,7 @@ export function ChatContent() {
 	const [plannerHealth, setPlannerHealth] = useState<ChatPlannerHealth | null>(null);
 	const [plannerHealthError, setPlannerHealthError] = useState<string | null>(null);
 	const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+	const [showCommandDetails, setShowCommandDetails] = useState(false);
 	const [lastPlanError, setLastPlanError] = useState<string | null>(null);
 	const [pendingClarification, setPendingClarification] =
 		useState<ChatClarificationRequest | null>(null);
@@ -191,12 +199,14 @@ export function ChatContent() {
 		const preview = editor.clipforge.previewCommandsImpact({ commands });
 		setImpactPreview(preview);
 		setEnabledCommandsByIndex(buildEnabledCommandsMap({ commands }));
+		setShowCommandDetails(false);
 	};
 
 	const buildPreviewForDraftRecipe = ({ recipe }: { recipe: DraftRecipe }) => {
 		setDraftRecipe(recipe);
 		setDraftImpact(editor.clipforge.previewDraftRecipe({ recipe }));
 		setEnabledDraftStepsByIndex(buildEnabledDraftStepsMap({ recipe }));
+		setShowCommandDetails(false);
 	};
 
 	const handlePropose = async () => {
@@ -253,12 +263,29 @@ export function ChatContent() {
 				} catch (error) {
 					console.warn("Footage intelligence analysis failed:", error);
 				}
-				const brief = editor.clipforge.buildCreativeBrief({
+				const creativePlannerMode =
+					plannerMode === "auto" && plannerHealth?.status !== "ready"
+						? "heuristic"
+						: plannerMode;
+				const briefResult = await editor.clipforge.buildCreativeBriefWithPlanner({
 					prompt: plannerRequest.userText,
 					context: plannerRequest.context,
+					projectSummary: plannerRequest.projectSummary,
+					plannerMode: creativePlannerMode,
 				});
+				if (activeRequestIdRef.current !== requestId) {
+					return;
+				}
+				const brief = briefResult.brief;
 				const recipe = editor.clipforge.planDraftRecipe({ brief });
+				setProposalMeta({
+					provider: briefResult.provider,
+					fallbackUsed: briefResult.fallbackUsed,
+					warnings: briefResult.warnings,
+					safety: null,
+				});
 				buildPreviewForDraftRecipe({ recipe });
+				markFirstAssistantActionCompleted();
 				setProposedCommands([]);
 				setErrors([]);
 				setLastPlanError(null);
@@ -273,6 +300,7 @@ export function ChatContent() {
 			}
 
 			if (result.clarification) {
+				markFirstAssistantActionCompleted();
 				setProposalMeta({
 					provider: result.provider,
 					fallbackUsed: result.fallbackUsed,
@@ -341,6 +369,7 @@ export function ChatContent() {
 
 			setProposedCommands(reconciliation.commands);
 			buildPreviewForCommands({ commands: reconciliation.commands });
+			markFirstAssistantActionCompleted();
 			setErrors([]);
 			setLastPlanError(null);
 		} catch (error) {
@@ -405,6 +434,7 @@ export function ChatContent() {
 			}
 
 			if (result.clarification) {
+				markFirstAssistantActionCompleted();
 				setProposalMeta({
 					provider: result.provider,
 					fallbackUsed: result.fallbackUsed,
@@ -471,6 +501,7 @@ export function ChatContent() {
 
 			setProposedCommands(reconciliation.commands);
 			buildPreviewForCommands({ commands: reconciliation.commands });
+			markFirstAssistantActionCompleted();
 			setErrors([]);
 		} catch (error) {
 			if (activeRequestIdRef.current !== requestId) {
@@ -517,6 +548,7 @@ export function ChatContent() {
 			setLastPlanError(null);
 			setPendingClarification(null);
 			setClarificationOverrides(null);
+			setShowCommandDetails(false);
 		} catch (error) {
 			const message =
 				error instanceof Error ? error.message : "Failed to apply planned edits.";
@@ -561,6 +593,7 @@ export function ChatContent() {
 			resetDraftRecipe();
 			setPendingClarification(null);
 			setClarificationOverrides(null);
+			setShowCommandDetails(false);
 			toast.success("Draft built.");
 		} catch (error) {
 			const message =
@@ -689,15 +722,15 @@ export function ChatContent() {
 				: plannerHealthError
 					? plannerHealthError
 					: plannerHealth?.status === "ready"
-						? "OpenAI ready"
+						? "AI planner ready"
 						: plannerHealth?.status === "degraded"
-							? "OpenAI degraded"
-							: "OpenAI unavailable";
+							? "AI planner degraded"
+							: "AI planner unavailable";
 	const healthDetail =
 		plannerMode === "auto"
-			? "Auto mode will fall back to heuristic if needed."
+			? "Auto mode prefers the best available planner and falls back safely."
 			: plannerMode === "openai"
-				? plannerHealth?.message ?? "OpenAI mode fails closed."
+				? plannerHealth?.message ?? "Remote planning is enabled and still validated locally."
 				: "The deterministic local planner is active.";
 	const playheadMs = Math.round(editor.playback.getCurrentTime() * 1000);
 	const selectedCount = editor.selection.getSelectedElements().length;
@@ -729,11 +762,23 @@ export function ChatContent() {
 	const contextSummary = `Context: ${
 		selectedCount > 0 ? `${selectedCount} selected` : "no selection"
 	}, playhead ${formatPlannerTime(playheadMs)}`;
+	const starterPrompts = [
+		"Make a first cut",
+		"Finish this for TikTok",
+		"Match the reference",
+		"Add captions",
+	] as const;
 
 	return (
 		<div className="flex h-full flex-col gap-3">
 			<div className="flex flex-col gap-2">
-				<Label>Ask ClipForge to edit this timeline</Label>
+				<div className="flex flex-col gap-1">
+					<Label>Assistant</Label>
+					<p className="text-muted-foreground text-xs">
+						Use ClipForge for draft building, finishing, and reference-guided edits.
+						Manual editing still works normally.
+					</p>
+				</div>
 				<div className="rounded-md border p-3">
 					<div className="flex items-center justify-between gap-3">
 						<p className="text-sm font-medium">Planner: {plannerLabel}</p>
@@ -775,11 +820,29 @@ export function ChatContent() {
 						</p>
 					</div>
 				)}
+				{!hasCompletedFirstAssistantAction ? (
+					<div className="rounded-md border p-3">
+						<p className="text-sm font-medium">Start with one of these</p>
+						<div className="mt-2 flex flex-wrap gap-2">
+							{starterPrompts.map((starterPrompt) => (
+								<Button
+									key={starterPrompt}
+									type="button"
+									variant="outline"
+									size="sm"
+									onClick={() => setPrompt(starterPrompt)}
+								>
+									{starterPrompt}
+								</Button>
+							))}
+						</div>
+					</div>
+				) : null}
 				<textarea
 					className="min-h-24 rounded-md border p-2 text-sm"
 					value={prompt}
 					onChange={(event) => setPrompt(event.target.value)}
-					placeholder='Try: "trim this clip by 0.5s at the start", "add text here that says \"watch this\"", "replace \"teh\" with \"the\" in this caption"'
+					placeholder='Try: "speed up the opener 15%", "finish this for TikTok", "match the reference", or "add captions"'
 				/>
 				<Button onClick={handlePropose} disabled={isLoading}>
 					{isLoading ? "Proposing..." : "Propose Plan"}
@@ -1366,12 +1429,29 @@ export function ChatContent() {
 							</div>
 						</div>
 					)}
-					<Label>
-						Selected JSON Commands ({selectedCommands.length}/{proposedCommands.length})
-					</Label>
-					<pre className="bg-muted max-h-64 overflow-auto rounded-md border p-3 text-xs">
-						{JSON.stringify(selectedCommands, null, 2)}
-					</pre>
+					<div className="flex items-center justify-between gap-3">
+						<Label>
+							Selected changes ({selectedCommands.length}/{proposedCommands.length})
+						</Label>
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							onClick={() => setShowCommandDetails((current) => !current)}
+						>
+							{showCommandDetails ? "Hide command details" : "Show command details"}
+						</Button>
+					</div>
+					{showCommandDetails ? (
+						<pre className="bg-muted max-h-64 overflow-auto rounded-md border p-3 text-xs">
+							{JSON.stringify(selectedCommands, null, 2)}
+						</pre>
+					) : (
+						<p className="text-muted-foreground text-xs">
+							ClipForge will apply the selected changes through the normal editor
+							command stack. Open command details only if you want the raw plan.
+						</p>
+					)}
 					<div className="flex gap-2">
 						<Button
 							onClick={() => void handleApply()}

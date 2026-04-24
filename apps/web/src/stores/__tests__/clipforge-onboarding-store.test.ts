@@ -14,6 +14,9 @@ describe("clipforge-onboarding-store", () => {
 
 		expect(store.hasSeenIntro).toBe(false);
 		expect(store.hasCompletedDemoGuide).toBe(false);
+		expect(store.hasCompletedFirstImport).toBe(false);
+		expect(store.hasCompletedFirstAssistantAction).toBe(false);
+		expect(store.hasCompletedFirstExport).toBe(false);
 		expect(store.pendingGuide).toBe(false);
 
 		store.markIntroSeen();
@@ -25,6 +28,14 @@ describe("clipforge-onboarding-store", () => {
 		useClipForgeOnboardingStore.getState().markDemoGuideCompleted();
 		expect(useClipForgeOnboardingStore.getState().hasCompletedDemoGuide).toBe(true);
 		expect(useClipForgeOnboardingStore.getState().pendingGuide).toBe(false);
+
+		useClipForgeOnboardingStore.getState().markFirstImportCompleted();
+		useClipForgeOnboardingStore.getState().markFirstAssistantActionCompleted();
+		useClipForgeOnboardingStore.getState().markFirstExportCompleted();
+
+		expect(useClipForgeOnboardingStore.getState().hasCompletedFirstImport).toBe(true);
+		expect(useClipForgeOnboardingStore.getState().hasCompletedFirstAssistantAction).toBe(true);
+		expect(useClipForgeOnboardingStore.getState().hasCompletedFirstExport).toBe(true);
 	});
 
 	test("migrate restores persisted booleans", () => {
@@ -32,10 +43,16 @@ describe("clipforge-onboarding-store", () => {
 			migrateClipForgeOnboardingState({
 				hasSeenIntro: true,
 				hasCompletedDemoGuide: false,
+				hasCompletedFirstImport: true,
+				hasCompletedFirstAssistantAction: false,
+				hasCompletedFirstExport: true,
 			}),
 		).toEqual({
 			hasSeenIntro: true,
 			hasCompletedDemoGuide: false,
+			hasCompletedFirstImport: true,
+			hasCompletedFirstAssistantAction: false,
+			hasCompletedFirstExport: true,
 		});
 	});
 });

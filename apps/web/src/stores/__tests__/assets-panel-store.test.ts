@@ -11,6 +11,7 @@ describe("assets panel tab registry", () => {
 		expect(TAB_KEYS.includes("adjustment" as (typeof TAB_KEYS)[number])).toBe(false);
 		expect("adjustment" in tabs).toBe(false);
 		expect(tabs.sounds.label).toBe("Audio");
+		expect(tabs.text.label).toBe("Text & Graphics");
 	});
 
 	test("exposes templates as a first-class authoring workflow", () => {

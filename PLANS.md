@@ -57,6 +57,15 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M49: Retention-aware story shaping with hook-first assembly, payoff planning, CTA reservation, and reviewable story-shape guidance in chat.
 - [x] M50: Publish-ready polish engine with caption reveal families, audio polish presets, and final-pass style profiles.
 
+## Production Hardening Backlog
+
+- [ ] P1: Managed transcription service with native word timestamps, queueing, retries, and privacy controls.
+- [ ] P2: Durable server-side export/render workers for long projects and publish-critical outputs.
+- [ ] P3: Account-backed project sync, backup, share links, and explicit local-only/cloud project modes.
+- [ ] P4: Model-backed creative direction for high-level briefs with schema validation and regression evals.
+- [ ] P5: Full ClipForge brand/legal closure across public pages, app metadata, and deployment defaults.
+- [ ] P6: Release CI that runs unit tests, ClipForge evals, lint, and production build without soft-failing.
+
 ## Working Rules
 
 - Keep all new features inside OpenCut's existing app shell and state model.

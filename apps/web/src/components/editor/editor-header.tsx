@@ -2,6 +2,7 @@
 
 import { Button } from "../ui/button";
 import { useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -69,7 +70,7 @@ function ChatPanelToggleButton() {
 			className="gap-1.5"
 		>
 			<HugeiconsIcon icon={MagicWand05Icon} className="size-4" />
-			Chat
+			Assistant
 		</Button>
 	);
 }
@@ -142,14 +143,16 @@ function ProjectDropdown() {
 		<>
 			<DropdownMenu>
 				<DropdownMenuTrigger asChild>
-					<Button variant="ghost" size="icon" className="p-1 rounded-sm size-8">
+					<Button variant="ghost" size="sm" className="gap-2 rounded-sm px-2">
 						<Image
 							src={DEFAULT_LOGO_URL}
-							alt="Project thumbnail"
+							alt="ClipForge project"
 							width={32}
 							height={32}
 							className="invert dark:invert-0 size-5"
 						/>
+						<span className="text-sm font-medium">Project</span>
+						<ChevronDown className="size-4 text-muted-foreground" />
 					</Button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="start" className="z-100 w-44">

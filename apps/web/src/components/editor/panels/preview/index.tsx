@@ -48,6 +48,9 @@ export function PreviewPanel() {
 			ref={containerRef}
 			className="panel bg-background relative flex size-full min-h-0 min-w-0 flex-col rounded-sm border"
 		>
+			<div className="border-b px-4 py-3">
+				<p className="text-muted-foreground text-sm">Preview</p>
+			</div>
 			<div className="flex min-h-0 min-w-0 flex-1 items-center justify-center p-2 pb-0">
 				<PreviewCanvas
 					onToggleFullscreen={toggleFullscreen}

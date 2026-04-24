@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	collapseOverlaySelection,
+	getSelectionSummaryLabel,
 	getLinkedSelectionLabel,
 } from "@/components/editor/panels/properties";
 
@@ -114,5 +115,37 @@ describe("properties linked selection label", () => {
 		});
 
 		expect(collapsed).toHaveLength(2);
+	});
+
+	test("summarizes caption and overlay selection clearly", () => {
+		expect(
+			getSelectionSummaryLabel({
+				elementsWithTracks: [
+					{
+						track: { id: "text-track", type: "text", name: "Text", elements: [] } as never,
+						element: {
+							id: "caption-1",
+							type: "text",
+							role: "caption",
+						} as never,
+					},
+				],
+			}),
+		).toBe("Caption");
+
+		expect(
+			getSelectionSummaryLabel({
+				elementsWithTracks: [
+					{
+						track: { id: "text-track", type: "text", name: "Text", elements: [] } as never,
+						element: {
+							id: "overlay-1",
+							type: "text",
+							overlayMeta: { kind: "timestamp-card", variantId: "clean-vlog", slot: "time" },
+						} as never,
+					},
+				],
+			}),
+		).toBe("Overlay");
 	});
 });

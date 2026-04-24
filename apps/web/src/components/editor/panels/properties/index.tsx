@@ -23,9 +23,18 @@ export function PropertiesPanel() {
 		elementsWithTracks: rawElementsWithTracks,
 	});
 	const linkedSelectionLabel = getLinkedSelectionLabel({ elementsWithTracks });
+	const selectionLabel = getSelectionSummaryLabel({ elementsWithTracks });
 
 	return (
-		<div className="panel bg-background h-full rounded-sm border border-t-0 overflow-hidden">
+		<div className="panel bg-background flex h-full flex-col rounded-sm border border-t-0 overflow-hidden">
+			<div className="border-b px-4 py-3">
+				<div className="flex items-center justify-between gap-3">
+					<p className="text-muted-foreground text-sm">Properties</p>
+					<p className="text-xs font-medium">
+						{selectionLabel ? `Selected: ${selectionLabel}` : "Selected: Nothing"}
+					</p>
+				</div>
+			</div>
 			{selectedElements.length > 0 ? (
 				<ScrollArea className="h-full scrollbar-hidden">
 					{linkedSelectionLabel ? (
@@ -76,6 +85,43 @@ export function PropertiesPanel() {
 			)}
 		</div>
 	);
+}
+
+export function getSelectionSummaryLabel({
+	elementsWithTracks,
+}: {
+	elementsWithTracks: Array<{ track: TimelineTrack; element: TimelineElement }>;
+}): string | null {
+	if (elementsWithTracks.length === 0) {
+		return null;
+	}
+	if (elementsWithTracks.length > 1) {
+		return `${elementsWithTracks.length} items`;
+	}
+
+	const [{ element }] = elementsWithTracks;
+	if (!element) {
+		return null;
+	}
+	if (element.type === "video" || element.type === "image") {
+		return "Clip";
+	}
+	if (element.type === "audio") {
+		return "Audio";
+	}
+	if (element.type === "sticker") {
+		return "Sticker";
+	}
+	if (element.type === "text") {
+		if (element.overlayMeta) {
+			return "Overlay";
+		}
+		if (element.role === "caption") {
+			return "Caption";
+		}
+		return "Text";
+	}
+	return null;
 }
 
 export function collapseOverlaySelection({

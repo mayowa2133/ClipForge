@@ -47,6 +47,7 @@ import { useEditor } from "@/hooks/use-editor";
 import { useExportPreflight } from "@/hooks/use-export-preflight";
 import { usePreviewFidelity } from "@/hooks/use-preview-fidelity";
 import { usePreviewStore } from "@/stores/preview-store";
+import { useClipForgeOnboardingStore } from "@/stores/clipforge-onboarding-store";
 import { DEFAULT_EXPORT_OPTIONS } from "@/constants/export-constants";
 import type { PreviewFidelityReport } from "@/services/renderer/types";
 import {
@@ -117,6 +118,9 @@ function ExportPopover({
 	onOpenChange: (open: boolean) => void;
 }) {
 	const editor = useEditor();
+	const markFirstExportCompleted = useClipForgeOnboardingStore(
+		(state) => state.markFirstExportCompleted,
+	);
 	const previewMode = usePreviewStore((state) => state.previewMode);
 	const activeProject = editor.project.getActive();
 	const enabledVersionTargets = activeProject
@@ -465,6 +469,7 @@ function ExportPopover({
 		setExportResult(result);
 
 		if (result.success && result.buffer) {
+			markFirstExportCompleted();
 			const mimeType = getExportMimeType({ format: attemptFormat });
 			const extension = getExportFileExtension({ format: attemptFormat });
 			const blob = new Blob([result.buffer], { type: mimeType });
@@ -641,7 +646,7 @@ function ExportPopover({
 				<>
 					<div className="flex items-center justify-between p-3 border-b">
 						<h3 className="font-medium text-sm">
-							{isExporting ? "Exporting project" : "Export project"}
+							{isExporting ? "Exporting video" : "Export"}
 						</h3>
 					</div>
 
@@ -835,10 +840,10 @@ function ExportPopover({
 													</span>
 												</div>
 												<p className="text-muted-foreground text-[10px]">
-													Snapshot:{" "}
+													Check:{" "}
 													{isAnyPreflightRunning || !isPreflightFresh
 														? "Refreshing"
-														: "Fresh"}
+														: "Up to date"}
 													{preflightResult?.computedAt
 														? ` • ${new Date(preflightResult.computedAt).toLocaleTimeString()}`
 														: ""}
@@ -865,9 +870,14 @@ function ExportPopover({
 																				? "border-red-500/30 bg-red-500/5"
 																				: "border-yellow-500/30 bg-yellow-500/5",
 																		)}
-																	>
+																		>
 																		<div className="flex flex-col gap-2">
-																			<p className="text-xs leading-4">{issue.message}</p>
+																			<div className="space-y-1">
+																				<p className="text-xs font-medium leading-4">
+																					{getExportIssueTitle({ issue })}
+																				</p>
+																				<p className="text-xs leading-4">{issue.message}</p>
+																			</div>
 																			{issue.code === "missing-media-asset" && issue.mediaId ? (
 																				<div className="flex gap-1.5">
 																					<Button
@@ -968,29 +978,14 @@ function ExportPopover({
 																				</div>
 																			) : null}
 																		</div>
-																		<p className="text-muted-foreground mt-1 text-[10px]">
-																			{[
-																				issue.code,
-																				issue.mediaId ? `media=${issue.mediaId}` : null,
-																				typeof issue.referenceCount === "number"
-																					? `refs=${issue.referenceCount}`
-																					: null,
-																				issue.compatibilityStatus
-																					? `compat=${issue.compatibilityStatus}`
-																					: null,
-																				issue.compatibilityReason
-																					? `reason=${issue.compatibilityReason}`
-																					: null,
-																				issue.allowedReplacementTypes &&
-																				issue.allowedReplacementTypes.length > 0
-																					? `allowed=${issue.allowedReplacementTypes.join("/")}`
-																					: null,
-																				issue.trackId ? `track=${issue.trackId}` : null,
-																				issue.segmentId ? `segment=${issue.segmentId}` : null,
-																			]
-																				.filter(Boolean)
-																				.join(" • ")}
-																		</p>
+																		<details className="mt-2">
+																			<summary className="text-muted-foreground cursor-pointer text-[10px]">
+																				Technical details
+																			</summary>
+																			<p className="text-muted-foreground mt-1 text-[10px]">
+																				{buildExportIssueTechnicalDetails({ issue })}
+																			</p>
+																		</details>
 																	</div>
 																))}
 															</div>
@@ -1355,4 +1350,51 @@ function formatExportDiagnostics({
 	].filter(Boolean);
 
 	return parts.join(" • ");
+}
+
+export function getExportIssueTitle({
+	issue,
+}: {
+	issue: ExportPreflightIssue;
+}): string {
+	switch (issue.code) {
+		case "missing-media-asset":
+			return "Missing media file";
+		case "media-compatibility-unverified":
+			return "Media compatibility has not been checked";
+		case "unsupported-media-codec":
+		case "unsupported-audio-decode":
+			return "Media format needs attention";
+		case "invalid-segment-range":
+			return "A clip range is out of bounds";
+		case "music-rights-unknown-warning":
+		case "music-platform-limited-warning":
+		case "music-attribution-required-warning":
+			return "Music rights may need review";
+		case "audio-disabled-warning":
+			return "Audio is turned off for export";
+		default:
+			return issue.severity === "error" ? "Blocking export issue" : "Export warning";
+	}
+}
+
+export function buildExportIssueTechnicalDetails({
+	issue,
+}: {
+	issue: ExportPreflightIssue;
+}): string {
+	return [
+		issue.code,
+		issue.mediaId ? `media=${issue.mediaId}` : null,
+		typeof issue.referenceCount === "number" ? `refs=${issue.referenceCount}` : null,
+		issue.compatibilityStatus ? `compat=${issue.compatibilityStatus}` : null,
+		issue.compatibilityReason ? `reason=${issue.compatibilityReason}` : null,
+		issue.allowedReplacementTypes && issue.allowedReplacementTypes.length > 0
+			? `allowed=${issue.allowedReplacementTypes.join("/")}`
+			: null,
+		issue.trackId ? `track=${issue.trackId}` : null,
+		issue.segmentId ? `segment=${issue.segmentId}` : null,
+	]
+		.filter(Boolean)
+		.join(" • ");
 }

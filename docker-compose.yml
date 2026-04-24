@@ -3,15 +3,15 @@ services:
     image: postgres:17
     restart: unless-stopped
     environment:
-      POSTGRES_USER: opencut
-      POSTGRES_PASSWORD: opencut
-      POSTGRES_DB: opencut
+      POSTGRES_USER: clipforge
+      POSTGRES_PASSWORD: clipforge
+      POSTGRES_DB: clipforge
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U opencut"]
+      test: ["CMD-SHELL", "pg_isready -U clipforge"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -59,7 +59,7 @@ services:
       - "3100:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://opencut:opencut@db:5432/opencut
+      - DATABASE_URL=postgresql://clipforge:clipforge@db:5432/clipforge
       - BETTER_AUTH_SECRET=your-production-secret-key-here
       - UPSTASH_REDIS_REST_URL=http://serverless-redis-http:80
       - UPSTASH_REDIS_REST_TOKEN=example_token
@@ -72,8 +72,22 @@ services:
       - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID:-placeholder}
       - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-placeholder}
       - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-placeholder}
-      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-opencut-transcription}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-clipforge-transcription}
       - MODAL_TRANSCRIPTION_URL=${MODAL_TRANSCRIPTION_URL:-http://localhost:0}
+      - ENABLE_CLIPFORGE_AUTO_EDIT=${ENABLE_CLIPFORGE_AUTO_EDIT:-true}
+      - ENABLE_CLIPFORGE_CHAT=${ENABLE_CLIPFORGE_CHAT:-true}
+      - NEXT_PUBLIC_ENABLE_CLIPFORGE_AUTO_EDIT=${NEXT_PUBLIC_ENABLE_CLIPFORGE_AUTO_EDIT:-true}
+      - NEXT_PUBLIC_ENABLE_CLIPFORGE_CHAT=${NEXT_PUBLIC_ENABLE_CLIPFORGE_CHAT:-true}
+      - NEXT_PUBLIC_CLIPFORGE_CHAT_PLANNER_MODE=${NEXT_PUBLIC_CLIPFORGE_CHAT_PLANNER_MODE:-auto}
+      - ENABLE_BINARY_PREVIEW_RENDERER=${ENABLE_BINARY_PREVIEW_RENDERER:-false}
+      - NEXT_PUBLIC_ENABLE_BINARY_PREVIEW_RENDERER=${NEXT_PUBLIC_ENABLE_BINARY_PREVIEW_RENDERER:-false}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - CLIPFORGE_OPENAI_MODEL=${CLIPFORGE_OPENAI_MODEL:-gpt-4.1-mini}
+      - CLIPFORGE_OPENAI_ENDPOINT=${CLIPFORGE_OPENAI_ENDPOINT:-https://api.openai.com/v1/responses}
+      - CLIPFORGE_WHISPER_CLI_ENABLED=${CLIPFORGE_WHISPER_CLI_ENABLED:-false}
+      - NEXT_PUBLIC_CLIPFORGE_WHISPER_CLI_ENABLED=${NEXT_PUBLIC_CLIPFORGE_WHISPER_CLI_ENABLED:-false}
+      - CLIPFORGE_WHISPER_CLI_BIN=${CLIPFORGE_WHISPER_CLI_BIN:-whisper}
+      - CLIPFORGE_WHISPER_CLI_MODEL=${CLIPFORGE_WHISPER_CLI_MODEL:-small}
     depends_on:
       db:
         condition: service_healthy
@@ -91,4 +105,4 @@ volumes:
 
 networks:
   default:
-    name: opencut-network
+    name: clipforge-network

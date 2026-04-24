@@ -1,5 +1,6 @@
 import type { ElementType } from "react";
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import {
 	ArrowRightDoubleIcon,
 	ClosedCaptionIcon,
@@ -48,7 +49,7 @@ export const tabs = {
 	},
 	text: {
 		icon: createHugeiconsIcon({ icon: TextIcon }),
-		label: "Graphics",
+		label: "Text & Graphics",
 	},
 	stickers: {
 		icon: createHugeiconsIcon({ icon: Happy01Icon }),
@@ -88,6 +89,8 @@ type MediaViewMode = "grid" | "list";
 interface AssetsPanelStore {
 	activeTab: Tab;
 	setActiveTab: (tab: Tab) => void;
+	showTabLabels: boolean;
+	toggleTabLabels: () => void;
 	graphicsTab: GraphicsTab;
 	setGraphicsTab: (tab: GraphicsTab) => void;
 	templatesTab: TemplatesTab;
@@ -101,17 +104,30 @@ interface AssetsPanelStore {
 	setMediaViewMode: (mode: MediaViewMode) => void;
 }
 
-export const useAssetsPanelStore = create<AssetsPanelStore>((set) => ({
-	activeTab: "media",
-	setActiveTab: (tab) => set({ activeTab: tab }),
-	graphicsTab: "titles",
-	setGraphicsTab: (graphicsTab) => set({ activeTab: "text", graphicsTab }),
-	templatesTab: "components",
-	setTemplatesTab: (templatesTab) => set({ activeTab: "templates", templatesTab }),
-	highlightMediaId: null,
-	requestRevealMedia: (mediaId) =>
-		set({ activeTab: "media", highlightMediaId: mediaId }),
-	clearHighlight: () => set({ highlightMediaId: null }),
-	mediaViewMode: "grid",
-	setMediaViewMode: (mode) => set({ mediaViewMode: mode }),
-}));
+export const useAssetsPanelStore = create<AssetsPanelStore>()(
+	persist(
+		(set) => ({
+			activeTab: "media",
+			setActiveTab: (tab) => set({ activeTab: tab }),
+			showTabLabels: true,
+			toggleTabLabels: () =>
+				set((state) => ({ showTabLabels: !state.showTabLabels })),
+			graphicsTab: "titles",
+			setGraphicsTab: (graphicsTab) => set({ activeTab: "text", graphicsTab }),
+			templatesTab: "components",
+			setTemplatesTab: (templatesTab) =>
+				set({ activeTab: "templates", templatesTab }),
+			highlightMediaId: null,
+			requestRevealMedia: (mediaId) =>
+				set({ activeTab: "media", highlightMediaId: mediaId }),
+			clearHighlight: () => set({ highlightMediaId: null }),
+			mediaViewMode: "grid",
+			setMediaViewMode: (mode) => set({ mediaViewMode: mode }),
+		}),
+		{
+			name: "clipforge-assets-panel",
+			version: 1,
+			partialize: (state) => ({ showTabLabels: state.showTabLabels }),
+		},
+	),
+);

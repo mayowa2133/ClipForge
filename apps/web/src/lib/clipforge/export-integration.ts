@@ -98,7 +98,7 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 					url,
 					fileName,
 					mimeType,
-					message: "Export completed using OpenCut renderer.",
+					message: "Export completed using ClipForge renderer.",
 					diagnostics: result.diagnostics,
 					preflightResult,
 					attempts,

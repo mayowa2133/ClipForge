@@ -573,7 +573,7 @@ class StorageService {
 	}
 
 	isIndexedDBSupported(): boolean {
-		return "indexedDB" in window;
+		return typeof window !== "undefined" && "indexedDB" in window;
 	}
 
 	isFullySupported(): boolean {

@@ -179,7 +179,7 @@ export function TextView() {
 	) as Array<NonNullable<(typeof BUNDLED_MUSIC)[number]["mood"]>>;
 
 	return (
-		<PanelView title="Graphics">
+		<PanelView title="Text & Graphics">
 			<div className="flex flex-col gap-4 pb-4">
 				<div className="flex flex-wrap gap-2 px-1 pt-1">
 					{GRAPHICS_TAB_OPTIONS.map((option) => (

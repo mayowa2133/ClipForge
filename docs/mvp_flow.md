@@ -55,7 +55,7 @@
 5. Chat now has two deterministic planning paths:
    - direct edit prompts produce deterministic JSON timeline ops
    - high-level short-form prompts produce a structured `Draft recipe`
-   - in `auto` mode, ClipForge still prefers the server-backed model planner for raw-op requests and falls back to the heuristic planner if needed
+   - in `auto` mode, ClipForge prefers deterministic planning for supported edit intents and falls back to the server-backed model planner when deterministic planning is not definitive
 6. If the target is ambiguous, the chat panel shows a clarification step first in all planner modes.
    - Choose the intended clip or caption, then ClipForge re-runs the plan.
 7. Review UI depends on intent:

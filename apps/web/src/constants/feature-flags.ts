@@ -2,6 +2,11 @@ function readFlag(value: string | undefined): boolean {
 	return value === "1" || value === "true";
 }
 
+function readEnabledByDefaultFlag(value: string | undefined): boolean {
+	if (value === undefined) return true;
+	return readFlag(value);
+}
+
 function readPlannerMode(value: string | undefined): "auto" | "heuristic" | "openai" {
 	switch (value) {
 		case "heuristic":
@@ -12,12 +17,12 @@ function readPlannerMode(value: string | undefined): "auto" | "heuristic" | "ope
 	}
 }
 
-export const ENABLE_CLIPFORGE_AUTO_EDIT = readFlag(
+export const ENABLE_CLIPFORGE_AUTO_EDIT = readEnabledByDefaultFlag(
 	process.env.NEXT_PUBLIC_ENABLE_CLIPFORGE_AUTO_EDIT ??
 		process.env.ENABLE_CLIPFORGE_AUTO_EDIT,
 );
 
-export const ENABLE_CLIPFORGE_CHAT = readFlag(
+export const ENABLE_CLIPFORGE_CHAT = readEnabledByDefaultFlag(
 	process.env.NEXT_PUBLIC_ENABLE_CLIPFORGE_CHAT ??
 		process.env.ENABLE_CLIPFORGE_CHAT,
 );

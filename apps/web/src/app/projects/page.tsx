@@ -101,6 +101,7 @@ export default function ProjectsPage() {
 			<ProjectsHeader />
 			<ProjectsToolbar projectIds={projectsToDisplay.map((p) => p.id)} />
 			<main className="mx-auto px-4 pt-2 pb-6 flex flex-col gap-4">
+				<ProjectsQuickStart />
 				{isLoading || !isInitialized ? (
 					<ProjectsSkeleton />
 				) : projectsToDisplay.length === 0 ? (
@@ -124,6 +125,77 @@ export default function ProjectsPage() {
 				)}
 			</main>
 		</div>
+	);
+}
+
+function ProjectsQuickStart() {
+	const editor = useEditor();
+	const router = useRouter();
+
+	return (
+		<Card className="mx-4 border bg-muted/20">
+			<CardContent className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+				<div className="space-y-1">
+					<p className="text-sm font-medium">How ClipForge works</p>
+					<p className="text-muted-foreground text-sm">
+						Import or demo, edit on the timeline with or without the assistant,
+						then export from the top right.
+					</p>
+				</div>
+				<div className="flex flex-wrap gap-2">
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={() =>
+							void createDemoProjectAndRoute({ editor, router }).catch((error) => {
+								toast.error("Failed to create demo project", {
+									description:
+										error instanceof Error ? error.message : "Please try again",
+								});
+							})
+						}
+					>
+						Try Demo
+					</Button>
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={() =>
+							void createProjectAndRoute({
+								editor,
+								router,
+								name: "Imported project",
+								starter: "import",
+							}).catch((error) => {
+								toast.error("Failed to create project", {
+									description:
+										error instanceof Error ? error.message : "Please try again",
+								});
+							})
+						}
+					>
+						Import Clips
+					</Button>
+					<Button
+						size="sm"
+						onClick={() =>
+							void createProjectAndRoute({
+								editor,
+								router,
+								name: "New project",
+							}).catch((error) => {
+								toast.error("Failed to create project", {
+									description:
+										error instanceof Error ? error.message : "Please try again",
+								});
+							})
+						}
+					>
+						Blank Project
+					</Button>
+				</div>
+			</CardContent>
+		</Card>
 	);
 }
 
@@ -380,6 +452,32 @@ async function renameProject({
 	await editor.project.renameProject({ id, name });
 }
 
+async function createProjectAndRoute({
+	editor,
+	router,
+	name,
+	starter,
+}: {
+	editor: ReturnType<typeof useEditor>;
+	router: ReturnType<typeof useRouter>;
+	name: string;
+	starter?: "import";
+}) {
+	const projectId = await editor.project.createNewProject({ name });
+	router.push(starter ? `/editor/${projectId}?starter=${starter}` : `/editor/${projectId}`);
+}
+
+async function createDemoProjectAndRoute({
+	editor,
+	router,
+}: {
+	editor: ReturnType<typeof useEditor>;
+	router: ReturnType<typeof useRouter>;
+}) {
+	const result = await editor.clipforge.createDemoProject();
+	router.push(`/editor/${result.projectId}`);
+}
+
 function ProjectActions() {
 	const editor = useEditor();
 	const { selectedProjectIds, clearSelectedProjects } = useProjectsStore();
@@ -499,10 +597,11 @@ function NewProjectButton() {
 	const router = useRouter();
 
 	const handleCreateProject = async () => {
-		const projectId = await editor.project.createNewProject({
+		await createProjectAndRoute({
+			editor,
+			router,
 			name: "New project",
 		});
-		router.push(`/editor/${projectId}`);
 	};
 
 	return (
@@ -879,10 +978,11 @@ function EmptyState() {
 
 	const handleCreateProject = async () => {
 		try {
-			const projectId = await editor.project.createNewProject({
+			await createProjectAndRoute({
+				editor,
+				router,
 				name: "New project",
 			});
-			router.push(`/editor/${projectId}`);
 		} catch (error) {
 			toast.error("Failed to create project", {
 				description:

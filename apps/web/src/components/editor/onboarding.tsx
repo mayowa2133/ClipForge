@@ -165,13 +165,13 @@ function ClipForgeOnboarding() {
 							</div>
 							<ol className="space-y-2 text-sm">
 								<li>1. Press play to preview the cut</li>
-								<li>2. Open Chat and try a sample edit</li>
-								<li>3. Apply the suggested JSON ops</li>
+								<li>2. Open Assistant and try a sample edit</li>
+								<li>3. Review the suggested changes and apply the ones you want</li>
 								<li>4. Use the top-right Export button</li>
 							</ol>
 							<div className="flex flex-col gap-2 sm:flex-row">
 								<Button onClick={handleOpenChat} variant="outline" className="flex-1">
-									Open Chat
+									Open Assistant
 								</Button>
 								<Button onClick={handleUseSamplePrompt} variant="outline" className="flex-1">
 									Use Sample Prompt
@@ -199,7 +199,7 @@ function ClipForgeOnboarding() {
 								<p>1. Import clips</p>
 								<p>2. Auto-edit a vertical draft</p>
 								<p>3. Generate captions</p>
-								<p>4. Refine the cut in Chat</p>
+								<p>4. Refine the cut with Assistant</p>
 								<p>5. Export from the top-right button</p>
 							</div>
 							{errorMessage ? (
@@ -247,13 +247,13 @@ function LegacyOnboarding() {
 	const getStepTitle = () => {
 		switch (step) {
 			case 0:
-				return "Welcome to OpenCut Beta! 🎉";
+				return "Welcome to ClipForge Beta! 🎉";
 			case 1:
 				return "⚠️ This is a super early beta!";
 			case 2:
 				return "🦋 Have fun testing!";
 			default:
-				return "OpenCut Onboarding";
+				return "ClipForge Onboarding";
 		}
 	};
 
@@ -263,8 +263,8 @@ function LegacyOnboarding() {
 				return (
 					<div className="space-y-5">
 						<div className="space-y-3">
-							<Title title="Welcome to OpenCut Beta! 🎉" />
-							<Description description="You're among the first to try OpenCut - the fully open source CapCut alternative." />
+							<Title title="Welcome to ClipForge Beta! 🎉" />
+							<Description description="You're among the first to try ClipForge, the AI-native CapCut alternative for fast video editing." />
 						</div>
 						<NextButton onClick={handleNext}>Next</NextButton>
 					</div>
@@ -276,7 +276,7 @@ function LegacyOnboarding() {
 							<Title title={getStepTitle()} />
 							<Description description="There's still a ton of things to do to make this editor amazing." />
 							<Description description="A lot of features are still missing. We're working hard to build them out!" />
-							<Description description="If you're curious, check out our roadmap [here](https://opencut.app/roadmap)" />
+							<Description description="If you're curious, check out our roadmap [here](https://clipforge.app/roadmap)" />
 						</div>
 						<NextButton onClick={handleNext}>Next</NextButton>
 					</div>
@@ -287,7 +287,7 @@ function LegacyOnboarding() {
 						<div className="space-y-3">
 							<Title title={getStepTitle()} />
 							<Description
-								description={`Join our [Discord](${SOCIAL_LINKS.discord}), chat with cool people and share feedback to help make OpenCut the best editor ever.`}
+								description={`Join our [Discord](${SOCIAL_LINKS.discord}), chat with cool people and share feedback to help make ClipForge the best editor ever.`}
 							/>
 						</div>
 						<NextButton onClick={handleClose}>Finish</NextButton>
@@ -305,7 +305,7 @@ function LegacyOnboarding() {
 					<span className="sr-only">{getStepTitle()}</span>
 				</DialogTitle>
 				<DialogDescription className="sr-only">
-					OpenCut onboarding dialog.
+					ClipForge onboarding dialog.
 				</DialogDescription>
 				<DialogBody>{renderStepContent()}</DialogBody>
 			</DialogContent>

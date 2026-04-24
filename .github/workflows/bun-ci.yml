@@ -22,7 +22,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     env:
-      DATABASE_URL: "postgresql://opencut:opencut@localhost:5432/opencut"
+      DATABASE_URL: "postgresql://clipforge:clipforge@localhost:5432/clipforge"
       BETTER_AUTH_SECRET: "supersecret"
       NEXT_PUBLIC_SITE_URL: "http://localhost:3000"
       UPSTASH_REDIS_REST_URL: "https://your-upstash-redis-url"
@@ -50,17 +50,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-1.2.18-${{ hashFiles('apps/web/bun.lock') }}
+          key: ${{ runner.os }}-bun-1.2.18-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        working-directory: apps/web
-        run: bun install
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint:web
+
+      - name: Run unit tests
+        run: bun test
+
+      - name: Run ClipForge evals
+        run: bun run test:clipforge-evals
 
       - name: Build
-        working-directory: apps/web
-        run: bun run build
-
-      - name: Run tests
-        working-directory: apps/web
-        run: echo "No tests implemented yet"
-        continue-on-error: true
+        run: bun run build:web

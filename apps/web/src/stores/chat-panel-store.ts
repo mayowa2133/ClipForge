@@ -18,21 +18,21 @@ export function migrateChatPanelState(persistedState: unknown): {
 	const state = persistedState as ChatPanelPersistedState | null | undefined;
 
 	return {
-		isOpen: typeof state?.isOpen === "boolean" ? state.isOpen : false,
+		isOpen: typeof state?.isOpen === "boolean" ? state.isOpen : true,
 	};
 }
 
 export const useChatPanelStore = create<ChatPanelState>()(
 	persist(
 		(set) => ({
-			isOpen: false,
+			isOpen: true,
 			open: () => set({ isOpen: true }),
 			close: () => set({ isOpen: false }),
 			toggle: () => set((state) => ({ isOpen: !state.isOpen })),
 		}),
 		{
 			name: "clipforge-chat-panel",
-			version: 1,
+			version: 2,
 			migrate: (persistedState) => migrateChatPanelState(persistedState),
 			partialize: (state) => ({ isOpen: state.isOpen }),
 		},

@@ -76,7 +76,9 @@ export class ProjectManager {
 	};
 
 	constructor(private editor: EditorCore) {
-		void this.loadTemplateLibrary();
+		if (typeof window !== "undefined") {
+			void this.loadTemplateLibrary();
+		}
 	}
 
 	private async ensureStorageMigrations(): Promise<void> {
@@ -259,6 +261,11 @@ export class ProjectManager {
 	}
 
 	async loadTemplateLibrary(): Promise<void> {
+		if (!storageService.isIndexedDBSupported()) {
+			this.templateLibrary = [];
+			this.notify();
+			return;
+		}
 		if (this.templateLibraryPromise) {
 			await this.templateLibraryPromise;
 			return;

@@ -40,6 +40,12 @@ import { useClipForgeChatSettingsStore } from "@/stores/clipforge-chat-settings-
 import { useEffect, useState } from "react";
 import { resolveProjectVersionPack } from "@/lib/timeline";
 import type { ProjectVersionTarget } from "@/types/project";
+import {
+	Accordion,
+	AccordionContent,
+	AccordionItem,
+	AccordionTrigger,
+} from "@/components/ui/accordion";
 
 export function SettingsView() {
 	const [open, setOpen] = useState(false);
@@ -57,16 +63,24 @@ export function SettingsView() {
 						<VersionPackContent />
 					</SectionContent>
 				</Section>
-				{ENABLE_CLIPFORGE_CHAT && (
-					<Section>
-						<SectionContent>
-							<PlannerSettingsContent />
-						</SectionContent>
-					</Section>
-				)}
 				<Section>
 					<SectionContent>
-						<CreativeLibraryContent />
+						<Accordion type="single" collapsible className="w-full">
+							<AccordionItem value="advanced" className="border-none">
+								<AccordionTrigger className="py-2 hover:no-underline">
+									<div className="text-left">
+										<p className="text-sm font-medium">Advanced</p>
+										<p className="text-muted-foreground text-xs font-normal">
+											Planner diagnostics and bundled creative-library details.
+										</p>
+									</div>
+								</AccordionTrigger>
+								<AccordionContent className="space-y-4 pb-0">
+									{ENABLE_CLIPFORGE_CHAT ? <PlannerSettingsContent /> : null}
+									<CreativeLibraryContent />
+								</AccordionContent>
+							</AccordionItem>
+						</Accordion>
 					</SectionContent>
 				</Section>
 				<Popover open={open} onOpenChange={setOpen}>

@@ -25,7 +25,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Build-time env stubs to pass zod validation
-ENV DATABASE_URL="postgresql://opencut:opencut@localhost:5432/opencut"
+ENV DATABASE_URL="postgresql://clipforge:clipforge@localhost:5432/clipforge"
 ENV BETTER_AUTH_SECRET="build-time-secret"
 ENV UPSTASH_REDIS_REST_URL="http://localhost:8079"
 ENV UPSTASH_REDIS_REST_TOKEN="example_token"

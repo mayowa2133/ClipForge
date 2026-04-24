@@ -1,8 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PanelView } from "@/components/editor/panels/assets/views/base-view";
 import { MediaDragOverlay } from "@/components/editor/panels/assets/drag-overlay";
@@ -46,6 +46,7 @@ import { buildElementFromMedia } from "@/lib/timeline/element-utils";
 import { invokeAction } from "@/lib/actions";
 import { useAssetsPanelStore } from "@/stores/assets-panel-store";
 import { useClipForgeOnboardingStore } from "@/stores/clipforge-onboarding-store";
+import { useChatPanelStore } from "@/stores/chat-panel-store";
 import type { MediaAsset } from "@/types/assets";
 import { cn } from "@/utils/ui";
 import {
@@ -62,10 +63,24 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 export function MediaView() {
 	const editor = useEditor();
 	const router = useRouter();
+	const searchParams = useSearchParams();
 	const mediaFiles = editor.media.getAssets();
 	const activeProject = editor.project.getActive();
+	const openChatPanel = useChatPanelStore((state) => state.open);
 	const startPendingGuide = useClipForgeOnboardingStore(
 		(state) => state.startPendingGuide,
+	);
+	const hasCompletedFirstImport = useClipForgeOnboardingStore(
+		(state) => state.hasCompletedFirstImport,
+	);
+	const hasCompletedFirstAssistantAction = useClipForgeOnboardingStore(
+		(state) => state.hasCompletedFirstAssistantAction,
+	);
+	const hasCompletedFirstExport = useClipForgeOnboardingStore(
+		(state) => state.hasCompletedFirstExport,
+	);
+	const markFirstImportCompleted = useClipForgeOnboardingStore(
+		(state) => state.markFirstImportCompleted,
 	);
 
 	const { mediaViewMode, setMediaViewMode, highlightMediaId, clearHighlight } =
@@ -89,6 +104,7 @@ export function MediaView() {
 		"name",
 	);
 	const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+	const hasTriggeredStarterImportRef = useRef(false);
 	const srtInputRef = useRef<HTMLInputElement>(null);
 	const missingMediaRelinkInputRef = useRef<HTMLInputElement>(null);
 	const activeReferenceAssetId = activeProject?.clipforge?.activeReferenceVideoAssetId ?? null;
@@ -190,6 +206,30 @@ export function MediaView() {
 			multiple: true,
 			onFilesSelected: (files) => processFiles({ files }),
 		});
+
+	useEffect(() => {
+		if (!hasCompletedFirstImport && mediaFiles.some((asset) => !asset.ephemeral)) {
+			markFirstImportCompleted();
+		}
+	}, [hasCompletedFirstImport, markFirstImportCompleted, mediaFiles]);
+
+	useEffect(() => {
+		if (hasTriggeredStarterImportRef.current) {
+			return;
+		}
+		if (searchParams.get("starter") !== "import") {
+			return;
+		}
+		if (!activeProject) {
+			return;
+		}
+
+		hasTriggeredStarterImportRef.current = true;
+		router.replace(`/editor/${activeProject.metadata.id}`);
+		requestAnimationFrame(() => {
+			openFilePicker();
+		});
+	}, [activeProject, openFilePicker, router, searchParams]);
 
 	const handleCreateDemoProject = async () => {
 		if (isCreatingDemo) return;
@@ -498,6 +538,14 @@ export function MediaView() {
 	const renderPreview = (item: MediaAsset) => previewComponents.get(item.id);
 	const renderCompactPreview = (item: MediaAsset) =>
 		previewComponents.get(`compact-${item.id}`);
+	const showStartHereCard =
+		filteredMediaItems.length === 0 &&
+		missingMediaReferences.length === 0 &&
+		incompatibleMediaReferences.length === 0 &&
+		ENABLE_CLIPFORGE_EXPERIENCE &&
+		!hasCompletedFirstImport &&
+		!hasCompletedFirstAssistantAction &&
+		!hasCompletedFirstExport;
 
 	const mediaActions = (
 		<div>
@@ -672,6 +720,16 @@ export function MediaView() {
 				className={isDragOver ? "bg-accent/30" : ""}
 				{...dragProps}
 			>
+				{showStartHereCard ? (
+					<StartHereCard
+						onImportClips={openFilePicker}
+						onTryDemo={() => void handleCreateDemoProject()}
+						onAskAssistant={() => {
+							openChatPanel();
+							editor.clipforge.populateChatDraft("Make a first cut");
+						}}
+					/>
+				) : null}
 				{activeReferenceAssetId ? (
 					<div className="mb-3 rounded-md border p-3">
 						<div className="flex items-center justify-between gap-3">
@@ -809,6 +867,37 @@ export function MediaView() {
 				)}
 			</PanelView>
 		</>
+	);
+}
+
+function StartHereCard({
+	onImportClips,
+	onTryDemo,
+	onAskAssistant,
+}: {
+	onImportClips: () => void;
+	onTryDemo: () => void;
+	onAskAssistant: () => void;
+}) {
+	return (
+		<div className="mb-3 rounded-md border bg-muted/25 p-3">
+			<p className="text-sm font-medium">Start here</p>
+			<p className="text-muted-foreground mt-1 text-xs">
+				If you already know CapCut, the flow is the same: bring in footage, edit on
+				the timeline, and export when you are ready.
+			</p>
+			<div className="mt-3 flex flex-wrap gap-2">
+				<Button type="button" size="sm" onClick={onImportClips}>
+					Import clips
+				</Button>
+				<Button type="button" size="sm" variant="outline" onClick={onTryDemo}>
+					Try demo
+				</Button>
+				<Button type="button" size="sm" variant="outline" onClick={onAskAssistant}>
+					Ask Assistant
+				</Button>
+			</div>
+		</div>
 	);
 }
 

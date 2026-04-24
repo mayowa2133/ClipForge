@@ -6,7 +6,7 @@ import { ChatContent } from "./chat-content";
 export function ChatPanel() {
 	return (
 		<div className="panel bg-background h-full rounded-sm border border-t-0 overflow-hidden">
-			<PanelView title="Chat" contentClassName="px-3">
+			<PanelView title="Assistant" contentClassName="px-3">
 				<ChatContent />
 			</PanelView>
 		</div>

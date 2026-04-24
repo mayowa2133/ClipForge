@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import {
 	Tooltip,
 	TooltipContent,
@@ -15,7 +16,8 @@ import {
 } from "@/stores/assets-panel-store";
 
 export function TabBar() {
-	const { activeTab, setActiveTab } = useAssetsPanelStore();
+	const { activeTab, setActiveTab, showTabLabels, toggleTabLabels } =
+		useAssetsPanelStore();
 	const [showTopFade, setShowTopFade] = useState(false);
 	const [showBottomFade, setShowBottomFade] = useState(false);
 	const scrollRef = useRef<HTMLDivElement>(null);
@@ -46,10 +48,42 @@ export function TabBar() {
 	}, [checkScrollPosition]);
 
 	return (
-		<div className="relative flex">
+		<div
+			className={cn(
+				"relative flex flex-col border-r bg-background/70",
+				showTabLabels ? "w-40" : "w-14",
+			)}
+		>
+			<div className="flex shrink-0 items-center justify-between border-b px-2 py-2">
+				<span
+					className={cn(
+						"text-muted-foreground text-xs font-medium uppercase tracking-wide",
+						!showTabLabels && "sr-only",
+					)}
+				>
+					Tools
+				</span>
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon"
+					className="size-8"
+					aria-label={showTabLabels ? "Collapse tool labels" : "Expand tool labels"}
+					onClick={toggleTabLabels}
+				>
+					{showTabLabels ? (
+						<PanelLeftClose className="size-4" />
+					) : (
+						<PanelLeftOpen className="size-4" />
+					)}
+				</Button>
+			</div>
 			<div
 				ref={scrollRef}
-				className="scrollbar-hidden relative flex size-full p-2 flex-col items-center justify-start gap-1.5 overflow-y-auto"
+				className={cn(
+					"scrollbar-hidden relative flex size-full flex-col justify-start gap-1.5 overflow-y-auto p-2",
+					showTabLabels ? "items-stretch" : "items-center",
+				)}
 			>
 				{TAB_KEYS.map((tabKey) => {
 					const tab = tabs[tabKey];
@@ -60,13 +94,19 @@ export function TabBar() {
 									variant={activeTab === tabKey ? "secondary" : "text"}
 									aria-label={tab.label}
 									className={cn(
-										"flex-col !p-1.5 !rounded-sm !h-auto [&_svg]:size-4.5",
+										"flex !h-auto !rounded-sm [&_svg]:size-4.5",
+										showTabLabels
+											? "w-full items-center justify-start gap-2 px-3 py-2"
+											: "flex-col !p-1.5",
 										activeTab !== tabKey &&
 											"border border-transparent text-muted-foreground",
 									)}
 									onClick={() => setActiveTab(tabKey)}
 								>
 									<tab.icon />
+									{showTabLabels ? (
+										<span className="text-sm">{tab.label}</span>
+									) : null}
 								</Button>
 							</TooltipTrigger>
 							<TooltipContent

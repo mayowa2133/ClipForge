@@ -38,3 +38,17 @@ Use this format for new entries:
 - Root cause: Heuristic targeting logic relied too narrowly on current-scene summaries.
 - Fix: Added fallback targeting against top-level segment summaries in `/apps/web/src/lib/clipforge/chat/providers/heuristic.ts`.
 - Guardrail: Planner context readers should treat nested summaries as optional views over the project, not the sole source of truth.
+
+## 2026-03-17 - First-run UX checks must clear persisted browser state
+- Context: Verifying M55 first-time guidance and assistant defaults in the live UI.
+- Failure: The new `Start here` card and other first-run surfaces did not appear during the initial smoke pass, which made the implementation look incomplete.
+- Root cause: Zustand persistence in localStorage preserved earlier onboarding and assistant-completion state, so the browser was not actually in a first-run condition.
+- Fix: Clear persisted browser storage before first-run smoke tests and then re-run the launch path from `/projects`.
+- Guardrail: Any UX milestone that changes onboarding, empty states, or first-use defaults needs a clean-storage verification pass in addition to normal smoke tests.
+
+## 2026-03-17 - Large-file helper edits can silently land inside another function
+- Context: Adding export-preflight presentation helpers during the M55 UI cleanup.
+- Failure: TypeScript failed because the new exported helpers were inserted inside `formatExportDiagnostics()`, which broke both the existing function and the new exports.
+- Root cause: In a long file, a patch was applied against the wrong anchor without re-checking the surrounding scope boundary.
+- Fix: Moved the helpers back to module scope, corrected the export issue-code mappings to the real `ExportPreflightCode` union, and re-ran typecheck immediately.
+- Guardrail: When adding exported helpers to long modules, re-open the exact insertion region after patching and confirm the new code is outside any enclosing function before moving on.
