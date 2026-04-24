@@ -559,7 +559,14 @@ function formatRate(value: number): string {
 }
 
 function cloneFixture(fixture: EvalFixture): EvalFixture {
-	return structuredClone(fixture);
+	return {
+		...fixture,
+		project: structuredClone(fixture.project),
+		mediaAssets: fixture.mediaAssets.map((asset) => ({ ...asset })),
+		projectKitTemplates: structuredClone(fixture.projectKitTemplates),
+		sceneRecipeTemplates: structuredClone(fixture.sceneRecipeTemplates),
+		defaultContext: structuredClone(fixture.defaultContext),
+	};
 }
 
 function createEvaluationEditor({

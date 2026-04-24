@@ -1,20 +1,27 @@
 import { isTypableDOMElement } from "@/utils/browser";
 
 test("isTypableDOMElement detects editable elements", () => {
-	const input = document.createElement("input");
-	document.body.appendChild(input);
+	const input = {
+		tagName: "INPUT",
+		isContentEditable: false,
+		disabled: false,
+	} as HTMLElement & HTMLInputElement;
 	expect(isTypableDOMElement({ element: input })).toBe(true);
 	input.disabled = true;
 	expect(isTypableDOMElement({ element: input })).toBe(false);
 
-	const textarea = document.createElement("textarea");
-	document.body.appendChild(textarea);
+	const textarea = {
+		tagName: "TEXTAREA",
+		isContentEditable: false,
+		disabled: false,
+	} as HTMLElement & HTMLTextAreaElement;
 	expect(isTypableDOMElement({ element: textarea })).toBe(true);
 	textarea.disabled = true;
 	expect(isTypableDOMElement({ element: textarea })).toBe(false);
 
-	const div = document.createElement("div");
-	div.contentEditable = "true";
-	document.body.appendChild(div);
+	const div = {
+		tagName: "DIV",
+		isContentEditable: true,
+	} as HTMLElement;
 	expect(isTypableDOMElement({ element: div })).toBe(true);
 });
