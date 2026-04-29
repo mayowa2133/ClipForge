@@ -1,9 +1,10 @@
 import {
 	buildRenderGraphInput,
 	type RenderArtifactSummary,
+	type RenderGraphMediaRef,
 } from "@/lib/clipforge/production/render-graph";
 import type { ExportFormat, ExportQuality, PublishDestination } from "@/types/export";
-import type { ClipForgeJobRecord } from "@/types/production";
+import type { ClipForgeJobRecord, CloudMediaObjectRecord } from "@/types/production";
 import type { TProject } from "@/types/project";
 
 export class CloudExportApiError extends Error {
@@ -42,7 +43,70 @@ export interface SubmitCloudExportArgs {
 	quality: ExportQuality;
 	includeAudio: boolean;
 	publishDestination: PublishDestination;
+	cloudMediaObjects?: CloudMediaObjectRecord[];
+	provider?: string;
 	fetchImpl?: FetchLike;
+}
+
+export interface CollectReferencedMediaIdsResult {
+	mediaIds: string[];
+}
+
+export function collectReferencedMediaIds({
+	project,
+}: {
+	project: TProject;
+}): CollectReferencedMediaIdsResult {
+	const mediaIds = new Set<string>();
+	for (const scene of project.scenes ?? []) {
+		for (const track of scene.tracks ?? []) {
+			if (track.type === "video") {
+				for (const element of track.elements) {
+					if (
+						(element.type === "video" || element.type === "image") &&
+						typeof element.mediaId === "string"
+					) {
+						mediaIds.add(element.mediaId);
+					}
+				}
+			}
+			if (track.type === "audio") {
+				for (const element of track.elements) {
+					if (element.sourceType === "upload" && typeof element.mediaId === "string") {
+						mediaIds.add(element.mediaId);
+					}
+				}
+			}
+		}
+	}
+	return { mediaIds: Array.from(mediaIds) };
+}
+
+export function buildMediaRefsFromCloudObjects({
+	project,
+	cloudMediaObjects,
+}: {
+	project: TProject;
+	cloudMediaObjects: CloudMediaObjectRecord[];
+}): RenderGraphMediaRef[] {
+	const referenced = new Set(collectReferencedMediaIds({ project }).mediaIds);
+	const latestByMediaId = new Map<string, CloudMediaObjectRecord>();
+	for (const record of cloudMediaObjects) {
+		if (!referenced.has(record.mediaId)) continue;
+		const existing = latestByMediaId.get(record.mediaId);
+		if (!existing || existing.updatedAt < record.updatedAt) {
+			latestByMediaId.set(record.mediaId, record);
+		}
+	}
+	return Array.from(referenced).map((mediaId) => {
+		const record = latestByMediaId.get(mediaId);
+		return {
+			mediaId,
+			cloudStorageKey:
+				record && record.status === "stored" ? record.storageKey : null,
+			bytes: record?.bytes,
+		};
+	});
 }
 
 export async function submitCloudExportJob({
@@ -52,14 +116,20 @@ export async function submitCloudExportJob({
 	quality,
 	includeAudio,
 	publishDestination,
+	cloudMediaObjects,
+	provider = "stub",
 	fetchImpl,
 }: SubmitCloudExportArgs): Promise<ClipForgeJobRecord> {
+	const mediaRefs = cloudMediaObjects
+		? buildMediaRefsFromCloudObjects({ project, cloudMediaObjects })
+		: undefined;
 	const input = buildRenderGraphInput({
 		project,
 		format,
 		quality,
 		includeAudio,
 		publishDestination,
+		mediaRefs,
 	});
 	const callFetch: FetchLike = fetchImpl ?? ((input, init) => fetch(input, init));
 	const response = await callFetch("/api/clipforge/jobs", {
@@ -69,7 +139,7 @@ export async function submitCloudExportJob({
 		body: JSON.stringify({
 			projectId: cloudProjectId,
 			kind: "export",
-			provider: "stub",
+			provider,
 			input,
 		}),
 	});

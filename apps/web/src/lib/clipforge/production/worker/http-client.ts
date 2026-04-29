@@ -106,6 +106,30 @@ export class HttpWorkerClient implements WorkerHttpClient {
 		return { ok: response.ok, status: response.status };
 	}
 
+	async presignMediaDownload({
+		storageKey,
+	}: {
+		storageKey: string;
+	}): Promise<{ url: string; expiresAt: string }> {
+		const response = await this.fetchImpl(
+			this.url("/api/clipforge/internal/media/download-url"),
+			{
+				method: "POST",
+				headers: this.headers(),
+				body: JSON.stringify({ storageKey }),
+			},
+		);
+		if (!response.ok) {
+			throw new Error(
+				`Worker media download presign failed: ${response.status} ${await response.text().catch(() => "")}`,
+			);
+		}
+		const body = (await response.json()) as {
+			download: { url: string; expiresAt: string };
+		};
+		return body.download;
+	}
+
 	async patchJob({
 		jobId,
 		status,

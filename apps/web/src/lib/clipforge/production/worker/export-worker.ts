@@ -31,6 +31,9 @@ export interface WorkerHttpClient {
 		result?: Record<string, unknown> | null;
 		errorMessage?: string | null;
 	}): Promise<{ job: ClipForgeJobRecord }>;
+	presignMediaDownload?(args: {
+		storageKey: string;
+	}): Promise<{ url: string; expiresAt: string }>;
 }
 
 export interface RenderEngine {

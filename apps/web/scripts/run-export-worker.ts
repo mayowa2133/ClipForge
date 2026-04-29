@@ -1,7 +1,14 @@
 import {
+	type RenderEngine,
 	StubRenderEngine,
 	runExportWorkerLoop,
 } from "../src/lib/clipforge/production/worker/export-worker";
+import { FfmpegRenderEngine } from "../src/lib/clipforge/production/worker/ffmpeg-engine";
+import {
+	HttpMediaFetcher,
+	NodeFileSystemAdapter,
+	SpawnFfmpegRunner,
+} from "../src/lib/clipforge/production/worker/ffmpeg-node-adapters";
 import { HttpWorkerClient } from "../src/lib/clipforge/production/worker/http-client";
 
 function readEnv(name: string): string | null {
@@ -43,7 +50,12 @@ async function main() {
 	});
 
 	const http = new HttpWorkerClient({ baseUrl, bearerSecret, workerId });
-	const engine = new StubRenderEngine();
+	const rendererKind = (readEnv("CLIPFORGE_RENDERER") ?? "stub").toLowerCase();
+	const engine: RenderEngine = await buildRenderEngine({
+		kind: rendererKind,
+		http,
+	});
+	console.log(`[export-worker] renderer=${engine.id}`);
 
 	const summary = await runExportWorkerLoop({
 		http,
@@ -53,6 +65,31 @@ async function main() {
 		signal: controller.signal,
 	});
 	console.log(`[export-worker] processed ${summary.processed} jobs.`);
+}
+
+async function buildRenderEngine({
+	kind,
+	http,
+}: {
+	kind: string;
+	http: HttpWorkerClient;
+}): Promise<RenderEngine> {
+	if (kind === "stub") return new StubRenderEngine();
+	if (kind === "ffmpeg") {
+		const fs = new NodeFileSystemAdapter();
+		const workDir = await fs.makeTempDir("clipforge-worker-");
+		return new FfmpegRenderEngine({
+			ffmpegRunner: new SpawnFfmpegRunner({
+				ffmpegBinary: readEnv("CLIPFORGE_FFMPEG_BIN") ?? "ffmpeg",
+				logger: (line) => console.log(`[ffmpeg] ${line}`),
+			}),
+			mediaFetcher: new HttpMediaFetcher({ workerHttp: http, fs, workDir }),
+			fs,
+		});
+	}
+	throw new Error(
+		`Unknown CLIPFORGE_RENDERER=${kind}. Supported: stub, ffmpeg.`,
+	);
 }
 
 main().catch((error) => {

@@ -1,13 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import {
+	buildMediaRefsFromCloudObjects,
+	collectReferencedMediaIds,
 	CloudExportApiError,
 	type FetchLike,
 	getArtifactSummary,
 	pollCloudExportJob,
 	submitCloudExportJob,
 } from "@/lib/clipforge/production/cloud-export-client";
-import type { ClipForgeJobRecord } from "@/types/production";
+import type {
+	ClipForgeJobRecord,
+	CloudMediaObjectRecord,
+} from "@/types/production";
 import type { TProject } from "@/types/project";
+import type {
+	AudioTrack,
+	UploadAudioElement,
+	VideoElement,
+	VideoTrack,
+} from "@/types/timeline";
 
 function makeProject(): TProject {
 	return {
@@ -27,6 +38,89 @@ function makeProject(): TProject {
 		},
 		version: 1,
 	} as TProject;
+}
+
+function makeProjectWithMedia({
+	videoMediaIds,
+	audioMediaIds = [],
+}: {
+	videoMediaIds: string[];
+	audioMediaIds?: string[];
+}): TProject {
+	const project = makeProject();
+	const videoElements: VideoElement[] = videoMediaIds.map((mediaId, index) => ({
+		id: `video_${index}`,
+		name: `Clip ${index}`,
+		type: "video",
+		mediaId,
+		duration: 4,
+		startTime: index * 4,
+		trimStart: 0,
+		trimEnd: 0,
+		transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
+		opacity: 1,
+	}));
+	const videoTrack: VideoTrack = {
+		id: "track_main",
+		name: "Main",
+		type: "video",
+		isMain: true,
+		muted: false,
+		hidden: false,
+		elements: videoElements,
+	};
+	const audioElements: UploadAudioElement[] = audioMediaIds.map(
+		(mediaId, index) => ({
+			id: `audio_${index}`,
+			name: `Audio ${index}`,
+			type: "audio",
+			sourceType: "upload",
+			mediaId,
+			duration: 4,
+			startTime: 0,
+			trimStart: 0,
+			trimEnd: 0,
+			volume: 1,
+		}),
+	);
+	const audioTrack: AudioTrack = {
+		id: "track_audio",
+		name: "Audio",
+		type: "audio",
+		muted: false,
+		elements: audioElements,
+	};
+	project.scenes = [
+		{
+			id: "scene_main",
+			name: "Main",
+			isMain: true,
+			tracks: [videoTrack, audioTrack],
+			bookmarks: [],
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		},
+	];
+	return project;
+}
+
+function makeMediaRecord(
+	overrides: Partial<CloudMediaObjectRecord>,
+): CloudMediaObjectRecord {
+	return {
+		id: "media_1",
+		projectId: "proj_test",
+		ownerId: "owner_1",
+		mediaId: "asset_1",
+		storageKey: "key_asset_1",
+		bytes: 100,
+		sha256: null,
+		status: "stored",
+		encrypted: true,
+		createdAt: new Date().toISOString(),
+		updatedAt: new Date().toISOString(),
+		...overrides,
+	};
 }
 
 function makeJob(overrides: Partial<ClipForgeJobRecord> = {}): ClipForgeJobRecord {
@@ -183,5 +277,119 @@ describe("getArtifactSummary", () => {
 		expect(
 			getArtifactSummary(makeJob({ result: { storageKey: "k" } })),
 		).toBeNull();
+	});
+});
+
+describe("collectReferencedMediaIds", () => {
+	test("collects video and uploaded-audio mediaIds, deduped", () => {
+		const project = makeProjectWithMedia({
+			videoMediaIds: ["a", "b", "a"],
+			audioMediaIds: ["c"],
+		});
+		const result = collectReferencedMediaIds({ project });
+		expect(result.mediaIds.sort()).toEqual(["a", "b", "c"]);
+	});
+
+	test("returns empty for empty project", () => {
+		expect(collectReferencedMediaIds({ project: makeProject() }).mediaIds).toEqual([]);
+	});
+});
+
+describe("buildMediaRefsFromCloudObjects", () => {
+	test("maps stored media records to cloud storage keys", () => {
+		const project = makeProjectWithMedia({ videoMediaIds: ["a", "b"] });
+		const refs = buildMediaRefsFromCloudObjects({
+			project,
+			cloudMediaObjects: [
+				makeMediaRecord({ mediaId: "a", storageKey: "key_a", status: "stored" }),
+				makeMediaRecord({ mediaId: "b", storageKey: "key_b", status: "stored" }),
+			],
+		});
+		const sorted = [...refs].sort((x, y) => x.mediaId.localeCompare(y.mediaId));
+		expect(sorted.map((r) => r.mediaId)).toEqual(["a", "b"]);
+		expect(sorted.map((r) => r.cloudStorageKey)).toEqual(["key_a", "key_b"]);
+	});
+
+	test("non-stored media yields cloudStorageKey=null so the renderer reports it as missing", () => {
+		const project = makeProjectWithMedia({ videoMediaIds: ["a"] });
+		const refs = buildMediaRefsFromCloudObjects({
+			project,
+			cloudMediaObjects: [
+				makeMediaRecord({ mediaId: "a", storageKey: "key_a", status: "uploading" }),
+			],
+		});
+		expect(refs).toHaveLength(1);
+		expect(refs[0]!.cloudStorageKey).toBeNull();
+	});
+
+	test("includes referenced mediaIds with no record at all (cloudStorageKey null)", () => {
+		const project = makeProjectWithMedia({ videoMediaIds: ["a", "b"] });
+		const refs = buildMediaRefsFromCloudObjects({
+			project,
+			cloudMediaObjects: [
+				makeMediaRecord({ mediaId: "a", storageKey: "key_a", status: "stored" }),
+			],
+		});
+		const byId = new Map(refs.map((r) => [r.mediaId, r]));
+		expect(byId.get("a")?.cloudStorageKey).toBe("key_a");
+		expect(byId.get("b")?.cloudStorageKey).toBeNull();
+	});
+
+	test("prefers the most recently updated record when duplicates exist", () => {
+		const project = makeProjectWithMedia({ videoMediaIds: ["a"] });
+		const refs = buildMediaRefsFromCloudObjects({
+			project,
+			cloudMediaObjects: [
+				makeMediaRecord({
+					id: "old",
+					mediaId: "a",
+					storageKey: "key_old",
+					status: "stored",
+					updatedAt: new Date(2020, 0, 1).toISOString(),
+				}),
+				makeMediaRecord({
+					id: "new",
+					mediaId: "a",
+					storageKey: "key_new",
+					status: "stored",
+					updatedAt: new Date(2030, 0, 1).toISOString(),
+				}),
+			],
+		});
+		expect(refs[0]!.cloudStorageKey).toBe("key_new");
+	});
+});
+
+describe("submitCloudExportJob with cloudMediaObjects", () => {
+	test("sends mediaRefs in the job input when cloud media is provided", async () => {
+		const project = makeProjectWithMedia({ videoMediaIds: ["a"] });
+		let capturedBody: string | undefined;
+		const fakeFetch: FetchLike = async (url, init) => {
+			capturedBody = init?.body as string;
+			return new Response(
+				JSON.stringify({ job: makeJob({ id: "job_x" }) }),
+				{ status: 201, headers: { "content-type": "application/json" } },
+			);
+		};
+		await submitCloudExportJob({
+			project,
+			cloudProjectId: "cp_1",
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			cloudMediaObjects: [
+				makeMediaRecord({ mediaId: "a", storageKey: "key_a", status: "stored" }),
+			],
+			fetchImpl: fakeFetch,
+		});
+
+		expect(capturedBody).toBeDefined();
+		const parsed = JSON.parse(capturedBody!) as {
+			input: { mediaRefs: Array<{ mediaId: string; cloudStorageKey: string | null }> };
+		};
+		expect(parsed.input.mediaRefs).toHaveLength(1);
+		expect(parsed.input.mediaRefs[0]!.mediaId).toBe("a");
+		expect(parsed.input.mediaRefs[0]!.cloudStorageKey).toBe("key_a");
 	});
 });
