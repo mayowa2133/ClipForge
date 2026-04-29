@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
-import { createMediaObjectRecord } from "@/lib/clipforge/production/server/store";
+import {
+	createMediaObjectRecord,
+	listMediaObjects,
+} from "@/lib/clipforge/production/server/store";
 import { requireClipForgeUser } from "@/lib/clipforge/production/server/auth";
 import {
 	isRecord,
 	jsonError,
 	readString,
 } from "@/lib/clipforge/production/server/http";
+import {
+	buildStorageKey,
+	getCloudStorageClient,
+} from "@/lib/clipforge/production/server/cloud-storage";
 import type { CloudMediaObjectStatus } from "@/types/production";
 
 export const runtime = "nodejs";
@@ -22,6 +29,20 @@ const MEDIA_STATUSES = new Set<CloudMediaObjectStatus>([
 	"deleted",
 ]);
 
+export async function GET(request: Request, { params }: RouteContext) {
+	try {
+		const user = await requireClipForgeUser(request);
+		const { projectId } = await params;
+		const mediaObjects = await listMediaObjects({
+			ownerId: user.id,
+			projectId,
+		});
+		return NextResponse.json({ mediaObjects });
+	} catch (error) {
+		return jsonError(error);
+	}
+}
+
 export async function POST(request: Request, { params }: RouteContext) {
 	try {
 		const user = await requireClipForgeUser(request);
@@ -34,28 +55,47 @@ export async function POST(request: Request, { params }: RouteContext) {
 			);
 		}
 		const mediaId = readString(body.mediaId);
-		const storageKey = readString(body.storageKey);
-		if (!mediaId || !storageKey) {
+		if (!mediaId) {
 			return NextResponse.json(
-				{ error: "Media object requires mediaId and storageKey." },
+				{ error: "Media object requires mediaId." },
 				{ status: 400 },
 			);
 		}
+
+		const storage = getCloudStorageClient();
+		const explicitStorageKey = readString(body.storageKey);
+		const storageKey =
+			explicitStorageKey ??
+			buildStorageKey({ ownerId: user.id, projectId, mediaId });
+
+		const requestedStatus =
+			typeof body.status === "string" &&
+			MEDIA_STATUSES.has(body.status as CloudMediaObjectStatus)
+				? (body.status as CloudMediaObjectStatus)
+				: storage
+					? "uploading"
+					: "queued";
+
 		const mediaObject = await createMediaObjectRecord({
 			ownerId: user.id,
 			projectId,
 			mediaId,
 			storageKey,
-			bytes: typeof body.bytes === "number" ? Math.max(0, Math.round(body.bytes)) : 0,
+			bytes:
+				typeof body.bytes === "number" ? Math.max(0, Math.round(body.bytes)) : 0,
 			sha256: readString(body.sha256),
-			status:
-				typeof body.status === "string" &&
-				MEDIA_STATUSES.has(body.status as CloudMediaObjectStatus)
-					? (body.status as CloudMediaObjectStatus)
-					: "queued",
+			status: requestedStatus,
 			encrypted: body.encrypted === undefined ? true : body.encrypted !== false,
 		});
-		return NextResponse.json({ mediaObject }, { status: 201 });
+
+		const upload = storage
+			? await storage.presignedPut({
+					storageKey,
+					contentType: readString(body.contentType),
+				})
+			: null;
+
+		return NextResponse.json({ mediaObject, upload }, { status: 201 });
 	} catch (error) {
 		return jsonError(error);
 	}

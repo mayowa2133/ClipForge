@@ -1,6 +1,7 @@
 import type { EditorCore } from "@/core";
 import { evaluateExportPreflight } from "@/lib/clipforge/export-preflight";
 import { getExportRecoveryRecommendation } from "@/lib/clipforge/export-recovery";
+import { recordExportRightsReceipts } from "@/lib/clipforge/production/rights-receipts";
 import type {
 	ExportDiagnostics,
 	ExportFormat,
@@ -8,6 +9,7 @@ import type {
 	ExportPreflightResult,
 	ExportQuality,
 	ExportRecoveryRecommendation,
+	PublishDestination,
 } from "@/types/export";
 import { buildProjectSummary } from "./chat/project-summarizer";
 
@@ -29,10 +31,12 @@ export interface ClipForgeExportIntegration {
 		editor,
 		format,
 		quality,
+		publishDestination,
 	}: {
 		editor: EditorCore;
 		format?: ExportFormat;
 		quality?: ExportQuality;
+		publishDestination?: PublishDestination;
 	}): Promise<ClipForgeExportArtifact>;
 }
 
@@ -41,10 +45,12 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 		editor,
 		format = "mp4",
 		quality = "high",
+		publishDestination = "generic-export",
 	}: {
 		editor: EditorCore;
 		format?: ExportFormat;
 		quality?: ExportQuality;
+		publishDestination?: PublishDestination;
 	}): Promise<ClipForgeExportArtifact> {
 		let exportDiagnostics: ExportDiagnostics | undefined;
 		let fallbackReason = "Export pipeline unavailable.";
@@ -93,6 +99,24 @@ export class BestEffortExportIntegration implements ClipForgeExportIntegration {
 				const url = URL.createObjectURL(
 					new Blob([result.buffer], { type: mimeType }),
 				);
+				if (activeProject) {
+					void recordExportRightsReceipts({
+						projectId: null,
+						mediaAssets:
+							typeof (editor as Partial<EditorCore>).media?.getAssets === "function"
+								? editor.media.getAssets()
+								: [],
+						destination: publishDestination,
+						exportContext: {
+							format,
+							quality,
+							projectName: activeProject.metadata.name,
+							exportedAt: new Date().toISOString(),
+						},
+					}).catch((error) => {
+						console.warn("Failed to record export rights receipts:", error);
+					});
+				}
 				return {
 					status: "exported",
 					url,

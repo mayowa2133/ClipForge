@@ -57,6 +57,10 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [x] M49: Retention-aware story shaping with hook-first assembly, payoff planning, CTA reservation, and reviewable story-shape guidance in chat.
 - [x] M50: Publish-ready polish engine with caption reveal families, audio polish presets, and final-pass style profiles.
 - [x] M51: Production foundation contracts with cloud project records, media sync state, queued job records, share links, rights receipts, and capability status surfaces.
+- [x] M52: Finishing autonomy with extended chat planner heuristics, project summarizer, and broader plan-impact coverage.
+- [x] M53: Reference-guided finishing with reference-video analysis surfaced in Assets and Chat for finishing pass guidance.
+- [x] M54: Reference-guided draft assembly that lets reference videos seed brief-to-draft recipes end-to-end.
+- [x] M55: First-time guidance and assistant defaults with a guided onboarding card and export-preflight presentation cleanup.
 
 ## Production Hardening Backlog
 
@@ -65,7 +69,7 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 - [ ] P3: Account-backed project sync UI, encrypted media upload/restore, backup, and explicit local-only/cloud project modes.
 - [ ] P4: Creative scoring for hooks, pacing, platform fit, editable assumptions, and high-level creative regression evals.
 - [ ] P5: Full ClipForge brand/legal closure across public pages, app metadata, and deployment defaults.
-- [ ] P6: Release CI that runs unit tests, ClipForge evals, lint, and production build without soft-failing.
+- [x] P6: Release CI that runs unit tests, ClipForge evals, lint, and production build without soft-failing.
 
 ## Working Rules
 

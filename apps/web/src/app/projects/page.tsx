@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { CloudProjectsPanel } from "@/components/projects/cloud-projects-panel";
 import { MigrationDialog } from "@/components/editor/dialogs/migration-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -102,6 +103,7 @@ export default function ProjectsPage() {
 			<ProjectsToolbar projectIds={projectsToDisplay.map((p) => p.id)} />
 			<main className="mx-auto px-4 pt-2 pb-6 flex flex-col gap-4">
 				<ProjectsQuickStart />
+				<CloudProjectsPanel />
 				{isLoading || !isInitialized ? (
 					<ProjectsSkeleton />
 				) : projectsToDisplay.length === 0 ? (

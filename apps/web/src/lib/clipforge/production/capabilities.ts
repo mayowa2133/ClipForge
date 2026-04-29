@@ -4,18 +4,18 @@ export const CLIPFORGE_PRODUCTION_CAPABILITIES: ProductionCapability[] = [
 	{
 		id: "cloud-projects",
 		label: "Cloud projects",
-		status: "scaffolded",
+		status: "available",
 		description:
-			"Authenticated project records, local/cloud mode metadata, and project JSON persistence APIs are available.",
-		nextStep: "Attach encrypted media upload and restore flows to cloud projects.",
+			"Authenticated project records expose list/create endpoints, and the projects page now renders signed-in cloud project entries with share-link controls.",
+		nextStep: "Attach delta sync of project JSON and resumable media uploads.",
 	},
 	{
 		id: "media-sync",
 		label: "Media sync",
-		status: "scaffolded",
+		status: "needs-provider",
 		description:
-			"Media object records can track upload/storage state, checksums, and encrypted object keys.",
-		nextStep: "Implement resumable object-storage uploads and browser restore.",
+			"Media object records track status (queued/uploading/stored/failed), and POST returns a presigned R2 URL when CLOUDFLARE/R2 env vars are configured.",
+		nextStep: "Add browser-side upload pipeline that consumes the presigned URL and PATCHes status to stored.",
 	},
 	{
 		id: "managed-transcription",
@@ -38,8 +38,8 @@ export const CLIPFORGE_PRODUCTION_CAPABILITIES: ProductionCapability[] = [
 		label: "Collaboration",
 		status: "scaffolded",
 		description:
-			"Share-link records with viewer/commenter/editor roles are available for cloud projects.",
-		nextStep: "Add public share resolution, comments, and conflict-aware editing sessions.",
+			"Share-link records with viewer/commenter/editor roles can be created, listed, revoked, and resolved publicly via /api/clipforge/share/[token].",
+		nextStep: "Add comments, conflict-aware editing sessions, and a hosted share-viewer page.",
 	},
 	{
 		id: "ai-creative-scoring",
@@ -60,10 +60,10 @@ export const CLIPFORGE_PRODUCTION_CAPABILITIES: ProductionCapability[] = [
 	{
 		id: "rights-ledger",
 		label: "Rights ledger",
-		status: "scaffolded",
+		status: "available",
 		description:
-			"Rights receipts can record asset source, license label, destination, and receipt metadata.",
-		nextStep: "Generate receipts automatically from bundled/licensed libraries and publish flows.",
+			"Rights receipts auto-record on successful export for bundled and royalty-free assets, scoped to the active publish destination.",
+		nextStep: "Extend coverage to direct-publish flows once platform OAuth ships and add per-receipt revocation/audit UI.",
 	},
 	{
 		id: "release-gates",

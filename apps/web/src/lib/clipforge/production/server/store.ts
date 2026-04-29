@@ -303,6 +303,81 @@ export async function createMediaObjectRecord({
 	return serializeMediaRow(row);
 }
 
+export async function listMediaObjects({
+	ownerId,
+	projectId,
+}: {
+	ownerId: string;
+	projectId: string;
+}): Promise<CloudMediaObjectRecord[]> {
+	await requireOwnedCloudProjectId({ ownerId, projectId });
+	const rows = await db
+		.select()
+		.from(clipforgeMediaObjects)
+		.where(
+			and(
+				eq(clipforgeMediaObjects.ownerId, ownerId),
+				eq(clipforgeMediaObjects.projectId, projectId),
+			),
+		)
+		.orderBy(desc(clipforgeMediaObjects.createdAt))
+		.limit(500);
+	return rows.map(serializeMediaRow);
+}
+
+export async function getMediaObject({
+	ownerId,
+	mediaObjectId,
+}: {
+	ownerId: string;
+	mediaObjectId: string;
+}): Promise<CloudMediaObjectRecord | null> {
+	const [row] = await db
+		.select()
+		.from(clipforgeMediaObjects)
+		.where(
+			and(
+				eq(clipforgeMediaObjects.id, mediaObjectId),
+				eq(clipforgeMediaObjects.ownerId, ownerId),
+			),
+		)
+		.limit(1);
+	return row ? serializeMediaRow(row) : null;
+}
+
+export async function updateMediaObjectStatus({
+	ownerId,
+	mediaObjectId,
+	status,
+	bytes,
+	sha256,
+}: {
+	ownerId: string;
+	mediaObjectId: string;
+	status: CloudMediaObjectStatus;
+	bytes?: number;
+	sha256?: string | null;
+}): Promise<CloudMediaObjectRecord | null> {
+	const values: Partial<typeof clipforgeMediaObjects.$inferInsert> = {
+		status,
+		updatedAt: new Date(),
+	};
+	if (bytes !== undefined) values.bytes = Math.max(0, Math.round(bytes));
+	if (sha256 !== undefined) values.sha256 = sha256;
+
+	const [row] = await db
+		.update(clipforgeMediaObjects)
+		.set(values)
+		.where(
+			and(
+				eq(clipforgeMediaObjects.id, mediaObjectId),
+				eq(clipforgeMediaObjects.ownerId, ownerId),
+			),
+		)
+		.returning();
+	return row ? serializeMediaRow(row) : null;
+}
+
 export async function listJobs({
 	ownerId,
 	projectId,
@@ -453,6 +528,58 @@ export async function createShareLink({
 		})
 		.returning();
 	return serializeShareRow(row);
+}
+
+export interface ResolvedShareLink {
+	share: ClipForgeShareLinkRecord;
+	project: CloudProjectRecord;
+}
+
+export async function resolveShareLinkByToken({
+	token,
+}: {
+	token: string;
+}): Promise<ResolvedShareLink | null> {
+	const [shareRow] = await db
+		.select()
+		.from(clipforgeShareLinks)
+		.where(eq(clipforgeShareLinks.token, token))
+		.limit(1);
+	if (!shareRow) return null;
+	if (shareRow.revokedAt) return null;
+	if (shareRow.expiresAt && shareRow.expiresAt.getTime() < Date.now()) return null;
+
+	const [projectRow] = await db
+		.select()
+		.from(clipforgeCloudProjects)
+		.where(eq(clipforgeCloudProjects.id, shareRow.projectId))
+		.limit(1);
+	if (!projectRow) return null;
+
+	return {
+		share: serializeShareRow(shareRow),
+		project: serializeProjectRow(projectRow),
+	};
+}
+
+export async function revokeShareLink({
+	ownerId,
+	shareLinkId,
+}: {
+	ownerId: string;
+	shareLinkId: string;
+}): Promise<ClipForgeShareLinkRecord | null> {
+	const [row] = await db
+		.update(clipforgeShareLinks)
+		.set({ revokedAt: new Date() })
+		.where(
+			and(
+				eq(clipforgeShareLinks.id, shareLinkId),
+				eq(clipforgeShareLinks.ownerId, ownerId),
+			),
+		)
+		.returning();
+	return row ? serializeShareRow(row) : null;
 }
 
 export async function listRightsReceipts({

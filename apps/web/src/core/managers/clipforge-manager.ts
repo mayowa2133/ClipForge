@@ -2556,9 +2556,15 @@ export class ClipForgeManager {
 		return { cleared: existing.length };
 	}
 
-	async exportBestEffort(): Promise<ClipForgeExportArtifact> {
+	async exportBestEffort({
+		publishDestination,
+	}: {
+		publishDestination?: PublishDestination;
+	} = {}): Promise<ClipForgeExportArtifact> {
 		return this.exportIntegration.exportBestEffort({
 			editor: this.editor,
+			publishDestination:
+				publishDestination ?? this.getPreferredPublishDestination() ?? "generic-export",
 		});
 	}
 

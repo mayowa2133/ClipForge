@@ -36,7 +36,7 @@ export const EXTERNAL_TOOLS: ExternalTool[] = [
 	},
 ];
 
-export const DEFAULT_LOGO_URL = "/logos/opencut/svg/logo.svg";
+export const DEFAULT_LOGO_URL = "/logos/clipforge/svg/logo.svg";
 
 export const SOCIAL_LINKS = {
 	x: "https://x.com/clipforgeapp",

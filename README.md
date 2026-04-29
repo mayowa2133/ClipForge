@@ -1,7 +1,7 @@
 <table width="100%">
   <tr>
     <td align="left" width="120">
-      <img src="apps/web/public/logos/opencut/1k/logo-white-black.png" alt="ClipForge Logo" width="100" />
+      <img src="apps/web/public/logos/clipforge/1k/logo-white-black.png" alt="ClipForge Logo" width="100" />
     </td>
     <td align="right">
       <h1>ClipForge</h1>
