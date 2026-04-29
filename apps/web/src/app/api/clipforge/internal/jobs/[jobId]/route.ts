@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import {
 	getJobByIdForWorker,
-	updateJobStatus,
+	updateJobStatusAsWorker,
 } from "@/lib/clipforge/production/server/store";
-import { requireClipForgeUser } from "@/lib/clipforge/production/server/auth";
-import { getCloudStorageClient } from "@/lib/clipforge/production/server/cloud-storage";
+import { requireClipForgeWorker } from "@/lib/clipforge/production/server/worker-auth";
 import {
 	isRecord,
 	jsonError,
@@ -29,23 +28,13 @@ const JOB_STATUSES = new Set<ClipForgeJobStatus>([
 
 export async function GET(request: Request, { params }: RouteContext) {
 	try {
-		const user = await requireClipForgeUser(request);
+		requireClipForgeWorker(request);
 		const { jobId } = await params;
 		const job = await getJobByIdForWorker({ jobId });
-		if (!job || job.ownerId !== user.id) {
+		if (!job) {
 			return NextResponse.json({ error: "Job not found." }, { status: 404 });
 		}
-
-		const storage = getCloudStorageClient();
-		const storageKey =
-			job.result && typeof job.result === "object" && "storageKey" in job.result
-				? String(job.result.storageKey)
-				: null;
-		const download =
-			storage && job.status === "completed" && storageKey
-				? await storage.presignedGet({ storageKey })
-				: null;
-		return NextResponse.json({ job, download });
+		return NextResponse.json({ job });
 	} catch (error) {
 		return jsonError(error);
 	}
@@ -53,7 +42,7 @@ export async function GET(request: Request, { params }: RouteContext) {
 
 export async function PATCH(request: Request, { params }: RouteContext) {
 	try {
-		const user = await requireClipForgeUser(request);
+		requireClipForgeWorker(request);
 		const { jobId } = await params;
 		const body = (await request.json()) as unknown;
 		if (!isRecord(body)) {
@@ -62,14 +51,15 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 				{ status: 400 },
 			);
 		}
+
 		if (
 			typeof body.status !== "string" ||
 			!JOB_STATUSES.has(body.status as ClipForgeJobStatus)
 		) {
 			return NextResponse.json({ error: "Invalid job status." }, { status: 400 });
 		}
-		const job = await updateJobStatus({
-			ownerId: user.id,
+
+		const updated = await updateJobStatusAsWorker({
 			jobId,
 			status: body.status as ClipForgeJobStatus,
 			progressPct:
@@ -79,10 +69,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 			errorMessage:
 				body.errorMessage === undefined ? undefined : readString(body.errorMessage),
 		});
-		if (!job) {
+		if (!updated) {
 			return NextResponse.json({ error: "Job not found." }, { status: 404 });
 		}
-		return NextResponse.json({ job });
+		return NextResponse.json({ job: updated });
 	} catch (error) {
 		return jsonError(error);
 	}

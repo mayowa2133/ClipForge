@@ -65,7 +65,7 @@ Project base: OpenCut (`upstream`: `https://github.com/OpenCut-app/OpenCut`)
 ## Production Hardening Backlog
 
 - [ ] P1: Managed transcription workers with native word timestamps, retries, diarization, and privacy controls.
-- [ ] P2: Durable server-side export/render workers for long projects and publish-critical outputs.
+- [~] P2: Durable server-side export/render workers for long projects and publish-critical outputs. (Worker auth, job-claim endpoint, render-graph serializer, polling endpoint, R2 artifact upload, browser cloud-render UI shipped with a stub renderer; needs an ffmpeg/Mediabunny-equivalent RenderEngine.)
 - [ ] P3: Account-backed project sync UI, encrypted media upload/restore, backup, and explicit local-only/cloud project modes.
 - [ ] P4: Creative scoring for hooks, pacing, platform fit, editable assumptions, and high-level creative regression evals.
 - [ ] P5: Full ClipForge brand/legal closure across public pages, app metadata, and deployment defaults.

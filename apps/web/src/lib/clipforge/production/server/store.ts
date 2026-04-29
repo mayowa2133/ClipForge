@@ -378,6 +378,98 @@ export async function updateMediaObjectStatus({
 	return row ? serializeMediaRow(row) : null;
 }
 
+export async function claimNextQueuedJob({
+	kind,
+	workerId,
+}: {
+	kind: ClipForgeJobKind;
+	workerId: string;
+}): Promise<ClipForgeJobRecord | null> {
+	const [candidate] = await db
+		.select()
+		.from(clipforgeJobs)
+		.where(and(eq(clipforgeJobs.kind, kind), eq(clipforgeJobs.status, "queued")))
+		.orderBy(clipforgeJobs.createdAt)
+		.limit(1);
+	if (!candidate) return null;
+
+	const now = new Date();
+	const claimed = await db
+		.update(clipforgeJobs)
+		.set({
+			status: "processing",
+			startedAt: now,
+			updatedAt: now,
+			provider: candidate.provider ?? `worker:${workerId}`,
+		})
+		.where(and(eq(clipforgeJobs.id, candidate.id), eq(clipforgeJobs.status, "queued")))
+		.returning();
+
+	const row = claimed[0];
+	return row ? serializeJobRow(row) : null;
+}
+
+export async function getJobByIdForWorker({
+	jobId,
+}: {
+	jobId: string;
+}): Promise<ClipForgeJobRecord | null> {
+	const [row] = await db
+		.select()
+		.from(clipforgeJobs)
+		.where(eq(clipforgeJobs.id, jobId))
+		.limit(1);
+	return row ? serializeJobRow(row) : null;
+}
+
+export async function updateJobStatusAsWorker({
+	jobId,
+	status,
+	progressPct,
+	result,
+	errorMessage,
+}: {
+	jobId: string;
+	status: ClipForgeJobStatus;
+	progressPct?: number;
+	result?: Record<string, unknown> | null;
+	errorMessage?: string | null;
+}): Promise<ClipForgeJobRecord | null> {
+	const [existing] = await db
+		.select()
+		.from(clipforgeJobs)
+		.where(eq(clipforgeJobs.id, jobId))
+		.limit(1);
+	if (!existing) return null;
+	if (!canTransitionClipForgeJob({ from: existing.status, to: status })) {
+		throw new ClipForgeStoreError(
+			`Cannot transition job from ${existing.status} to ${status}.`,
+			409,
+		);
+	}
+
+	const now = new Date();
+	const [row] = await db
+		.update(clipforgeJobs)
+		.set({
+			status,
+			progressPct:
+				progressPct !== undefined ? clampJobProgress(progressPct) : existing.progressPct,
+			resultJson: result !== undefined ? result : existing.resultJson,
+			errorMessage: errorMessage !== undefined ? errorMessage : existing.errorMessage,
+			startedAt:
+				status === "processing" && !existing.startedAt ? now : existing.startedAt,
+			completedAt:
+				status === "completed" || status === "failed" || status === "cancelled"
+					? now
+					: existing.completedAt,
+			updatedAt: now,
+		})
+		.where(eq(clipforgeJobs.id, jobId))
+		.returning();
+	return row ? serializeJobRow(row) : null;
+}
+
 export async function listJobs({
 	ownerId,
 	projectId,

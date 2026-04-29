@@ -9,7 +9,9 @@ import {
 	CloudUploadIcon,
 	Copy01Icon,
 	Delete02Icon,
+	Download01Icon,
 	Link01Icon,
+	PlayIcon,
 	Upload01Icon,
 } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,11 @@ import {
 	revokeCloudProjectShareLink,
 	uploadMediaAssetToCloud,
 } from "@/lib/clipforge/production/cloud-projects-client";
+import {
+	getArtifactSummary,
+	pollCloudExportJob,
+	submitCloudExportJob,
+} from "@/lib/clipforge/production/cloud-export-client";
 import type {
 	ClipForgeShareLinkRecord,
 	CloudProjectListItem,
@@ -53,6 +60,15 @@ const STORAGE_STATUS_VARIANT: Record<
 	blocked: "destructive",
 };
 
+interface RenderJobUiState {
+	status: "submitting" | "polling" | "complete" | "failed";
+	progressPct?: number;
+	downloadUrl?: string;
+	fileName?: string;
+	stub?: boolean;
+	errorMessage?: string;
+}
+
 function buildShareUrl(token: string): string {
 	if (typeof window === "undefined") return `/share/${token}`;
 	return `${window.location.origin}/share/${token}`;
@@ -68,6 +84,9 @@ export function CloudProjectsPanel() {
 	const [isLoadingProjects, setIsLoadingProjects] = useState(false);
 	const [unauthorized, setUnauthorized] = useState(false);
 	const [pendingPromote, setPendingPromote] = useState(false);
+	const [renderStates, setRenderStates] = useState<Record<string, RenderJobUiState>>(
+		{},
+	);
 
 	const refresh = useCallback(async () => {
 		if (!isSignedIn) {
@@ -103,6 +122,82 @@ export function CloudProjectsPanel() {
 		searchQuery: "",
 		sortOption: "updatedAt-desc",
 	});
+
+	const handleRequestRender = async (cloudProjectId: string) => {
+		const activeProject = editor.project.getActiveOrNull();
+		if (!activeProject) {
+			toast.info("Open a project in the editor first to enqueue a cloud render.");
+			return;
+		}
+		setRenderStates((current) => ({
+			...current,
+			[cloudProjectId]: { status: "submitting" },
+		}));
+		try {
+			const job = await submitCloudExportJob({
+				project: activeProject,
+				cloudProjectId,
+				format: "mp4",
+				quality: "high",
+				includeAudio: true,
+				publishDestination: "generic-export",
+			});
+			setRenderStates((current) => ({
+				...current,
+				[cloudProjectId]: { status: "polling", progressPct: 0 },
+			}));
+			const result = await pollCloudExportJob({
+				jobId: job.id,
+				pollIntervalMs: 2_000,
+				timeoutMs: 5 * 60_000,
+				onProgress: (current) => {
+					setRenderStates((existing) => ({
+						...existing,
+						[cloudProjectId]: {
+							status: "polling",
+							progressPct: current.progressPct,
+						},
+					}));
+				},
+			});
+			if (result.job.status === "completed") {
+				const summary = getArtifactSummary(result.job);
+				setRenderStates((current) => ({
+					...current,
+					[cloudProjectId]: {
+						status: "complete",
+						downloadUrl: result.download?.url,
+						fileName: summary?.fileName,
+						stub: summary?.stub,
+					},
+				}));
+				toast.success("Cloud render finished", {
+					description: summary?.stub
+						? "Stub artifact returned. Replace the stub renderer with a real worker for playable video."
+						: undefined,
+				});
+			} else {
+				setRenderStates((current) => ({
+					...current,
+					[cloudProjectId]: {
+						status: "failed",
+						errorMessage: result.job.errorMessage ?? `Job ended with ${result.job.status}.`,
+					},
+				}));
+				toast.error("Cloud render failed", {
+					description: result.job.errorMessage ?? undefined,
+				});
+			}
+		} catch (error) {
+			const errorMessage =
+				error instanceof Error ? error.message : "Cloud render request failed.";
+			setRenderStates((current) => ({
+				...current,
+				[cloudProjectId]: { status: "failed", errorMessage },
+			}));
+			toast.error("Cloud render failed", { description: errorMessage });
+		}
+	};
 
 	const handlePromoteCurrent = async () => {
 		const candidate = localProjects[0];
@@ -180,6 +275,8 @@ export function CloudProjectsPanel() {
 								key={project.id}
 								project={project}
 								onChanged={() => void refresh()}
+								renderState={renderStates[project.id] ?? null}
+								onRequestRender={() => void handleRequestRender(project.id)}
 							/>
 						))}
 					</ul>
@@ -192,9 +289,13 @@ export function CloudProjectsPanel() {
 function CloudProjectRow({
 	project,
 	onChanged,
+	onRequestRender,
+	renderState,
 }: {
 	project: CloudProjectListItem;
 	onChanged: () => void;
+	onRequestRender: () => void;
+	renderState: RenderJobUiState | null;
 }) {
 	const [shareLinks, setShareLinks] = useState<ClipForgeShareLinkRecord[] | null>(
 		null,
@@ -333,6 +434,10 @@ function CloudProjectRow({
 						? `Uploading ${uploadingCount}…`
 						: "Upload media"}
 				</Button>
+				<RenderControl
+					renderState={renderState}
+					onRequestRender={onRequestRender}
+				/>
 				{activeShareLinks.length > 0 ? (
 					<div className="flex items-center gap-1">
 						<Button
@@ -366,6 +471,54 @@ function CloudProjectRow({
 				)}
 			</div>
 		</li>
+	);
+}
+
+function RenderControl({
+	renderState,
+	onRequestRender,
+}: {
+	renderState: RenderJobUiState | null;
+	onRequestRender: () => void;
+}) {
+	if (renderState?.status === "complete" && renderState.downloadUrl) {
+		return (
+			<Button
+				asChild
+				size="sm"
+				variant="outline"
+				aria-label="Download cloud render artifact"
+			>
+				<a
+					href={renderState.downloadUrl}
+					download={renderState.fileName ?? undefined}
+				>
+					<HugeiconsIcon icon={Download01Icon} className="size-4" />
+					{renderState.stub ? "Download stub artifact" : "Download render"}
+				</a>
+			</Button>
+		);
+	}
+
+	const busy =
+		renderState?.status === "submitting" || renderState?.status === "polling";
+	const label = busy
+		? renderState?.status === "polling" && typeof renderState.progressPct === "number"
+			? `Rendering ${renderState.progressPct}%`
+			: "Submitting…"
+		: "Render in cloud";
+
+	return (
+		<Button
+			size="sm"
+			variant="outline"
+			onClick={onRequestRender}
+			disabled={busy}
+			aria-label="Render active project in the cloud"
+		>
+			<HugeiconsIcon icon={PlayIcon} className="size-4" />
+			{label}
+		</Button>
 	);
 }
 

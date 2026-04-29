@@ -28,10 +28,10 @@ export const CLIPFORGE_PRODUCTION_CAPABILITIES: ProductionCapability[] = [
 	{
 		id: "server-export",
 		label: "Server export",
-		status: "needs-provider",
+		status: "scaffolded",
 		description:
-			"Export jobs can be queued and tracked; browser export remains the active renderer.",
-		nextStep: "Connect render workers that consume serialized render graphs and upload artifacts.",
+			"Worker auth, job claim, render-graph serializer, and artifact upload pipeline are wired end-to-end. A stub renderer ships in apps/web/scripts/run-export-worker.ts; replace with an ffmpeg-based engine for playable video.",
+		nextStep: "Implement an ffmpeg/Mediabunny-equivalent RenderEngine that produces real video artifacts.",
 	},
 	{
 		id: "collaboration",
