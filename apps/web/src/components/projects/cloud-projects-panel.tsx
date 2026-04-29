@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -10,6 +10,7 @@ import {
 	Copy01Icon,
 	Delete02Icon,
 	Link01Icon,
+	Upload01Icon,
 } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,6 +25,7 @@ import {
 	listCloudProjectShareLinks,
 	listCloudProjects,
 	revokeCloudProjectShareLink,
+	uploadMediaAssetToCloud,
 } from "@/lib/clipforge/production/cloud-projects-client";
 import type {
 	ClipForgeShareLinkRecord,
@@ -52,8 +54,8 @@ const STORAGE_STATUS_VARIANT: Record<
 };
 
 function buildShareUrl(token: string): string {
-	if (typeof window === "undefined") return `/api/clipforge/share/${token}`;
-	return `${window.location.origin}/api/clipforge/share/${token}`;
+	if (typeof window === "undefined") return `/share/${token}`;
+	return `${window.location.origin}/share/${token}`;
 }
 
 export function CloudProjectsPanel() {
@@ -199,6 +201,8 @@ function CloudProjectRow({
 	);
 	const [shareLinksLoaded, setShareLinksLoaded] = useState(false);
 	const [pendingShare, setPendingShare] = useState(false);
+	const [uploadingCount, setUploadingCount] = useState(0);
+	const fileInputRef = useRef<HTMLInputElement | null>(null);
 
 	const loadShareLinks = useCallback(async () => {
 		try {
@@ -242,6 +246,39 @@ function CloudProjectRow({
 		}
 	};
 
+	const handleUploadFiles = async (files: FileList | null) => {
+		if (!files || files.length === 0) return;
+		const list = Array.from(files);
+		setUploadingCount(list.length);
+		let succeeded = 0;
+		let failed = 0;
+		for (const file of list) {
+			const mediaId = `media_${crypto.randomUUID().replaceAll("-", "")}`;
+			try {
+				await uploadMediaAssetToCloud({
+					projectId: project.id,
+					mediaId,
+					file,
+				});
+				succeeded += 1;
+			} catch (error) {
+				failed += 1;
+				toast.error(`Upload failed for ${file.name}`, {
+					description:
+						error instanceof Error ? error.message : "Please try again.",
+				});
+			}
+		}
+		setUploadingCount(0);
+		if (succeeded > 0) {
+			toast.success(`Uploaded ${succeeded} file${succeeded === 1 ? "" : "s"} to cloud`);
+			onChanged();
+		}
+		if (failed === 0 && succeeded === 0) {
+			toast.info("No files were uploaded.");
+		}
+	};
+
 	const handleRevokeShareLink = async (linkId: string) => {
 		try {
 			const revoked = await revokeCloudProjectShareLink({
@@ -274,6 +311,28 @@ function CloudProjectRow({
 				<Badge variant={STORAGE_STATUS_VARIANT[project.storageStatus]}>
 					{STORAGE_STATUS_LABELS[project.storageStatus]}
 				</Badge>
+				<input
+					ref={fileInputRef}
+					type="file"
+					multiple
+					className="hidden"
+					onChange={(event) => {
+						void handleUploadFiles(event.target.files);
+						event.target.value = "";
+					}}
+				/>
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={() => fileInputRef.current?.click()}
+					disabled={uploadingCount > 0}
+					aria-label="Upload media to cloud project"
+				>
+					<HugeiconsIcon icon={Upload01Icon} className="size-4" />
+					{uploadingCount > 0
+						? `Uploading ${uploadingCount}…`
+						: "Upload media"}
+				</Button>
 				{activeShareLinks.length > 0 ? (
 					<div className="flex items-center gap-1">
 						<Button

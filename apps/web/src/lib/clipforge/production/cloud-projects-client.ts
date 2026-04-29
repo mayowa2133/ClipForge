@@ -136,6 +136,84 @@ export async function createCloudMediaObject({
 	return await readJson<CreateMediaObjectResult>(response);
 }
 
+export type UploadFetch = (
+	input: string,
+	init?: { method?: string; headers?: Record<string, string>; body?: BodyInit | null },
+) => Promise<Response>;
+
+export interface UploadProgressEvent {
+	phase: "creating" | "uploading" | "confirming" | "done" | "error";
+	mediaObject?: CloudMediaObjectRecord;
+	error?: string;
+}
+
+export async function uploadMediaAssetToCloud({
+	projectId,
+	mediaId,
+	file,
+	contentType,
+	onProgress,
+	uploadFetchImpl,
+}: {
+	projectId: string;
+	mediaId: string;
+	file: Blob;
+	contentType?: string | null;
+	onProgress?: (event: UploadProgressEvent) => void;
+	uploadFetchImpl?: UploadFetch;
+}): Promise<CloudMediaObjectRecord> {
+	const callUpload: UploadFetch =
+		uploadFetchImpl ?? ((input, init) => fetch(input, init));
+
+	onProgress?.({ phase: "creating" });
+	const initial = await createCloudMediaObject({
+		projectId,
+		mediaId,
+		bytes: file.size,
+		contentType: contentType ?? file.type ?? null,
+	});
+
+	if (!initial.upload) {
+		const failed = await updateCloudMediaObjectStatus({
+			projectId,
+			mediaObjectId: initial.mediaObject.id,
+			status: "failed",
+		});
+		const message =
+			"Cloud storage is not configured on this deployment. Set CLOUDFLARE_ACCOUNT_ID and R2_* env vars to enable uploads.";
+		onProgress?.({ phase: "error", mediaObject: failed, error: message });
+		throw new CloudApiError(message, 501);
+	}
+
+	onProgress?.({ phase: "uploading", mediaObject: initial.mediaObject });
+	const putResponse = await callUpload(initial.upload.url, {
+		method: initial.upload.method,
+		headers: initial.upload.headers,
+		body: file,
+	});
+	if (!putResponse.ok) {
+		const failed = await updateCloudMediaObjectStatus({
+			projectId,
+			mediaObjectId: initial.mediaObject.id,
+			status: "failed",
+		});
+		const message = `Upload failed with status ${putResponse.status}`;
+		onProgress?.({ phase: "error", mediaObject: failed, error: message });
+		throw new CloudApiError(message, putResponse.status);
+	}
+
+	onProgress?.({ phase: "confirming", mediaObject: initial.mediaObject });
+	const stored = await updateCloudMediaObjectStatus({
+		projectId,
+		mediaObjectId: initial.mediaObject.id,
+		status: "stored",
+		bytes: file.size,
+	});
+
+	onProgress?.({ phase: "done", mediaObject: stored });
+	return stored;
+}
+
 export async function updateCloudMediaObjectStatus({
 	projectId,
 	mediaObjectId,
