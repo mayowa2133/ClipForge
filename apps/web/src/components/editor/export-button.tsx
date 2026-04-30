@@ -62,6 +62,7 @@ import {
 	getPreviewFidelityDetailLine,
 	getPreviewFidelityStatus,
 } from "@/components/editor/panels/preview/toolbar";
+import { CloudExportPanel } from "@/components/editor/cloud-export-panel";
 
 export function ExportButton() {
 	const [isExportPopoverOpen, setIsExportPopoverOpen] = useState(false);
@@ -1091,6 +1092,13 @@ function ExportPopover({
 										<Download className="size-4" />
 										Export
 									</Button>
+									<CloudExportPanel
+										format={format}
+										quality={quality}
+										includeAudio={includeAudio}
+										publishDestination={publishDestination}
+										disabled={isExportActionDisabled}
+									/>
 								</div>
 							</>
 						)}

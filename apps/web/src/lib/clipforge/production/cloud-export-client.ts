@@ -4,7 +4,11 @@ import {
 	type RenderGraphMediaRef,
 } from "@/lib/clipforge/production/render-graph";
 import type { ExportFormat, ExportQuality, PublishDestination } from "@/types/export";
-import type { ClipForgeJobRecord, CloudMediaObjectRecord } from "@/types/production";
+import type {
+	ClipForgeJobRecord,
+	CloudMediaObjectRecord,
+	CloudProjectListItem,
+} from "@/types/production";
 import type { TProject } from "@/types/project";
 
 export class CloudExportApiError extends Error {
@@ -80,6 +84,53 @@ export function collectReferencedMediaIds({
 		}
 	}
 	return { mediaIds: Array.from(mediaIds) };
+}
+
+export interface CloudReadinessSummary {
+	cloudProject: CloudProjectListItem | null;
+	referencedMediaIds: string[];
+	missingMediaIds: string[];
+	storedMediaIds: string[];
+	canSubmit: boolean;
+	blockerReason: string | null;
+}
+
+export function computeCloudReadiness({
+	project,
+	allCloudProjects,
+	mediaObjects,
+	matchByName = true,
+}: {
+	project: TProject;
+	allCloudProjects: CloudProjectListItem[];
+	mediaObjects: CloudMediaObjectRecord[];
+	matchByName?: boolean;
+}): CloudReadinessSummary {
+	const matching = matchByName
+		? (allCloudProjects.find((cp) => cp.name === project.metadata.name) ?? null)
+		: null;
+	const referencedMediaIds = collectReferencedMediaIds({ project }).mediaIds;
+	const storedMediaIds = mediaObjects
+		.filter((m) => m.status === "stored")
+		.map((m) => m.mediaId);
+	const storedSet = new Set(storedMediaIds);
+	const missingMediaIds = referencedMediaIds.filter((id) => !storedSet.has(id));
+
+	let blockerReason: string | null = null;
+	if (!matching) {
+		blockerReason = `No cloud project named "${project.metadata.name}" found.`;
+	} else if (missingMediaIds.length > 0) {
+		blockerReason = `${missingMediaIds.length} referenced media asset(s) are not uploaded to cloud.`;
+	}
+
+	return {
+		cloudProject: matching,
+		referencedMediaIds,
+		missingMediaIds,
+		storedMediaIds,
+		canSubmit: blockerReason === null,
+		blockerReason,
+	};
 }
 
 export function buildMediaRefsFromCloudObjects({

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	buildMediaRefsFromCloudObjects,
 	collectReferencedMediaIds,
+	computeCloudReadiness,
 	CloudExportApiError,
 	type FetchLike,
 	getArtifactSummary,
@@ -391,5 +392,82 @@ describe("submitCloudExportJob with cloudMediaObjects", () => {
 		expect(parsed.input.mediaRefs).toHaveLength(1);
 		expect(parsed.input.mediaRefs[0]!.mediaId).toBe("a");
 		expect(parsed.input.mediaRefs[0]!.cloudStorageKey).toBe("key_a");
+	});
+});
+
+function makeCloudProjectListItem(name: string): import("@/types/production").CloudProjectListItem {
+	return {
+		id: `cp_${name}`,
+		name,
+		mode: "cloud",
+		projectVersion: 1,
+		storageStatus: "synced",
+		quotaBytesUsed: 0,
+		createdAt: new Date().toISOString(),
+		updatedAt: new Date().toISOString(),
+	};
+}
+
+describe("computeCloudReadiness", () => {
+	test("blocks when no cloud project matches the active project name", () => {
+		const project = makeProjectWithMedia({ videoMediaIds: ["a"] });
+		project.metadata.name = "Local only";
+		const summary = computeCloudReadiness({
+			project,
+			allCloudProjects: [makeCloudProjectListItem("Other")],
+			mediaObjects: [],
+		});
+		expect(summary.cloudProject).toBeNull();
+		expect(summary.canSubmit).toBe(false);
+		expect(summary.blockerReason).toContain("Local only");
+	});
+
+	test("blocks when referenced media is missing or not stored", () => {
+		const project = makeProjectWithMedia({ videoMediaIds: ["a", "b"] });
+		project.metadata.name = "My Project";
+		const summary = computeCloudReadiness({
+			project,
+			allCloudProjects: [makeCloudProjectListItem("My Project")],
+			mediaObjects: [
+				makeMediaRecord({ mediaId: "a", storageKey: "k_a", status: "stored" }),
+				makeMediaRecord({ mediaId: "b", storageKey: "k_b", status: "uploading" }),
+			],
+		});
+		expect(summary.cloudProject?.name).toBe("My Project");
+		expect(summary.missingMediaIds).toEqual(["b"]);
+		expect(summary.canSubmit).toBe(false);
+		expect(summary.blockerReason).toContain("1 referenced media");
+	});
+
+	test("allows submission when all referenced media are stored", () => {
+		const project = makeProjectWithMedia({
+			videoMediaIds: ["a"],
+			audioMediaIds: ["v"],
+		});
+		project.metadata.name = "OK";
+		const summary = computeCloudReadiness({
+			project,
+			allCloudProjects: [makeCloudProjectListItem("OK")],
+			mediaObjects: [
+				makeMediaRecord({ mediaId: "a", storageKey: "k_a", status: "stored" }),
+				makeMediaRecord({ mediaId: "v", storageKey: "k_v", status: "stored" }),
+			],
+		});
+		expect(summary.canSubmit).toBe(true);
+		expect(summary.blockerReason).toBeNull();
+		expect(summary.storedMediaIds.sort()).toEqual(["a", "v"]);
+		expect(summary.missingMediaIds).toEqual([]);
+	});
+
+	test("empty project (no referenced media) can submit when cloud project exists", () => {
+		const project = makeProject();
+		project.metadata.name = "Empty cloud";
+		const summary = computeCloudReadiness({
+			project,
+			allCloudProjects: [makeCloudProjectListItem("Empty cloud")],
+			mediaObjects: [],
+		});
+		expect(summary.canSubmit).toBe(true);
+		expect(summary.referencedMediaIds).toEqual([]);
 	});
 });
