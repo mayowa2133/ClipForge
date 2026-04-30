@@ -1261,3 +1261,127 @@ describe("buildVideoFilterGraphFfmpegInvocation", () => {
 		).toThrow(/expected 1 media input paths/i);
 	});
 });
+
+describe("buildFfmpegPlan with per-clip trims", () => {
+	test("plan stays video-concat when no clip is trimmed", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({ id: "a", mediaId: "v_a", duration: 4 }),
+							makeVideoElement({ id: "b", mediaId: "v_b", startTime: 4, duration: 4 }),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v_a", cloudStorageKey: "k_a" },
+				{ mediaId: "v_b", cloudStorageKey: "k_b" },
+			],
+		});
+		const plan = buildFfmpegPlan({ input });
+		expect(plan.kind).toBe("video-concat");
+	});
+
+	test("any clip with trimStart > 0 forces video-filter-graph (no transitions needed)", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 4,
+								trimStart: 1.5,
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
+		});
+		const plan = buildFfmpegPlan({ input });
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.clips[0]!.trimStartSeconds).toBe(1.5);
+	});
+
+	test("any clip with trimEnd > 0 also forces video-filter-graph", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 4,
+								trimEnd: 0.5,
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
+		});
+		const plan = buildFfmpegPlan({ input });
+		expect(plan.kind).toBe("video-filter-graph");
+	});
+});
+
+describe("buildXfadeChainFilter trim handling", () => {
+	test("emits trim+setpts before scale when trimStart > 0", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 4,
+					trimStartSeconds: 1.5,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+			],
+		});
+		expect(result.filter).toContain("trim=start=1.500:duration=4.000");
+		expect(result.filter).toContain("setpts=PTS-STARTPTS");
+		// trim before scale to avoid wasted work
+		const trimIdx = result.filter.indexOf("trim=");
+		const scaleIdx = result.filter.indexOf("scale=");
+		expect(trimIdx).toBeGreaterThan(-1);
+		expect(scaleIdx).toBeGreaterThan(trimIdx);
+	});
+
+	test("non-trimmed clip omits trim filter", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+			],
+		});
+		expect(result.filter).not.toContain("trim=");
+		expect(result.filter).not.toContain("setpts=");
+	});
+});

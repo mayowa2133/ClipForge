@@ -425,6 +425,7 @@ export function buildFfmpegPlan({
 	const concatClips: Extract<FfmpegPlan, { kind: "video-concat" }>["clips"] = [];
 	const filterGraphClips: PlanFilterGraphClip[] = [];
 	let anyXfadeTransition = false;
+	let anyTrimmedClip = false;
 	for (let i = 0; i < collected.supportedVideoClips.length; i += 1) {
 		const clip = collected.supportedVideoClips[i]!;
 		const ref = mediaRefIndex.get(clip.mediaId);
@@ -439,6 +440,9 @@ export function buildFfmpegPlan({
 			trimStartSeconds: clip.trimStartSeconds,
 			trimEndSeconds: clip.trimEndSeconds,
 		});
+		if (clip.trimStartSeconds > 0 || clip.trimEndSeconds > 0) {
+			anyTrimmedClip = true;
+		}
 
 		// transitionIn applies to this clip relative to the previous one. The
 		// first clip's transitionIn is ignored (nothing to fade from).
@@ -484,7 +488,7 @@ export function buildFfmpegPlan({
 		};
 	}
 
-	if (anyXfadeTransition) {
+	if (anyXfadeTransition || anyTrimmedClip) {
 		return {
 			kind: "video-filter-graph",
 			canvasSize: input.canvasSize,
@@ -818,6 +822,29 @@ export interface XfadeChainResult {
 	totalDurationSeconds: number;
 }
 
+interface TrimFilterChunks {
+	video: string[];
+	audio: string[];
+}
+
+function buildTrimFilters({
+	clip,
+}: {
+	clip: PlanFilterGraphClip;
+}): TrimFilterChunks {
+	const video: string[] = [];
+	const audio: string[] = [];
+	if (clip.trimStartSeconds > 0 || clip.trimEndSeconds > 0) {
+		const start = clip.trimStartSeconds.toFixed(3);
+		const duration = clip.durationSeconds.toFixed(3);
+		video.push(`trim=start=${start}:duration=${duration}`);
+		video.push("setpts=PTS-STARTPTS");
+		audio.push(`atrim=start=${start}:duration=${duration}`);
+		audio.push("asetpts=PTS-STARTPTS");
+	}
+	return { video, audio };
+}
+
 export function buildXfadeChainFilter({
 	clips,
 	canvasSize,
@@ -833,7 +860,13 @@ export function buildXfadeChainFilter({
 	const baseScale = `scale=${canvasSize.width}:${canvasSize.height}:force_original_aspect_ratio=decrease,pad=${canvasSize.width}:${canvasSize.height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
 
 	for (let i = 0; i < clips.length; i += 1) {
-		stages.push(`[${i}:v]${baseScale},format=yuv420p[v${i}]`);
+		const clip = clips[i]!;
+		const trimFilters = buildTrimFilters({ clip });
+		const inputPipeline =
+			trimFilters.video.length > 0
+				? `${trimFilters.video.join(",")},${baseScale},format=yuv420p`
+				: `${baseScale},format=yuv420p`;
+		stages.push(`[${i}:v]${inputPipeline}[v${i}]`);
 	}
 
 	if (clips.length === 1) {
