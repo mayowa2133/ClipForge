@@ -41,7 +41,8 @@ export type ClipForgeTranscriptionStatus =
 export type ClipForgeTranscriptionProvider =
 	| "srt-import"
 	| "whisper-cli"
-	| "browser-whisper";
+	| "browser-whisper"
+	| "managed-cloud";
 
 export interface TranscriptWord {
 	text: string;

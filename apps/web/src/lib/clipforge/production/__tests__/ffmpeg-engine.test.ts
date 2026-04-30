@@ -734,3 +734,155 @@ describe("filter graph wiring in invocation builders", () => {
 		expect(invocation.args[mapIndex + 1]).toBe("[txt0]");
 	});
 });
+
+describe("buildFfmpegPlan with caption word reveals feature flag", () => {
+	function makeCaptionElement({
+		id = "caption_1",
+		startTime = 1,
+		duration = 4,
+		words,
+	}: {
+		id?: string;
+		startTime?: number;
+		duration?: number;
+		words: Array<{ text: string; startTime: number; endTime: number }>;
+	}): TextElement {
+		return makeTextElement({
+			id,
+			role: "caption",
+			startTime,
+			duration,
+			content: words.map((w) => w.text).join(" "),
+			captionTiming: { words },
+		});
+	}
+
+	test("captions render as a single overlay when captionWordReveals flag is off", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeTextScene({
+						elements: [
+							makeCaptionElement({
+								words: [
+									{ text: "Hello", startTime: 1, endTime: 1.4 },
+									{ text: "world", startTime: 1.4, endTime: 2.0 },
+								],
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+		});
+		const plan = buildFfmpegPlan({ input, features: { textOverlays: true } });
+		if (plan.kind !== "black-video") throw new Error("expected black-video plan");
+		expect(plan.textOverlays).toHaveLength(1);
+		expect(plan.textOverlays[0]!.content).toBe("Hello world");
+	});
+
+	test("captions expand into per-word overlays when captionWordReveals is on", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeTextScene({
+						elements: [
+							makeCaptionElement({
+								words: [
+									{ text: "Hello", startTime: 1, endTime: 1.4 },
+									{ text: "world", startTime: 1.4, endTime: 2.0 },
+									{ text: "again", startTime: 2.0, endTime: 2.6 },
+								],
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+		});
+		const plan = buildFfmpegPlan({
+			input,
+			features: { textOverlays: true, captionWordReveals: true },
+		});
+		if (plan.kind !== "black-video") throw new Error("expected black-video plan");
+		expect(plan.textOverlays).toHaveLength(3);
+		expect(plan.textOverlays.map((o) => o.content)).toEqual([
+			"Hello",
+			"world",
+			"again",
+		]);
+		expect(plan.textOverlays[0]!.startTime).toBe(1);
+		expect(plan.textOverlays[0]!.endTime).toBe(1.4);
+		expect(plan.textOverlays[2]!.id).toContain("__w2");
+	});
+
+	test("non-caption text elements are unaffected by captionWordReveals", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeTextScene({
+						elements: [
+							makeTextElement({ id: "title", content: "Title" }),
+							makeCaptionElement({
+								id: "cap",
+								words: [
+									{ text: "A", startTime: 0.5, endTime: 0.7 },
+									{ text: "B", startTime: 0.7, endTime: 1.0 },
+								],
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+		});
+		const plan = buildFfmpegPlan({
+			input,
+			features: { textOverlays: true, captionWordReveals: true },
+		});
+		if (plan.kind !== "black-video") throw new Error("expected black-video plan");
+		// 1 title + 2 caption words
+		expect(plan.textOverlays).toHaveLength(3);
+		const titleOverlay = plan.textOverlays.find((o) => o.id === "title");
+		expect(titleOverlay?.content).toBe("Title");
+	});
+
+	test("caption with empty captionTiming words falls back to single overlay", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeTextScene({
+						elements: [
+							makeTextElement({
+								id: "empty_cap",
+								role: "caption",
+								content: "Fallback",
+								captionTiming: { words: [] },
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+		});
+		const plan = buildFfmpegPlan({
+			input,
+			features: { textOverlays: true, captionWordReveals: true },
+		});
+		if (plan.kind !== "black-video") throw new Error("expected black-video plan");
+		expect(plan.textOverlays).toHaveLength(1);
+		expect(plan.textOverlays[0]!.content).toBe("Fallback");
+	});
+});

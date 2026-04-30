@@ -70,6 +70,7 @@ async function main() {
 function parseFeatureFlags(raw: string | null): {
 	textOverlays: boolean;
 	imageOverlays: boolean;
+	captionWordReveals: boolean;
 } {
 	const set = new Set(
 		(raw ?? "")
@@ -77,9 +78,12 @@ function parseFeatureFlags(raw: string | null): {
 			.map((part) => part.trim().toLowerCase())
 			.filter(Boolean),
 	);
+	const all = set.has("all");
 	return {
-		textOverlays: set.has("text") || set.has("text-overlays") || set.has("all"),
-		imageOverlays: set.has("image") || set.has("image-overlays") || set.has("all"),
+		textOverlays: all || set.has("text") || set.has("text-overlays"),
+		imageOverlays: all || set.has("image") || set.has("image-overlays"),
+		captionWordReveals:
+			all || set.has("captions") || set.has("caption-words") || set.has("words"),
 	};
 }
 

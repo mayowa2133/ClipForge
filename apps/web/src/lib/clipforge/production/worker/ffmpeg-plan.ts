@@ -13,11 +13,13 @@ import type {
 export interface FfmpegFeatureFlags {
 	textOverlays?: boolean;
 	imageOverlays?: boolean;
+	captionWordReveals?: boolean;
 }
 
 export const DEFAULT_FFMPEG_FEATURES: Required<FfmpegFeatureFlags> = {
 	textOverlays: false,
 	imageOverlays: false,
+	captionWordReveals: false,
 };
 
 export interface PlanTextOverlay {
@@ -199,9 +201,11 @@ function parseHexAlpha(color: string): { hex: string; alpha: number } {
 function collectTextOverlays({
 	scenes,
 	canvasSize,
+	expandCaptionWords,
 }: {
 	scenes: TScene[];
 	canvasSize: { width: number; height: number };
+	expandCaptionWords: boolean;
 }): PlanTextOverlay[] {
 	const overlays: PlanTextOverlay[] = [];
 	for (const scene of scenes) {
@@ -210,7 +214,7 @@ function collectTextOverlays({
 			for (const element of track.elements as TextElement[]) {
 				if (element.hidden) continue;
 				const { hex: bgHex, alpha: bgAlpha } = parseHexAlpha(element.background.color);
-				overlays.push({
+				const baseOverlay: PlanTextOverlay = {
 					id: element.id,
 					content: element.content,
 					startTime: element.startTime,
@@ -232,7 +236,29 @@ function collectTextOverlays({
 							: null,
 					textAlign: element.textAlign,
 					fontWeight: element.fontWeight,
-				});
+				};
+
+				const captionWords = element.captionTiming?.words;
+				if (
+					expandCaptionWords &&
+					element.role === "caption" &&
+					Array.isArray(captionWords) &&
+					captionWords.length > 0
+				) {
+					for (let i = 0; i < captionWords.length; i += 1) {
+						const word = captionWords[i]!;
+						overlays.push({
+							...baseOverlay,
+							id: `${element.id}__w${i}`,
+							content: word.text,
+							startTime: word.startTime,
+							endTime: word.endTime,
+						});
+					}
+					continue;
+				}
+
+				overlays.push(baseOverlay);
 			}
 		}
 	}
@@ -304,7 +330,11 @@ export function buildFfmpegPlan({
 
 	const missingMediaIds = new Set<string>();
 	const textOverlays = resolvedFeatures.textOverlays
-		? collectTextOverlays({ scenes, canvasSize: input.canvasSize })
+		? collectTextOverlays({
+				scenes,
+				canvasSize: input.canvasSize,
+				expandCaptionWords: resolvedFeatures.captionWordReveals,
+			})
 		: [];
 	const imageOverlays = resolvedFeatures.imageOverlays
 		? collectImageOverlays({
