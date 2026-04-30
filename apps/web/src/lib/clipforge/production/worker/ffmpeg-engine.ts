@@ -3,8 +3,10 @@ import {
 	buildConcatListFileContents,
 	buildFfmpegPlan,
 	buildVideoConcatFfmpegInvocation,
+	buildVideoFilterGraphFfmpegInvocation,
 	type FfmpegFeatureFlags,
 	type FfmpegPlan,
+	type PlanFilterGraphClip,
 	type PlanImageOverlay,
 } from "./ffmpeg-plan";
 import type { RenderEngine } from "./export-worker";
@@ -115,6 +117,21 @@ export class FfmpegRenderEngine implements RenderEngine {
 					fontFile: this.fontFile,
 				});
 				durationSeconds = plan.durationSeconds;
+			} else if (plan.kind === "video-filter-graph") {
+				const localClips = await this.materializeFilterGraphClips({
+					clips: plan.clips,
+					cleanups,
+				});
+				const outputPath = this.fs.join(workDir, outputFileNameForFormat(plan.format));
+				invocation = buildVideoFilterGraphFfmpegInvocation({
+					plan,
+					outputPath,
+					supportSummary,
+					imageInputPaths,
+					mediaInputPaths: localClips.map((c) => c.localPath),
+					fontFile: this.fontFile,
+				});
+				durationSeconds = computeFilterGraphDuration(plan.clips);
 			} else {
 				const localClips = await this.materializeConcatClips({
 					plan,
@@ -190,6 +207,32 @@ export class FfmpegRenderEngine implements RenderEngine {
 		return paths;
 	}
 
+	private async materializeFilterGraphClips({
+		clips,
+		cleanups,
+	}: {
+		clips: PlanFilterGraphClip[];
+		cleanups: Array<() => Promise<void>>;
+	}): Promise<Array<{ localPath: string; durationSeconds: number }>> {
+		const localClips: Array<{ localPath: string; durationSeconds: number }> = [];
+		for (let i = 0; i < clips.length; i += 1) {
+			const clip = clips[i]!;
+			const fetched = await this.mediaFetcher.fetchToLocalPath({
+				mediaRef: {
+					mediaId: clip.mediaId,
+					cloudStorageKey: clip.storageKey,
+				},
+				mediaIndex: i,
+			});
+			if (fetched.cleanup) cleanups.push(fetched.cleanup);
+			localClips.push({
+				localPath: fetched.localPath,
+				durationSeconds: clip.durationSeconds,
+			});
+		}
+		return localClips;
+	}
+
 	private async materializeConcatClips({
 		plan,
 		workDir,
@@ -236,5 +279,20 @@ function collectSupportSummary({
 	if (plan.kind === "black-video" && input.project.scenes.length > 0) {
 		summary.push("Project has scenes but no usable video clips on the main video track; rendered as black video.");
 	}
+	if (plan.kind === "video-filter-graph" && plan.includeAudio) {
+		summary.push(
+			"Audio is concatenated without crossfade in the xfade path; acrossfade is a follow-up.",
+		);
+	}
 	return summary;
+}
+
+function computeFilterGraphDuration(clips: PlanFilterGraphClip[]): number {
+	if (clips.length === 0) return 0;
+	let total = clips[0]!.durationSeconds;
+	for (let i = 1; i < clips.length; i += 1) {
+		const transition = clips[i]!.transitionInFromPrev;
+		total += clips[i]!.durationSeconds - (transition?.durationSeconds ?? 0);
+	}
+	return total;
 }

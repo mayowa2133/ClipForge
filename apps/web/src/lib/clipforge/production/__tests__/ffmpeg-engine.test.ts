@@ -4,6 +4,8 @@ import {
 	buildDrawtextFilter,
 	buildFfmpegPlan,
 	buildVideoConcatFfmpegInvocation,
+	buildVideoFilterGraphFfmpegInvocation,
+	buildXfadeChainFilter,
 } from "@/lib/clipforge/production/worker/ffmpeg-plan";
 import { buildRenderGraphInput } from "@/lib/clipforge/production/render-graph";
 import {
@@ -884,5 +886,378 @@ describe("buildFfmpegPlan with caption word reveals feature flag", () => {
 		if (plan.kind !== "black-video") throw new Error("expected black-video plan");
 		expect(plan.textOverlays).toHaveLength(1);
 		expect(plan.textOverlays[0]!.content).toBe("Fallback");
+	});
+});
+
+describe("buildFfmpegPlan with transitions feature flag", () => {
+	test("transitions are still skipped (video-concat) when transitions flag is off", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({ id: "a", mediaId: "v_a", duration: 4 }),
+							makeVideoElement({
+								id: "b",
+								mediaId: "v_b",
+								startTime: 4,
+								duration: 4,
+								transitionIn: { preset: "cross-dissolve", duration: 1 },
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v_a", cloudStorageKey: "k_a" },
+				{ mediaId: "v_b", cloudStorageKey: "k_b" },
+			],
+		});
+		const plan = buildFfmpegPlan({ input });
+		expect(plan.kind).toBe("video-concat");
+	});
+
+	test("cross-dissolve transition switches plan to video-filter-graph and clamps duration", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({ id: "a", mediaId: "v_a", duration: 3 }),
+							makeVideoElement({
+								id: "b",
+								mediaId: "v_b",
+								startTime: 3,
+								duration: 5,
+								transitionIn: { preset: "cross-dissolve", duration: 1 },
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v_a", cloudStorageKey: "k_a" },
+				{ mediaId: "v_b", cloudStorageKey: "k_b" },
+			],
+		});
+		const plan = buildFfmpegPlan({ input, features: { transitions: true } });
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.clips).toHaveLength(2);
+		expect(plan.clips[0]!.transitionInFromPrev).toBeNull();
+		expect(plan.clips[1]!.transitionInFromPrev?.kind).toBe("fade");
+		expect(plan.clips[1]!.transitionInFromPrev?.durationSeconds).toBe(1);
+	});
+
+	test("first clip's transitionIn is ignored (nothing to fade from)", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 3,
+								transitionIn: { preset: "cross-dissolve", duration: 1 },
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
+		});
+		const plan = buildFfmpegPlan({ input, features: { transitions: true } });
+		// No xfade applies (transition was on first clip), so falls back to concat path
+		expect(plan.kind).toBe("video-concat");
+	});
+
+	test("unsupported transition preset is ignored cleanly when flag is on", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({ id: "a", mediaId: "v_a", duration: 3 }),
+							makeVideoElement({
+								id: "b",
+								mediaId: "v_b",
+								startTime: 3,
+								duration: 4,
+								transitionIn: {
+									preset: "wormhole" as never,
+									duration: 1,
+								},
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v_a", cloudStorageKey: "k_a" },
+				{ mediaId: "v_b", cloudStorageKey: "k_b" },
+			],
+		});
+		const plan = buildFfmpegPlan({ input, features: { transitions: true } });
+		// No supported xfade transitions, so falls back to concat
+		expect(plan.kind).toBe("video-concat");
+	});
+
+	test("clamps requested transition duration to fit within shortest clip", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({ id: "a", mediaId: "v_a", duration: 1 }),
+							makeVideoElement({
+								id: "b",
+								mediaId: "v_b",
+								startTime: 1,
+								duration: 4,
+								transitionIn: { preset: "fade-black", duration: 5 },
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v_a", cloudStorageKey: "k_a" },
+				{ mediaId: "v_b", cloudStorageKey: "k_b" },
+			],
+		});
+		const plan = buildFfmpegPlan({ input, features: { transitions: true } });
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		// Min clip = 1s, so duration should clamp to ~0.95s (1 - 0.05)
+		const transition = plan.clips[1]!.transitionInFromPrev!;
+		expect(transition.kind).toBe("fadeblack");
+		expect(transition.durationSeconds).toBeLessThanOrEqual(0.95);
+		expect(transition.durationSeconds).toBeGreaterThan(0);
+	});
+});
+
+describe("buildXfadeChainFilter", () => {
+	test("single clip emits one normalized stream and final label v0", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 3,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+			],
+		});
+		expect(result.finalLabel).toBe("[v0]");
+		expect(result.totalDurationSeconds).toBe(3);
+		expect(result.filter).toContain("[0:v]");
+		expect(result.filter).toContain("format=yuv420p[v0]");
+	});
+
+	test("two clips with cross-dissolve emits xfade with correct offset", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 3,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+				{
+					mediaId: "b",
+					storageKey: "k_b",
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: { kind: "fade", durationSeconds: 1 },
+				},
+			],
+		});
+		expect(result.filter).toContain("xfade=transition=fade:duration=1:offset=2.000");
+		// total = 3 + 4 - 1 = 6
+		expect(result.totalDurationSeconds).toBe(6);
+	});
+
+	test("three clips, only first transition has xfade, second uses concat", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 3,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+				{
+					mediaId: "b",
+					storageKey: "k_b",
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: { kind: "fadeblack", durationSeconds: 1 },
+				},
+				{
+					mediaId: "c",
+					storageKey: "k_c",
+					durationSeconds: 2,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+			],
+		});
+		expect(result.filter).toContain("xfade=transition=fadeblack");
+		expect(result.filter).toContain("concat=n=2:v=1:a=0");
+		// total = 3 + (4-1) + 2 = 8
+		expect(result.totalDurationSeconds).toBe(8);
+	});
+});
+
+describe("buildVideoFilterGraphFfmpegInvocation", () => {
+	test("emits per-clip -i inputs, filter_complex with xfade, -t totalDuration", () => {
+		const invocation = buildVideoFilterGraphFfmpegInvocation({
+			plan: {
+				kind: "video-filter-graph",
+				canvasSize: { width: 1080, height: 1920 },
+				includeAudio: false,
+				format: "mp4",
+				quality: "high",
+				clips: [
+					{
+						mediaId: "a",
+						storageKey: "k_a",
+						durationSeconds: 3,
+						trimStartSeconds: 0,
+						trimEndSeconds: 0,
+						transitionInFromPrev: null,
+					},
+					{
+						mediaId: "b",
+						storageKey: "k_b",
+						durationSeconds: 4,
+						trimStartSeconds: 0,
+						trimEndSeconds: 0,
+						transitionInFromPrev: { kind: "fade", durationSeconds: 1 },
+					},
+				],
+				textOverlays: [],
+				imageOverlays: [],
+			},
+			outputPath: "/tmp/out.mp4",
+			supportSummary: [],
+			mediaInputPaths: ["/tmp/a.mp4", "/tmp/b.mp4"],
+		});
+		// Two -i inputs
+		const inputCount = invocation.args.filter((a) => a === "-i").length;
+		expect(inputCount).toBe(2);
+		const filterIndex = invocation.args.indexOf("-filter_complex");
+		expect(filterIndex).toBeGreaterThan(-1);
+		expect(invocation.args[filterIndex + 1]!).toContain("xfade=transition=fade");
+		// Final -t arg matches expected total duration (3 + 4 - 1 = 6)
+		const tIndex = invocation.args.lastIndexOf("-t");
+		expect(invocation.args[tIndex + 1]!).toBe("6.000");
+		// -an because includeAudio=false
+		expect(invocation.args).toContain("-an");
+	});
+
+	test("includes audio concat when includeAudio is true", () => {
+		const invocation = buildVideoFilterGraphFfmpegInvocation({
+			plan: {
+				kind: "video-filter-graph",
+				canvasSize: { width: 1080, height: 1920 },
+				includeAudio: true,
+				format: "mp4",
+				quality: "high",
+				clips: [
+					{
+						mediaId: "a",
+						storageKey: "k_a",
+						durationSeconds: 3,
+						trimStartSeconds: 0,
+						trimEndSeconds: 0,
+						transitionInFromPrev: null,
+					},
+					{
+						mediaId: "b",
+						storageKey: "k_b",
+						durationSeconds: 4,
+						trimStartSeconds: 0,
+						trimEndSeconds: 0,
+						transitionInFromPrev: { kind: "fade", durationSeconds: 1 },
+					},
+				],
+				textOverlays: [],
+				imageOverlays: [],
+			},
+			outputPath: "/tmp/out.mp4",
+			supportSummary: [],
+			mediaInputPaths: ["/tmp/a.mp4", "/tmp/b.mp4"],
+		});
+		// Two filter_complex args (one for video, one for audio concat)
+		const filterArgs = invocation.args.filter((a, i) => a === "-filter_complex");
+		expect(filterArgs.length).toBeGreaterThanOrEqual(1);
+		expect(invocation.args.some((a) => a.includes("[0:a][1:a]"))).toBe(true);
+		expect(invocation.args.some((a) => a.includes("concat=n=2:v=0:a=1"))).toBe(true);
+		expect(invocation.args).toContain("-map");
+		expect(invocation.args).toContain("[outa]");
+		expect(invocation.args).not.toContain("-an");
+	});
+
+	test("throws when mediaInputPaths length doesn't match clip count", () => {
+		expect(() =>
+			buildVideoFilterGraphFfmpegInvocation({
+				plan: {
+					kind: "video-filter-graph",
+					canvasSize: { width: 1080, height: 1920 },
+					includeAudio: false,
+					format: "mp4",
+					quality: "high",
+					clips: [
+						{
+							mediaId: "a",
+							storageKey: "k_a",
+							durationSeconds: 3,
+							trimStartSeconds: 0,
+							trimEndSeconds: 0,
+							transitionInFromPrev: null,
+						},
+					],
+					textOverlays: [],
+					imageOverlays: [],
+				},
+				outputPath: "/tmp/out.mp4",
+				supportSummary: [],
+				mediaInputPaths: [],
+			}),
+		).toThrow(/expected 1 media input paths/i);
 	});
 });

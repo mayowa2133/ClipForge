@@ -14,13 +14,28 @@ export interface FfmpegFeatureFlags {
 	textOverlays?: boolean;
 	imageOverlays?: boolean;
 	captionWordReveals?: boolean;
+	transitions?: boolean;
 }
 
 export const DEFAULT_FFMPEG_FEATURES: Required<FfmpegFeatureFlags> = {
 	textOverlays: false,
 	imageOverlays: false,
 	captionWordReveals: false,
+	transitions: false,
 };
+
+const TRANSITION_PRESET_TO_XFADE: Record<string, XfadeTransitionKind | null> = {
+	"cross-dissolve": "fade",
+	"fade-black": "fadeblack",
+	"fade-white": "fadewhite",
+	slide: "slideleft",
+};
+
+function mapTransitionPresetToXfade(
+	preset: string,
+): XfadeTransitionKind | null {
+	return TRANSITION_PRESET_TO_XFADE[preset] ?? null;
+}
 
 export interface PlanTextOverlay {
 	id: string;
@@ -44,6 +59,20 @@ export interface PlanImageOverlay {
 	canvasOffset: { x: number; y: number };
 	scale: number;
 	opacity: number;
+}
+
+export type XfadeTransitionKind = "fade" | "fadeblack" | "fadewhite" | "slideleft";
+
+export interface PlanFilterGraphClip {
+	mediaId: string;
+	storageKey: string;
+	durationSeconds: number;
+	trimStartSeconds: number;
+	trimEndSeconds: number;
+	transitionInFromPrev: {
+		kind: XfadeTransitionKind;
+		durationSeconds: number;
+	} | null;
 }
 
 export type FfmpegPlan =
@@ -74,6 +103,16 @@ export type FfmpegPlan =
 			imageOverlays: PlanImageOverlay[];
 	  }
 	| {
+			kind: "video-filter-graph";
+			canvasSize: { width: number; height: number };
+			includeAudio: boolean;
+			format: ExportFormat;
+			quality: ExportQuality;
+			clips: PlanFilterGraphClip[];
+			textOverlays: PlanTextOverlay[];
+			imageOverlays: PlanImageOverlay[];
+	  }
+	| {
 			kind: "unsupported";
 			reasons: string[];
 	  };
@@ -84,6 +123,8 @@ interface PlanProgress {
 		durationSeconds: number;
 		trimStartSeconds: number;
 		trimEndSeconds: number;
+		transitionInPreset: string | null;
+		transitionInDuration: number | null;
 	}>;
 	reasons: string[];
 }
@@ -113,7 +154,8 @@ function summarizeUnsupportedFeatures({
 	let stickerCount = 0;
 	let audioCount = 0;
 	let nonMainVideoTrackCount = 0;
-	let transitionCount = 0;
+	let transitionSkippedCount = 0;
+	let unsupportedTransitionPresets = new Set<string>();
 	let keyframeCount = 0;
 	let effectCount = 0;
 	let adjustmentCount = 0;
@@ -127,7 +169,14 @@ function summarizeUnsupportedFeatures({
 				for (const element of track.elements) {
 					if (element.type === "image" && !features.imageOverlays) imageCountInVideo += 1;
 					if (element.type === "video") {
-						if (element.transitionIn) transitionCount += 1;
+						if (element.transitionIn) {
+							const xfade = mapTransitionPresetToXfade(element.transitionIn.preset);
+							if (!features.transitions) {
+								transitionSkippedCount += 1;
+							} else if (!xfade) {
+								unsupportedTransitionPresets.add(element.transitionIn.preset);
+							}
+						}
 						if (element.keyframes) keyframeCount += 1;
 						if (element.effects && element.effects.length > 0) effectCount += 1;
 						if (element.adjustments) adjustmentCount += 1;
@@ -148,8 +197,12 @@ function summarizeUnsupportedFeatures({
 	if (audioCount > 0) reasons.add(`${audioCount} dedicated audio track element(s) skipped`);
 	if (nonMainVideoTrackCount > 0)
 		reasons.add(`${nonMainVideoTrackCount} extra video track(s) skipped (only the main track is rendered)`);
-	if (transitionCount > 0)
-		reasons.add(`${transitionCount} transition(s) skipped`);
+	if (transitionSkippedCount > 0)
+		reasons.add(`${transitionSkippedCount} transition(s) skipped (enable transitions to render)`);
+	if (unsupportedTransitionPresets.size > 0)
+		reasons.add(
+			`Unsupported transition preset(s) skipped: ${Array.from(unsupportedTransitionPresets).join(", ")}`,
+		);
 	if (keyframeCount > 0)
 		reasons.add(`${keyframeCount} clip(s) with keyframe animation rendered without animation`);
 	if (effectCount > 0)
@@ -178,6 +231,8 @@ function collectMainVideoClips({
 				durationSeconds: element.duration,
 				trimStartSeconds: element.trimStart,
 				trimEndSeconds: element.trimEnd,
+				transitionInPreset: element.transitionIn?.preset ?? null,
+				transitionInDuration: element.transitionIn?.duration ?? null,
 			});
 		}
 	}
@@ -367,19 +422,55 @@ export function buildFfmpegPlan({
 		};
 	}
 
-	const clips: Extract<FfmpegPlan, { kind: "video-concat" }>["clips"] = [];
-	for (const clip of collected.supportedVideoClips) {
+	const concatClips: Extract<FfmpegPlan, { kind: "video-concat" }>["clips"] = [];
+	const filterGraphClips: PlanFilterGraphClip[] = [];
+	let anyXfadeTransition = false;
+	for (let i = 0; i < collected.supportedVideoClips.length; i += 1) {
+		const clip = collected.supportedVideoClips[i]!;
 		const ref = mediaRefIndex.get(clip.mediaId);
 		if (!ref || !ref.cloudStorageKey) {
 			missingMediaIds.add(clip.mediaId);
 			continue;
 		}
-		clips.push({
+		concatClips.push({
 			mediaId: clip.mediaId,
 			storageKey: ref.cloudStorageKey,
 			durationSeconds: clip.durationSeconds,
 			trimStartSeconds: clip.trimStartSeconds,
 			trimEndSeconds: clip.trimEndSeconds,
+		});
+
+		// transitionIn applies to this clip relative to the previous one. The
+		// first clip's transitionIn is ignored (nothing to fade from).
+		let transitionInFromPrev: PlanFilterGraphClip["transitionInFromPrev"] = null;
+		if (
+			resolvedFeatures.transitions &&
+			i > 0 &&
+			clip.transitionInPreset !== null
+		) {
+			const xfade = mapTransitionPresetToXfade(clip.transitionInPreset);
+			if (xfade) {
+				const previous = collected.supportedVideoClips[i - 1]!;
+				const requestedDuration = clip.transitionInDuration ?? 0.5;
+				const maxDuration = Math.max(
+					0.05,
+					Math.min(previous.durationSeconds, clip.durationSeconds) - 0.05,
+				);
+				const durationSeconds = Math.min(
+					Math.max(0.05, requestedDuration),
+					maxDuration,
+				);
+				transitionInFromPrev = { kind: xfade, durationSeconds };
+				anyXfadeTransition = true;
+			}
+		}
+		filterGraphClips.push({
+			mediaId: clip.mediaId,
+			storageKey: ref.cloudStorageKey,
+			durationSeconds: clip.durationSeconds,
+			trimStartSeconds: clip.trimStartSeconds,
+			trimEndSeconds: clip.trimEndSeconds,
+			transitionInFromPrev,
 		});
 	}
 
@@ -393,13 +484,26 @@ export function buildFfmpegPlan({
 		};
 	}
 
+	if (anyXfadeTransition) {
+		return {
+			kind: "video-filter-graph",
+			canvasSize: input.canvasSize,
+			includeAudio: input.includeAudio,
+			format: input.format,
+			quality: input.quality,
+			clips: filterGraphClips,
+			textOverlays,
+			imageOverlays,
+		};
+	}
+
 	return {
 		kind: "video-concat",
 		canvasSize: input.canvasSize,
 		includeAudio: input.includeAudio,
 		format: input.format,
 		quality: input.quality,
-		clips,
+		clips: concatClips,
 		textOverlays,
 		imageOverlays,
 	};
@@ -706,6 +810,163 @@ function replaceFinalMapPlaceholder({
 			? `[txt${textOverlayCount - 1}]`
 			: `[ovl${imageOverlayCount - 1}]`;
 	return args.map((arg) => (arg === "[final-or-last]" ? finalLabel : arg));
+}
+
+export interface XfadeChainResult {
+	filter: string;
+	finalLabel: string;
+	totalDurationSeconds: number;
+}
+
+export function buildXfadeChainFilter({
+	clips,
+	canvasSize,
+}: {
+	clips: PlanFilterGraphClip[];
+	canvasSize: { width: number; height: number };
+}): XfadeChainResult {
+	if (clips.length === 0) {
+		return { filter: "", finalLabel: "[base]", totalDurationSeconds: 0 };
+	}
+
+	const stages: string[] = [];
+	const baseScale = `scale=${canvasSize.width}:${canvasSize.height}:force_original_aspect_ratio=decrease,pad=${canvasSize.width}:${canvasSize.height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+
+	for (let i = 0; i < clips.length; i += 1) {
+		stages.push(`[${i}:v]${baseScale},format=yuv420p[v${i}]`);
+	}
+
+	if (clips.length === 1) {
+		return {
+			filter: stages.join(";"),
+			finalLabel: "[v0]",
+			totalDurationSeconds: clips[0]!.durationSeconds,
+		};
+	}
+
+	let currentLabel = "[v0]";
+	let cumulativeDuration = clips[0]!.durationSeconds;
+	for (let i = 1; i < clips.length; i += 1) {
+		const clip = clips[i]!;
+		const transition = clip.transitionInFromPrev;
+		const nextLabel = i === clips.length - 1 ? "[base]" : `[xf${i}]`;
+		const nextSourceLabel = `[v${i}]`;
+		if (transition) {
+			const offset = cumulativeDuration - transition.durationSeconds;
+			stages.push(
+				`${currentLabel}${nextSourceLabel}xfade=transition=${transition.kind}:duration=${transition.durationSeconds}:offset=${offset.toFixed(3)}${nextLabel}`,
+			);
+			cumulativeDuration += clip.durationSeconds - transition.durationSeconds;
+		} else {
+			stages.push(
+				`${currentLabel}${nextSourceLabel}concat=n=2:v=1:a=0${nextLabel}`,
+			);
+			cumulativeDuration += clip.durationSeconds;
+		}
+		currentLabel = nextLabel;
+	}
+
+	return {
+		filter: stages.join(";"),
+		finalLabel: currentLabel,
+		totalDurationSeconds: cumulativeDuration,
+	};
+}
+
+export function buildVideoFilterGraphFfmpegInvocation({
+	plan,
+	outputPath,
+	supportSummary,
+	imageInputPaths = [],
+	mediaInputPaths,
+	fontFile,
+}: {
+	plan: Extract<FfmpegPlan, { kind: "video-filter-graph" }>;
+	outputPath: string;
+	supportSummary: string[];
+	imageInputPaths?: string[];
+	mediaInputPaths: string[];
+	fontFile?: string | null;
+}): FfmpegInvocation {
+	if (mediaInputPaths.length !== plan.clips.length) {
+		throw new Error(
+			`buildVideoFilterGraphFfmpegInvocation: expected ${plan.clips.length} media input paths, got ${mediaInputPaths.length}`,
+		);
+	}
+
+	const { canvasSize, includeAudio, format, quality } = plan;
+	const args: string[] = ["-y"];
+	for (const path of mediaInputPaths) {
+		args.push("-i", path);
+	}
+	for (const imagePath of imageInputPaths) {
+		args.push("-loop", "1", "-i", imagePath);
+	}
+
+	const xfadeChain = buildXfadeChainFilter({
+		clips: plan.clips,
+		canvasSize,
+	});
+	const overlayFilter = buildOverlayFilterChain({
+		textOverlays: plan.textOverlays,
+		imageOverlays: plan.imageOverlays,
+		imageInputs: plan.imageOverlays.map((overlay, idx) => ({
+			startInputIndex: mediaInputPaths.length + idx,
+			overlay,
+		})),
+		fontFile,
+	});
+
+	const filterParts: string[] = [];
+	if (xfadeChain.filter) filterParts.push(xfadeChain.filter);
+	if (overlayFilter) filterParts.push(overlayFilter);
+
+	const finalVideoLabel =
+		plan.textOverlays.length > 0
+			? `[txt${plan.textOverlays.length - 1}]`
+			: plan.imageOverlays.length > 0
+				? `[ovl${plan.imageOverlays.length - 1}]`
+				: xfadeChain.finalLabel;
+
+	if (filterParts.length > 0) {
+		// Always alias xfade chain output as [base] so the overlay chain
+		// can chain off of it consistently.
+		const aliased =
+			overlayFilter && xfadeChain.finalLabel !== "[base]"
+				? `${xfadeChain.filter};${xfadeChain.finalLabel}null[base];${overlayFilter}`
+				: filterParts.join(";");
+		args.push("-filter_complex", aliased);
+	}
+	args.push("-map", finalVideoLabel);
+	args.push(
+		"-c:v",
+		videoCodecForFormat(format),
+		"-b:v",
+		videoBitrateForQuality(quality),
+		"-pix_fmt",
+		"yuv420p",
+	);
+	if (includeAudio) {
+		// Audio is concatenated without crossfade; xfade equivalent for audio
+		// (acrossfade) is a follow-up.
+		const audioConcat = plan.clips.map((_, idx) => `[${idx}:a]`).join("");
+		args.push(
+			"-filter_complex",
+			`${audioConcat}concat=n=${plan.clips.length}:v=0:a=1[outa]`,
+		);
+		args.push("-map", "[outa]");
+		args.push("-c:a", audioCodecForFormat(format), "-b:a", audioBitrateForQuality(quality));
+	} else {
+		args.push("-an");
+	}
+	args.push("-t", xfadeChain.totalDurationSeconds.toFixed(3));
+	args.push(outputPath);
+	return {
+		args,
+		outputPath,
+		contentType: format === "webm" ? "video/webm" : "video/mp4",
+		supportSummary,
+	};
 }
 
 export function buildConcatListFileContents({
