@@ -37,6 +37,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { fetchChatPlannerHealth } from "@/lib/clipforge/chat";
 import type { ChatPlannerHealth, ChatPlannerMode } from "@/lib/clipforge/chat";
 import { useClipForgeChatSettingsStore } from "@/stores/clipforge-chat-settings-store";
+import { useClipForgeTranscriptionSettingsStore } from "@/stores/clipforge-transcription-settings-store";
+import { CLIPFORGE_MANAGED_TRANSCRIBER_DEFAULT } from "@/constants/feature-flags";
 import { useEffect, useState } from "react";
 import { resolveProjectVersionPack } from "@/lib/timeline";
 import type { ProjectVersionTarget } from "@/types/project";
@@ -78,6 +80,7 @@ export function SettingsView() {
 								</AccordionTrigger>
 								<AccordionContent className="space-y-4 pb-0">
 									{ENABLE_CLIPFORGE_CHAT ? <PlannerSettingsContent /> : null}
+									<TranscriptionSettingsContent />
 									<ProductionReadinessContent />
 									<CreativeLibraryContent />
 								</AccordionContent>
@@ -401,6 +404,59 @@ function PlannerSettingsContent() {
 					{isCheckingHealth ? "Refreshing..." : "Refresh"}
 				</Button>
 			</div>
+		</div>
+	);
+}
+
+function TranscriptionSettingsContent() {
+	const useManagedCloud = useClipForgeTranscriptionSettingsStore(
+		(state) => state.useManagedCloud,
+	);
+	const setUseManagedCloud = useClipForgeTranscriptionSettingsStore(
+		(state) => state.setUseManagedCloud,
+	);
+	const resetUseManagedCloud = useClipForgeTranscriptionSettingsStore(
+		(state) => state.resetUseManagedCloud,
+	);
+
+	return (
+		<div className="flex flex-col gap-3">
+			<div className="flex flex-col gap-1">
+				<Label>Transcription</Label>
+				<p className="text-muted-foreground text-xs">
+					Choose where indexing runs when you import or re-index a clip.
+				</p>
+			</div>
+			<div className="flex items-start gap-2">
+				<Checkbox
+					id="managed-cloud-transcription"
+					checked={useManagedCloud}
+					onCheckedChange={(value) => setUseManagedCloud(value === true)}
+				/>
+				<div className="flex-1">
+					<Label
+						htmlFor="managed-cloud-transcription"
+						className="text-sm cursor-pointer"
+					>
+						Use managed cloud transcription
+					</Label>
+					<p className="text-muted-foreground text-xs mt-1">
+						When on, indexing uploads the clip to your cloud project (if it
+						exists) and runs through the ClipForge worker before falling back
+						to the local browser/CLI provider. Requires
+						MODAL_TRANSCRIPTION_URL to be configured server-side.
+					</p>
+				</div>
+			</div>
+			<Button
+				type="button"
+				variant="ghost"
+				className="h-auto w-fit px-0 text-xs"
+				onClick={resetUseManagedCloud}
+				disabled={useManagedCloud === CLIPFORGE_MANAGED_TRANSCRIBER_DEFAULT}
+			>
+				Reset to default
+			</Button>
 		</div>
 	);
 }

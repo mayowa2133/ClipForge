@@ -59,6 +59,8 @@ import { reconcileValidatorErrors } from "@/lib/clipforge/chat/validator-reconci
 import { ensureBundledAudioAsset } from "@/lib/library/bundled-media";
 import { BUNDLED_MUSIC, BUNDLED_SFX } from "@/lib/library/content-packs";
 import { extractMediaAssetAudioToFloat32 } from "@/lib/media/audio";
+import { buildEditorManagedCloudConfig } from "@/lib/clipforge/production/editor-cloud-transcriber-config";
+import { useClipForgeTranscriptionSettingsStore } from "@/stores/clipforge-transcription-settings-store";
 import {
 	ApplyTimelineDiffOpsCommand,
 	AutoEditTikTokDraftCommand,
@@ -260,7 +262,13 @@ export class ClipForgeManager {
 		});
 
 		try {
-			const transcriber = resolveClipForgeTranscriber();
+			const transcriber = resolveClipForgeTranscriber({
+				useManagedCloud:
+					useClipForgeTranscriptionSettingsStore.getState().useManagedCloud,
+				managedCloud: buildEditorManagedCloudConfig({
+					getActiveProject: () => this.editor.project.getActive(),
+				}),
+			});
 			const indexed = await buildClipIndex({
 				mediaAsset,
 				language,

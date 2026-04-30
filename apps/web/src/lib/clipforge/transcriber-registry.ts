@@ -15,7 +15,8 @@ interface ResolveClipForgeTranscriberConfig {
 	srtText?: string;
 	preferCli?: boolean;
 	allowBrowserFallback?: boolean;
-	managedCloud?: ManagedCloudTranscriberArgs | false;
+	managedCloud?: ManagedCloudTranscriberArgs;
+	useManagedCloud?: boolean;
 }
 
 class FallbackTranscriber implements Transcriber {
@@ -49,13 +50,13 @@ export function resolveClipForgeTranscriber({
 	preferCli = true,
 	allowBrowserFallback = true,
 	managedCloud,
+	useManagedCloud = false,
 }: ResolveClipForgeTranscriberConfig = {}): Transcriber {
 	if (srtText !== undefined) {
 		return new SrtImportTranscriber();
 	}
 
 	const ordered: Transcriber[] = [];
-	const useManagedCloud = managedCloud !== false && shouldUseManagedCloud(managedCloud);
 	if (useManagedCloud && managedCloud) {
 		ordered.push(new ManagedCloudTranscriber(managedCloud));
 	}
@@ -70,17 +71,4 @@ export function resolveClipForgeTranscriber({
 	}
 
 	return ordered.length === 1 ? ordered[0]! : new FallbackTranscriber(ordered);
-}
-
-function shouldUseManagedCloud(
-	args: ManagedCloudTranscriberArgs | undefined | false,
-): boolean {
-	if (!args) return false;
-	if (
-		typeof process !== "undefined" &&
-		process.env?.NEXT_PUBLIC_CLIPFORGE_MANAGED_TRANSCRIBER === "true"
-	) {
-		return true;
-	}
-	return false;
 }
