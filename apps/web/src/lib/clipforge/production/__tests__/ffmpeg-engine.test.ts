@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+	buildAcrossfadeChainFilter,
 	buildBlackVideoFfmpegInvocation,
 	buildDrawtextFilter,
 	buildFfmpegPlan,
@@ -1189,7 +1190,7 @@ describe("buildVideoFilterGraphFfmpegInvocation", () => {
 		expect(invocation.args).toContain("-an");
 	});
 
-	test("includes audio concat when includeAudio is true", () => {
+	test("includes acrossfade audio chain when includeAudio is true and there is a transition", () => {
 		const invocation = buildVideoFilterGraphFfmpegInvocation({
 			plan: {
 				kind: "video-filter-graph",
@@ -1222,13 +1223,20 @@ describe("buildVideoFilterGraphFfmpegInvocation", () => {
 			supportSummary: [],
 			mediaInputPaths: ["/tmp/a.mp4", "/tmp/b.mp4"],
 		});
-		// Two filter_complex args (one for video, one for audio concat)
-		const filterArgs = invocation.args.filter((a, i) => a === "-filter_complex");
-		expect(filterArgs.length).toBeGreaterThanOrEqual(1);
-		expect(invocation.args.some((a) => a.includes("[0:a][1:a]"))).toBe(true);
-		expect(invocation.args.some((a) => a.includes("concat=n=2:v=0:a=1"))).toBe(true);
-		expect(invocation.args).toContain("-map");
-		expect(invocation.args).toContain("[outa]");
+		// Single -filter_complex containing both xfade chain and acrossfade chain
+		const filterArgs = invocation.args.filter((a) => a === "-filter_complex");
+		expect(filterArgs.length).toBe(1);
+		const filterIdx = invocation.args.indexOf("-filter_complex");
+		const filterValue = invocation.args[filterIdx + 1]!;
+		expect(filterValue).toContain("acrossfade=d=1:c1=tri:c2=tri");
+		expect(filterValue).toContain("[0:a]anull[a0]");
+		expect(filterValue).toContain("[1:a]anull[a1]");
+		// Mapped to the produced audio output label
+		const mapIndices = invocation.args
+			.map((a, i) => (a === "-map" ? i : -1))
+			.filter((i) => i >= 0);
+		const mappedValues = mapIndices.map((i) => invocation.args[i + 1]);
+		expect(mappedValues).toContain("[outa]");
 		expect(invocation.args).not.toContain("-an");
 	});
 
@@ -1383,5 +1391,100 @@ describe("buildXfadeChainFilter trim handling", () => {
 		});
 		expect(result.filter).not.toContain("trim=");
 		expect(result.filter).not.toContain("setpts=");
+	});
+});
+
+describe("buildAcrossfadeChainFilter", () => {
+	test("single clip emits anull stage and final label [a0]", () => {
+		const result = buildAcrossfadeChainFilter({
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 3,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+			],
+		});
+		expect(result.finalLabel).toBe("[a0]");
+		expect(result.filter).toBe("[0:a]anull[a0]");
+	});
+
+	test("two clips with cross-dissolve emits acrossfade with matching duration", () => {
+		const result = buildAcrossfadeChainFilter({
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 3,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+				{
+					mediaId: "b",
+					storageKey: "k_b",
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: { kind: "fade", durationSeconds: 1.25 },
+				},
+			],
+		});
+		expect(result.filter).toContain("acrossfade=d=1.25:c1=tri:c2=tri");
+		expect(result.finalLabel).toBe("[outa]");
+	});
+
+	test("clip with trimStart prepends atrim+asetpts before chain", () => {
+		const result = buildAcrossfadeChainFilter({
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 4,
+					trimStartSeconds: 1.5,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+			],
+		});
+		expect(result.filter).toContain("atrim=start=1.500:duration=4.000");
+		expect(result.filter).toContain("asetpts=PTS-STARTPTS");
+	});
+
+	test("three clips with one transition uses acrossfade then concat", () => {
+		const result = buildAcrossfadeChainFilter({
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 3,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+				{
+					mediaId: "b",
+					storageKey: "k_b",
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: { kind: "fade", durationSeconds: 1 },
+				},
+				{
+					mediaId: "c",
+					storageKey: "k_c",
+					durationSeconds: 2,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+			],
+		});
+		expect(result.filter).toContain("acrossfade=d=1");
+		expect(result.filter).toContain("concat=n=2:v=0:a=1");
+		expect(result.finalLabel).toBe("[outa]");
 	});
 });

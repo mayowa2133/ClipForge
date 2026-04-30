@@ -822,6 +822,11 @@ export interface XfadeChainResult {
 	totalDurationSeconds: number;
 }
 
+export interface AcrossfadeChainResult {
+	filter: string;
+	finalLabel: string;
+}
+
 interface TrimFilterChunks {
 	video: string[];
 	audio: string[];
@@ -906,6 +911,49 @@ export function buildXfadeChainFilter({
 	};
 }
 
+export function buildAcrossfadeChainFilter({
+	clips,
+}: {
+	clips: PlanFilterGraphClip[];
+}): AcrossfadeChainResult {
+	if (clips.length === 0) return { filter: "", finalLabel: "[outa]" };
+
+	const stages: string[] = [];
+	for (let i = 0; i < clips.length; i += 1) {
+		const clip = clips[i]!;
+		const audioPipeline = buildTrimFilters({ clip }).audio;
+		if (audioPipeline.length > 0) {
+			stages.push(`[${i}:a]${audioPipeline.join(",")}[a${i}]`);
+		} else {
+			stages.push(`[${i}:a]anull[a${i}]`);
+		}
+	}
+
+	if (clips.length === 1) {
+		return { filter: stages.join(";"), finalLabel: "[a0]" };
+	}
+
+	let currentLabel = "[a0]";
+	for (let i = 1; i < clips.length; i += 1) {
+		const clip = clips[i]!;
+		const transition = clip.transitionInFromPrev;
+		const nextLabel = i === clips.length - 1 ? "[outa]" : `[af${i}]`;
+		const nextSourceLabel = `[a${i}]`;
+		if (transition) {
+			stages.push(
+				`${currentLabel}${nextSourceLabel}acrossfade=d=${transition.durationSeconds}:c1=tri:c2=tri${nextLabel}`,
+			);
+		} else {
+			stages.push(
+				`${currentLabel}${nextSourceLabel}concat=n=2:v=0:a=1${nextLabel}`,
+			);
+		}
+		currentLabel = nextLabel;
+	}
+
+	return { filter: stages.join(";"), finalLabel: currentLabel };
+}
+
 export function buildVideoFilterGraphFfmpegInvocation({
 	plan,
 	outputPath,
@@ -949,10 +997,21 @@ export function buildVideoFilterGraphFfmpegInvocation({
 		})),
 		fontFile,
 	});
+	const acrossfadeChain = includeAudio
+		? buildAcrossfadeChainFilter({ clips: plan.clips })
+		: { filter: "", finalLabel: "[outa]" };
 
 	const filterParts: string[] = [];
-	if (xfadeChain.filter) filterParts.push(xfadeChain.filter);
+	if (xfadeChain.filter) {
+		// Alias xfade output as [base] only when overlays will chain off it
+		if (overlayFilter && xfadeChain.finalLabel !== "[base]") {
+			filterParts.push(`${xfadeChain.filter};${xfadeChain.finalLabel}null[base]`);
+		} else {
+			filterParts.push(xfadeChain.filter);
+		}
+	}
 	if (overlayFilter) filterParts.push(overlayFilter);
+	if (acrossfadeChain.filter) filterParts.push(acrossfadeChain.filter);
 
 	const finalVideoLabel =
 		plan.textOverlays.length > 0
@@ -962,13 +1021,7 @@ export function buildVideoFilterGraphFfmpegInvocation({
 				: xfadeChain.finalLabel;
 
 	if (filterParts.length > 0) {
-		// Always alias xfade chain output as [base] so the overlay chain
-		// can chain off of it consistently.
-		const aliased =
-			overlayFilter && xfadeChain.finalLabel !== "[base]"
-				? `${xfadeChain.filter};${xfadeChain.finalLabel}null[base];${overlayFilter}`
-				: filterParts.join(";");
-		args.push("-filter_complex", aliased);
+		args.push("-filter_complex", filterParts.join(";"));
 	}
 	args.push("-map", finalVideoLabel);
 	args.push(
@@ -980,14 +1033,7 @@ export function buildVideoFilterGraphFfmpegInvocation({
 		"yuv420p",
 	);
 	if (includeAudio) {
-		// Audio is concatenated without crossfade; xfade equivalent for audio
-		// (acrossfade) is a follow-up.
-		const audioConcat = plan.clips.map((_, idx) => `[${idx}:a]`).join("");
-		args.push(
-			"-filter_complex",
-			`${audioConcat}concat=n=${plan.clips.length}:v=0:a=1[outa]`,
-		);
-		args.push("-map", "[outa]");
+		args.push("-map", acrossfadeChain.finalLabel);
 		args.push("-c:a", audioCodecForFormat(format), "-b:a", audioBitrateForQuality(quality));
 	} else {
 		args.push("-an");

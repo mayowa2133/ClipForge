@@ -279,11 +279,6 @@ function collectSupportSummary({
 	if (plan.kind === "black-video" && input.project.scenes.length > 0) {
 		summary.push("Project has scenes but no usable video clips on the main video track; rendered as black video.");
 	}
-	if (plan.kind === "video-filter-graph" && plan.includeAudio) {
-		summary.push(
-			"Audio is concatenated without crossfade in the xfade path; acrossfade is a follow-up.",
-		);
-	}
 	return summary;
 }
 
