@@ -3,7 +3,9 @@ import {
 	buildConcatListFileContents,
 	buildFfmpegPlan,
 	buildVideoConcatFfmpegInvocation,
+	type FfmpegFeatureFlags,
 	type FfmpegPlan,
+	type PlanImageOverlay,
 } from "./ffmpeg-plan";
 import type { RenderEngine } from "./export-worker";
 import type {
@@ -38,6 +40,8 @@ export interface FfmpegRenderEngineArgs {
 	mediaFetcher: MediaFetcher;
 	fs: FileSystemAdapter;
 	id?: string;
+	features?: FfmpegFeatureFlags;
+	fontFile?: string | null;
 }
 
 export class FfmpegRenderEngine implements RenderEngine {
@@ -45,17 +49,23 @@ export class FfmpegRenderEngine implements RenderEngine {
 	private readonly ffmpegRunner: FfmpegRunner;
 	private readonly mediaFetcher: MediaFetcher;
 	private readonly fs: FileSystemAdapter;
+	private readonly features: FfmpegFeatureFlags;
+	private readonly fontFile: string | null;
 
 	constructor({
 		ffmpegRunner,
 		mediaFetcher,
 		fs,
 		id = "clipforge-ffmpeg-renderer",
+		features,
+		fontFile = null,
 	}: FfmpegRenderEngineArgs) {
 		this.ffmpegRunner = ffmpegRunner;
 		this.mediaFetcher = mediaFetcher;
 		this.fs = fs;
 		this.id = id;
+		this.features = features ?? {};
+		this.fontFile = fontFile;
 	}
 
 	async render({
@@ -71,7 +81,7 @@ export class FfmpegRenderEngine implements RenderEngine {
 		stub: boolean;
 		durationSeconds: number;
 	}> {
-		const plan = buildFfmpegPlan({ input });
+		const plan = buildFfmpegPlan({ input, features: this.features });
 
 		if (plan.kind === "unsupported") {
 			throw new Error(
@@ -90,12 +100,19 @@ export class FfmpegRenderEngine implements RenderEngine {
 			let invocation: ReturnType<typeof buildBlackVideoFfmpegInvocation>;
 			let durationSeconds: number;
 
+			const imageInputPaths = await this.materializeImageOverlays({
+				overlays: plan.imageOverlays,
+				cleanups,
+			});
+
 			if (plan.kind === "black-video") {
 				const outputPath = this.fs.join(workDir, outputFileNameForFormat(plan.format));
 				invocation = buildBlackVideoFfmpegInvocation({
 					plan,
 					outputPath,
 					supportSummary,
+					imageInputPaths,
+					fontFile: this.fontFile,
 				});
 				durationSeconds = plan.durationSeconds;
 			} else {
@@ -115,6 +132,8 @@ export class FfmpegRenderEngine implements RenderEngine {
 					outputPath,
 					concatListPath,
 					supportSummary,
+					imageInputPaths,
+					fontFile: this.fontFile,
 				});
 				durationSeconds = localClips.reduce(
 					(total, clip) => total + clip.durationSeconds,
@@ -146,6 +165,29 @@ export class FfmpegRenderEngine implements RenderEngine {
 				} catch {}
 			}
 		}
+	}
+
+	private async materializeImageOverlays({
+		overlays,
+		cleanups,
+	}: {
+		overlays: PlanImageOverlay[];
+		cleanups: Array<() => Promise<void>>;
+	}): Promise<string[]> {
+		const paths: string[] = [];
+		for (let i = 0; i < overlays.length; i += 1) {
+			const overlay = overlays[i]!;
+			const fetched = await this.mediaFetcher.fetchToLocalPath({
+				mediaRef: {
+					mediaId: overlay.mediaId,
+					cloudStorageKey: overlay.storageKey,
+				},
+				mediaIndex: 1000 + i,
+			});
+			if (fetched.cleanup) cleanups.push(fetched.cleanup);
+			paths.push(fetched.localPath);
+		}
+		return paths;
 	}
 
 	private async materializeConcatClips({

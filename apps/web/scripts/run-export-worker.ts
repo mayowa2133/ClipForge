@@ -67,6 +67,22 @@ async function main() {
 	console.log(`[export-worker] processed ${summary.processed} jobs.`);
 }
 
+function parseFeatureFlags(raw: string | null): {
+	textOverlays: boolean;
+	imageOverlays: boolean;
+} {
+	const set = new Set(
+		(raw ?? "")
+			.split(",")
+			.map((part) => part.trim().toLowerCase())
+			.filter(Boolean),
+	);
+	return {
+		textOverlays: set.has("text") || set.has("text-overlays") || set.has("all"),
+		imageOverlays: set.has("image") || set.has("image-overlays") || set.has("all"),
+	};
+}
+
 async function buildRenderEngine({
 	kind,
 	http,
@@ -78,6 +94,11 @@ async function buildRenderEngine({
 	if (kind === "ffmpeg") {
 		const fs = new NodeFileSystemAdapter();
 		const workDir = await fs.makeTempDir("clipforge-worker-");
+		const features = parseFeatureFlags(readEnv("CLIPFORGE_FFMPEG_FEATURES"));
+		const fontFile = readEnv("CLIPFORGE_FFMPEG_DEFAULT_FONT");
+		console.log(
+			`[export-worker] ffmpeg features=${JSON.stringify(features)} font=${fontFile ?? "<system default>"}`,
+		);
 		return new FfmpegRenderEngine({
 			ffmpegRunner: new SpawnFfmpegRunner({
 				ffmpegBinary: readEnv("CLIPFORGE_FFMPEG_BIN") ?? "ffmpeg",
@@ -85,6 +106,8 @@ async function buildRenderEngine({
 			}),
 			mediaFetcher: new HttpMediaFetcher({ workerHttp: http, fs, workDir }),
 			fs,
+			features,
+			fontFile,
 		});
 	}
 	throw new Error(

@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { buildFfmpegPlan } from "@/lib/clipforge/production/worker/ffmpeg-plan";
+import {
+	buildBlackVideoFfmpegInvocation,
+	buildDrawtextFilter,
+	buildFfmpegPlan,
+	buildVideoConcatFfmpegInvocation,
+} from "@/lib/clipforge/production/worker/ffmpeg-plan";
 import { buildRenderGraphInput } from "@/lib/clipforge/production/render-graph";
 import {
 	FfmpegRenderEngine,
@@ -8,7 +13,14 @@ import {
 	type MediaFetcher,
 } from "@/lib/clipforge/production/worker/ffmpeg-engine";
 import type { TProject } from "@/types/project";
-import type { TScene, VideoElement, VideoTrack } from "@/types/timeline";
+import type {
+	ImageElement,
+	TScene,
+	TextElement,
+	TextTrack,
+	VideoElement,
+	VideoTrack,
+} from "@/types/timeline";
 
 function makeProject(overrides: Partial<TProject> = {}): TProject {
 	return {
@@ -35,7 +47,7 @@ function makeMainScene({
 	elements,
 	id = "scene_main",
 }: {
-	elements: VideoElement[];
+	elements: (VideoElement | ImageElement)[];
 	id?: string;
 }): TScene {
 	const track: VideoTrack = {
@@ -345,5 +357,380 @@ describe("FfmpegRenderEngine", () => {
 			engine.render({ input, onProgress: async () => undefined }),
 		).rejects.toThrow("ffmpeg crashed");
 		expect(fs.removed).toEqual(fs.tempDirs);
+	});
+});
+
+function makeTextElement(overrides: Partial<TextElement> = {}): TextElement {
+	return {
+		id: "txt_1",
+		name: "caption",
+		type: "text",
+		duration: 3,
+		startTime: 1,
+		trimStart: 0,
+		trimEnd: 0,
+		content: "Hello world",
+		fontSize: 48,
+		fontFamily: "Inter",
+		color: "#FFFFFF",
+		background: { color: "#00000080" },
+		textAlign: "center",
+		fontWeight: "bold",
+		fontStyle: "normal",
+		textDecoration: "none",
+		transform: { scale: 1, position: { x: 0, y: 200 }, rotate: 0 },
+		opacity: 1,
+		...overrides,
+	} as TextElement;
+}
+
+function makeTextScene({ elements }: { elements: TextElement[] }): TScene {
+	const track: TextTrack = {
+		id: "track_text",
+		name: "Captions",
+		type: "text",
+		hidden: false,
+		elements,
+	};
+	return {
+		id: "scene_text",
+		name: "Text scene",
+		isMain: true,
+		tracks: [track],
+		bookmarks: [],
+		createdAt: new Date(),
+		updatedAt: new Date(),
+	};
+}
+
+function makeImageElement(overrides: Partial<ImageElement> = {}): ImageElement {
+	return {
+		id: "img_1",
+		name: "logo",
+		type: "image",
+		mediaId: "asset_logo",
+		duration: 4,
+		startTime: 0,
+		trimStart: 0,
+		trimEnd: 0,
+		transform: { scale: 1, position: { x: 100, y: -200 }, rotate: 0 },
+		opacity: 1,
+		...overrides,
+	} as ImageElement;
+}
+
+describe("buildFfmpegPlan with text overlays feature flag", () => {
+	test("text elements remain unsupported when textOverlays flag is off", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [makeTextScene({ elements: [makeTextElement()] })],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+		});
+		const plan = buildFfmpegPlan({ input });
+		expect(plan.kind).toBe("black-video");
+		if (plan.kind !== "black-video") return;
+		expect(plan.textOverlays).toEqual([]);
+	});
+
+	test("text elements become drawtext overlays when feature flag is on", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeTextScene({
+						elements: [makeTextElement({ content: "Hi", startTime: 1, duration: 2 })],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+		});
+		const plan = buildFfmpegPlan({
+			input,
+			features: { textOverlays: true },
+		});
+		expect(plan.kind).toBe("black-video");
+		if (plan.kind !== "black-video") return;
+		expect(plan.textOverlays).toHaveLength(1);
+		expect(plan.textOverlays[0]!.content).toBe("Hi");
+		expect(plan.textOverlays[0]!.startTime).toBe(1);
+		expect(plan.textOverlays[0]!.endTime).toBe(3);
+		expect(plan.textOverlays[0]!.fontSize).toBe(48);
+	});
+
+	test("hidden text elements are skipped", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeTextScene({
+						elements: [makeTextElement({ hidden: true })],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+		});
+		const plan = buildFfmpegPlan({
+			input,
+			features: { textOverlays: true },
+		});
+		expect(plan.kind).toBe("black-video");
+		if (plan.kind !== "black-video") return;
+		expect(plan.textOverlays).toEqual([]);
+	});
+});
+
+describe("buildFfmpegPlan with image overlays feature flag", () => {
+	test("image elements stay unsupported when imageOverlays flag is off", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({ mediaId: "v1" }),
+							makeImageElement({ mediaId: "logo1" }),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v1", cloudStorageKey: "k_v1" }],
+		});
+		const plan = buildFfmpegPlan({ input });
+		expect(plan.kind).toBe("video-concat");
+		if (plan.kind !== "video-concat") return;
+		expect(plan.imageOverlays).toEqual([]);
+	});
+
+	test("image elements become overlays when flag is on and storage key exists", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({ mediaId: "v1" }),
+							makeImageElement({ mediaId: "logo1", startTime: 1, duration: 2 }),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v1", cloudStorageKey: "k_v1" },
+				{ mediaId: "logo1", cloudStorageKey: "k_logo" },
+			],
+		});
+		const plan = buildFfmpegPlan({
+			input,
+			features: { imageOverlays: true },
+		});
+		expect(plan.kind).toBe("video-concat");
+		if (plan.kind !== "video-concat") return;
+		expect(plan.imageOverlays).toHaveLength(1);
+		expect(plan.imageOverlays[0]!.storageKey).toBe("k_logo");
+		expect(plan.imageOverlays[0]!.startTime).toBe(1);
+		expect(plan.imageOverlays[0]!.endTime).toBe(3);
+	});
+
+	test("image overlay missing cloud media yields unsupported plan", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({ mediaId: "v1" }),
+							makeImageElement({ mediaId: "logo_missing" }),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v1", cloudStorageKey: "k_v1" }],
+		});
+		const plan = buildFfmpegPlan({
+			input,
+			features: { imageOverlays: true },
+		});
+		expect(plan.kind).toBe("unsupported");
+		if (plan.kind !== "unsupported") return;
+		expect(plan.reasons.some((r) => r.includes("logo_missing"))).toBe(true);
+	});
+});
+
+describe("buildDrawtextFilter", () => {
+	test("escapes special characters in text content", () => {
+		const filter = buildDrawtextFilter({
+			overlay: {
+				id: "t1",
+				content: "It's a 50% test:value",
+				startTime: 0,
+				endTime: 5,
+				canvasOffset: { x: 540, y: 1500 },
+				fontSize: 32,
+				color: "#FF0000",
+				background: null,
+				textAlign: "center",
+				fontWeight: "normal",
+			},
+		});
+		expect(filter).toContain("It\\'s a 50\\% test\\:value");
+		expect(filter).toContain("fontsize=32");
+		expect(filter).toContain("fontcolor=#FF0000");
+		expect(filter).toContain("between(t\\,0\\,5)");
+	});
+
+	test("includes box=1 + boxcolor when background is set", () => {
+		const filter = buildDrawtextFilter({
+			overlay: {
+				id: "t1",
+				content: "Caption",
+				startTime: 0,
+				endTime: 2,
+				canvasOffset: { x: 540, y: 1500 },
+				fontSize: 48,
+				color: "#FFFFFF",
+				background: { color: "#000000", alpha: 0.5, paddingX: 12, paddingY: 6 },
+				textAlign: "center",
+				fontWeight: "bold",
+			},
+		});
+		expect(filter).toContain("box=1");
+		expect(filter).toContain("boxcolor=#00000080");
+		expect(filter).toContain("boxborderw=12");
+	});
+
+	test("includes fontfile when provided", () => {
+		const filter = buildDrawtextFilter({
+			overlay: {
+				id: "t1",
+				content: "Hello",
+				startTime: 0,
+				endTime: 2,
+				canvasOffset: { x: 0, y: 0 },
+				fontSize: 24,
+				color: "#FFFFFF",
+				background: null,
+				textAlign: "left",
+				fontWeight: "normal",
+			},
+			fontFile: "/fonts/Inter.ttf",
+		});
+		expect(filter).toContain("fontfile='/fonts/Inter.ttf'");
+	});
+});
+
+describe("filter graph wiring in invocation builders", () => {
+	test("black-video invocation uses filter_complex with map placeholder resolved to drawtext", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [makeTextScene({ elements: [makeTextElement()] })],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+		});
+		const plan = buildFfmpegPlan({ input, features: { textOverlays: true } });
+		if (plan.kind !== "black-video") throw new Error("expected black-video plan");
+
+		const invocation = buildBlackVideoFfmpegInvocation({
+			plan,
+			outputPath: "/tmp/out.mp4",
+			supportSummary: [],
+		});
+		expect(invocation.args).toContain("-filter_complex");
+		const mapIndex = invocation.args.indexOf("-map");
+		expect(mapIndex).toBeGreaterThan(-1);
+		expect(invocation.args[mapIndex + 1]).toBe("[txt0]");
+	});
+
+	test("video-concat invocation chains image overlay then text overlay", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					{
+						id: "scene_combo",
+						name: "Combo",
+						isMain: true,
+						bookmarks: [],
+						createdAt: new Date(),
+						updatedAt: new Date(),
+						tracks: [
+							{
+								id: "track_main",
+								name: "Main",
+								type: "video",
+								isMain: true,
+								muted: false,
+								hidden: false,
+								elements: [
+									makeVideoElement({ mediaId: "v1" }),
+									makeImageElement({ mediaId: "logo1", startTime: 1, duration: 2 }),
+								],
+							},
+							{
+								id: "track_text",
+								name: "Captions",
+								type: "text",
+								hidden: false,
+								elements: [
+									makeTextElement({
+										id: "tx",
+										content: "Caption",
+										startTime: 1,
+										duration: 2,
+									}),
+								],
+							},
+						],
+					},
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v1", cloudStorageKey: "k_v1" },
+				{ mediaId: "logo1", cloudStorageKey: "k_logo" },
+			],
+		});
+		const plan = buildFfmpegPlan({
+			input,
+			features: { textOverlays: true, imageOverlays: true },
+		});
+		if (plan.kind !== "video-concat") throw new Error("expected video-concat plan");
+
+		const invocation = buildVideoConcatFfmpegInvocation({
+			plan,
+			outputPath: "/tmp/out.mp4",
+			concatListPath: "/tmp/concat.txt",
+			supportSummary: [],
+			imageInputPaths: ["/tmp/logo.png"],
+		});
+		const filterIndex = invocation.args.indexOf("-filter_complex");
+		expect(filterIndex).toBeGreaterThan(-1);
+		const filterGraph = invocation.args[filterIndex + 1]!;
+		expect(filterGraph).toContain("[base]");
+		expect(filterGraph).toContain("overlay=");
+		expect(filterGraph).toContain("drawtext=");
+		const mapIndex = invocation.args.indexOf("-map");
+		expect(invocation.args[mapIndex + 1]).toBe("[txt0]");
 	});
 });
