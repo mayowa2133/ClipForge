@@ -20,10 +20,10 @@ export const CLIPFORGE_PRODUCTION_CAPABILITIES: ProductionCapability[] = [
 	{
 		id: "managed-transcription",
 		label: "Managed transcription",
-		status: "needs-provider",
+		status: "scaffolded",
 		description:
-			"Transcription jobs can be queued and tracked; local/browser transcription remains the active provider.",
-		nextStep: "Connect a worker/provider that writes native word timestamps and diarization metadata.",
+			"Transcription jobs can be queued, claimed by run-transcription-worker.ts, and resolved with a stub or Modal HTTP engine that writes word + segment timings back to job.result.",
+		nextStep: "Surface the cloud transcriber inside the editor's transcriber-registry so imports use it when MODAL_TRANSCRIPTION_URL is configured.",
 	},
 	{
 		id: "server-export",

@@ -41,7 +41,7 @@ export class HttpWorkerClient implements WorkerHttpClient {
 	async claimNext({
 		kind,
 	}: {
-		kind: "export";
+		kind: "export" | "transcription";
 	}): Promise<{ job: ClipForgeJobRecord | null }> {
 		const response = await this.fetchImpl(this.url("/api/clipforge/internal/jobs/claim"), {
 			method: "POST",

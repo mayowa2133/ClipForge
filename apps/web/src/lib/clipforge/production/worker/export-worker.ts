@@ -6,9 +6,11 @@ import {
 } from "@/lib/clipforge/production/render-graph";
 import type { ClipForgeJobRecord } from "@/types/production";
 
+export type WorkerJobKind = "export" | "transcription";
+
 export interface WorkerHttpClient {
 	claimNext(args: {
-		kind: "export";
+		kind: WorkerJobKind;
 	}): Promise<{ job: ClipForgeJobRecord | null }>;
 	requestArtifactUpload(args: {
 		jobId: string;
