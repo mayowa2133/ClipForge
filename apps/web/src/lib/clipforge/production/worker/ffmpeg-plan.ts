@@ -103,6 +103,19 @@ export interface PlanFilterGraphAudioElement {
 	trimEndSeconds: number;
 	volume: number;
 	role: PlanAudioRole;
+	fadeInSeconds?: number;
+	fadeOutSeconds?: number;
+	normalizationGainDb?: number;
+}
+
+export interface PlanAudioSettings {
+	masterVolume: number;
+	ducking: {
+		enabled: boolean;
+		amount: number;
+		attackMs: number;
+		releaseMs: number;
+	} | null;
 }
 
 export interface PlanFilterGraphClip {
@@ -156,6 +169,7 @@ export type FfmpegPlan =
 			textOverlays: PlanTextOverlay[];
 			imageOverlays: PlanImageOverlay[];
 			audioElements?: PlanFilterGraphAudioElement[];
+			audioSettings?: PlanAudioSettings | null;
 	  }
 	| {
 			kind: "unsupported";
@@ -186,14 +200,45 @@ interface UploadAudioCandidate {
 	volume: number;
 	role: PlanAudioRole;
 	muted: boolean;
+	fadeInSeconds: number;
+	fadeOutSeconds: number;
+	normalizationGainDb: number;
 }
 
 interface UploadAudioCollection {
 	supported: UploadAudioCandidate[];
 	libraryCount: number;
 	playbackRateCount: number;
-	fadeCount: number;
-	normalizationCount: number;
+}
+
+function extractAudioSettings({
+	project,
+}: {
+	project: { settings?: { audio?: { masterVolume?: number; duckingEnabled?: boolean; duckingAmount?: number; duckingAttackMs?: number; duckingReleaseMs?: number } } };
+}): PlanAudioSettings | null {
+	const audio = project.settings?.audio;
+	if (!audio) return null;
+	const masterVolume =
+		typeof audio.masterVolume === "number" && audio.masterVolume >= 0
+			? audio.masterVolume
+			: 1;
+	const duckingEnabled = audio.duckingEnabled === true;
+	const ducking = duckingEnabled
+		? {
+				enabled: true,
+				amount:
+					typeof audio.duckingAmount === "number" ? Math.max(0, Math.min(1, audio.duckingAmount)) : 0.5,
+				attackMs:
+					typeof audio.duckingAttackMs === "number" && audio.duckingAttackMs >= 0
+						? audio.duckingAttackMs
+						: 50,
+				releaseMs:
+					typeof audio.duckingReleaseMs === "number" && audio.duckingReleaseMs >= 0
+						? audio.duckingReleaseMs
+						: 250,
+			}
+		: null;
+	return { masterVolume, ducking };
 }
 
 function collectUploadAudioElements({
@@ -204,8 +249,6 @@ function collectUploadAudioElements({
 	const supported: UploadAudioCandidate[] = [];
 	let libraryCount = 0;
 	let playbackRateCount = 0;
-	let fadeCount = 0;
-	let normalizationCount = 0;
 
 	for (const scene of scenes) {
 		for (const track of scene.tracks) {
@@ -222,18 +265,18 @@ function collectUploadAudioElements({
 				) {
 					playbackRateCount += 1;
 				}
-				if (
-					(typeof element.fadeInDuration === "number" && element.fadeInDuration > 0) ||
-					(typeof element.fadeOutDuration === "number" && element.fadeOutDuration > 0)
-				) {
-					fadeCount += 1;
-				}
-				if (
-					typeof element.normalizationGainDb === "number" &&
-					element.normalizationGainDb !== 0
-				) {
-					normalizationCount += 1;
-				}
+				const fadeInSeconds = Math.max(
+					0,
+					typeof element.fadeInDuration === "number" ? element.fadeInDuration : 0,
+				);
+				const fadeOutSeconds = Math.max(
+					0,
+					typeof element.fadeOutDuration === "number" ? element.fadeOutDuration : 0,
+				);
+				const normalizationGainDb =
+					typeof element.normalizationGainDb === "number"
+						? element.normalizationGainDb
+						: 0;
 				supported.push({
 					mediaId: element.mediaId,
 					startTimeSeconds: element.startTime,
@@ -243,12 +286,15 @@ function collectUploadAudioElements({
 					volume: typeof element.volume === "number" ? element.volume : 1,
 					role: element.role ?? "audio",
 					muted: element.muted === true || track.muted === true,
+					fadeInSeconds,
+					fadeOutSeconds,
+					normalizationGainDb,
 				});
 			}
 		}
 	}
 
-	return { supported, libraryCount, playbackRateCount, fadeCount, normalizationCount };
+	return { supported, libraryCount, playbackRateCount };
 }
 
 function extractEffects(
@@ -388,6 +434,14 @@ function summarizeUnsupportedFeatures({
 				? `${audioCount} library audio element(s) skipped (only upload audio is wired through cloud media)`
 				: `${audioCount} dedicated audio track element(s) skipped (enable audioMixing to render)`,
 		);
+	if (features.audioMixing) {
+		const audioCheck = collectUploadAudioElements({ scenes });
+		if (audioCheck.playbackRateCount > 0) {
+			reasons.add(
+				`${audioCheck.playbackRateCount} audio element(s) with custom playbackRate rendered at original speed (atempo follow-up)`,
+			);
+		}
+	}
 	if (nonMainVideoTrackCount > 0)
 		reasons.add(`${nonMainVideoTrackCount} extra video track(s) skipped (only the main track is rendered)`);
 	if (transitionSkippedCount > 0)
@@ -695,7 +749,7 @@ export function buildFfmpegPlan({
 
 	const audioCollection = resolvedFeatures.audioMixing
 		? collectUploadAudioElements({ scenes })
-		: { supported: [], libraryCount: 0, playbackRateCount: 0, fadeCount: 0, normalizationCount: 0 };
+		: { supported: [], libraryCount: 0, playbackRateCount: 0 };
 	const audioElements: PlanFilterGraphAudioElement[] = [];
 	for (const candidate of audioCollection.supported) {
 		if (candidate.muted) continue;
@@ -713,8 +767,15 @@ export function buildFfmpegPlan({
 			trimEndSeconds: candidate.trimEndSeconds,
 			volume: candidate.volume,
 			role: candidate.role,
+			fadeInSeconds: candidate.fadeInSeconds,
+			fadeOutSeconds: candidate.fadeOutSeconds,
+			normalizationGainDb: candidate.normalizationGainDb,
 		});
 	}
+
+	const audioSettings = resolvedFeatures.audioMixing
+		? extractAudioSettings({ project: input.project })
+		: null;
 
 	if (missingMediaIds.size > 0) {
 		return {
@@ -727,7 +788,16 @@ export function buildFfmpegPlan({
 	}
 
 	const anyAudioElement = audioElements.length > 0;
-	if (anyXfadeTransition || anyTrimmedClip || anyColorOrEffect || anyAudioElement) {
+	const anyAudioSettings =
+		audioSettings !== null &&
+		(audioSettings.masterVolume !== 1 || audioSettings.ducking?.enabled === true);
+	if (
+		anyXfadeTransition ||
+		anyTrimmedClip ||
+		anyColorOrEffect ||
+		anyAudioElement ||
+		anyAudioSettings
+	) {
 		return {
 			kind: "video-filter-graph",
 			canvasSize: input.canvasSize,
@@ -738,6 +808,7 @@ export function buildFfmpegPlan({
 			textOverlays,
 			imageOverlays,
 			audioElements,
+			audioSettings,
 		};
 	}
 
@@ -1262,12 +1333,17 @@ export function buildAudioMixChain({
 	clipChainLabel,
 	audioElements,
 	firstAudioInputIndex,
+	audioSettings,
 }: {
 	clipChainLabel: string | null;
 	audioElements: PlanFilterGraphAudioElement[];
 	firstAudioInputIndex: number;
+	audioSettings?: PlanAudioSettings | null;
 }): AudioMixChainResult {
-	if (audioElements.length === 0) {
+	const masterVolume = audioSettings?.masterVolume ?? 1;
+	const ducking = audioSettings?.ducking ?? null;
+	const noElements = audioElements.length === 0;
+	if (noElements && masterVolume === 1) {
 		return {
 			filter: "",
 			finalLabel: clipChainLabel ?? "[finala]",
@@ -1275,9 +1351,9 @@ export function buildAudioMixChain({
 	}
 
 	const stages: string[] = [];
-	const mixInputs: string[] = [];
-	if (clipChainLabel) mixInputs.push(clipChainLabel);
 
+	// Per-element pipeline. Element labels: [ae{i}].
+	const elementLabels: string[] = [];
 	for (let i = 0; i < audioElements.length; i += 1) {
 		const audio = audioElements[i]!;
 		const inputIndex = firstAudioInputIndex + i;
@@ -1290,24 +1366,114 @@ export function buildAudioMixChain({
 			"asetpts=PTS-STARTPTS",
 		];
 		if (volume !== 1) filters.push(`volume=${volume.toFixed(3)}`);
+		const normalizationGainDb = audio.normalizationGainDb ?? 0;
+		if (normalizationGainDb !== 0) {
+			filters.push(`volume=${normalizationGainDb.toFixed(2)}dB`);
+		}
+		const fadeInSeconds = audio.fadeInSeconds ?? 0;
+		if (fadeInSeconds > 0) {
+			filters.push(`afade=t=in:st=0:d=${fadeInSeconds.toFixed(3)}`);
+		}
+		const fadeOutSeconds = audio.fadeOutSeconds ?? 0;
+		if (fadeOutSeconds > 0) {
+			const fadeOutStart = Math.max(
+				0,
+				audio.durationSeconds - fadeOutSeconds,
+			);
+			filters.push(
+				`afade=t=out:st=${fadeOutStart.toFixed(3)}:d=${fadeOutSeconds.toFixed(3)}`,
+			);
+		}
 		if (delayMs > 0) filters.push(`adelay=${delayMs}|${delayMs}`);
 		const label = `[ae${i}]`;
 		stages.push(`[${inputIndex}:a]${filters.join(",")}${label}`);
-		mixInputs.push(label);
+		elementLabels.push(label);
 	}
 
+	// Optional ducking: when enabled, elements with role=voiceover compress
+	// every other element via sidechaincompress. The voiceover stays at its
+	// pre-ducked volume.
+	let voiceoverIndices: number[] = [];
+	let nonVoiceoverIndices: number[] = [];
+	if (ducking?.enabled) {
+		voiceoverIndices = audioElements
+			.map((el, idx) => ({ el, idx }))
+			.filter(({ el }) => el.role === "voiceover")
+			.map(({ idx }) => idx);
+		nonVoiceoverIndices = audioElements
+			.map((el, idx) => ({ el, idx }))
+			.filter(({ el }) => el.role !== "voiceover")
+			.map(({ idx }) => idx);
+	}
+
+	let mixInputs: string[];
+	if (
+		ducking?.enabled &&
+		voiceoverIndices.length > 0 &&
+		nonVoiceoverIndices.length > 0
+	) {
+		// Build a sidechain (combined voiceover) once, then duck each non-voice
+		// element with it. The voiceover passes through to the mix unchanged.
+		if (voiceoverIndices.length === 1) {
+			stages.push(`${elementLabels[voiceoverIndices[0]!]}asplit=2[voice_main][voice_sc]`);
+		} else {
+			const voiceLabels = voiceoverIndices
+				.map((i) => elementLabels[i]!)
+				.join("");
+			stages.push(
+				`${voiceLabels}amix=inputs=${voiceoverIndices.length}:duration=longest:dropout_transition=0[voice_pre]`,
+			);
+			stages.push("[voice_pre]asplit=2[voice_main][voice_sc]");
+		}
+		// 1 - amount maps an editor "amount" of 0..1 to the gain reduction
+		// applied to the music when the voice is present.
+		const ratio = 1 + clamp(ducking.amount, 0, 1) * 7; // 1..8
+		const duckedNonVoiceLabels: string[] = [];
+		for (let j = 0; j < nonVoiceoverIndices.length; j += 1) {
+			const elemIdx = nonVoiceoverIndices[j]!;
+			const sidechainAlias = j === 0 ? "[voice_sc]" : `[voice_sc${j}]`;
+			if (j > 0) {
+				stages.push(`[voice_sc]asplit=2[voice_sc][voice_sc${j}]`);
+			}
+			const duckedLabel = `[duck${j}]`;
+			stages.push(
+				`${elementLabels[elemIdx]!}${sidechainAlias}sidechaincompress=threshold=0.05:ratio=${ratio.toFixed(2)}:attack=${Math.max(1, ducking.attackMs)}:release=${Math.max(1, ducking.releaseMs)}${duckedLabel}`,
+			);
+			duckedNonVoiceLabels.push(duckedLabel);
+		}
+		mixInputs = [];
+		if (clipChainLabel) mixInputs.push(clipChainLabel);
+		mixInputs.push("[voice_main]", ...duckedNonVoiceLabels);
+	} else {
+		mixInputs = [];
+		if (clipChainLabel) mixInputs.push(clipChainLabel);
+		mixInputs.push(...elementLabels);
+	}
+
+	let mixedLabel: string;
 	if (mixInputs.length === 1) {
-		// Only one input → no need to amix; just rename
-		return {
-			filter: stages.join(";"),
-			finalLabel: mixInputs[0]!,
-		};
+		mixedLabel = mixInputs[0]!;
+	} else if (mixInputs.length === 0) {
+		// No clip audio + no elements; defer to caller (should not happen).
+		mixedLabel = "[finala]";
+	} else {
+		// Use [premix] only when we still need to apply masterVolume on top;
+		// otherwise label the mix output [finala] directly so callers downstream
+		// keep matching against the stable label.
+		const mixOutputLabel = masterVolume !== 1 ? "[premix]" : "[finala]";
+		stages.push(
+			`${mixInputs.join("")}amix=inputs=${mixInputs.length}:duration=longest:dropout_transition=0${mixOutputLabel}`,
+		);
+		mixedLabel = mixOutputLabel;
 	}
 
-	stages.push(
-		`${mixInputs.join("")}amix=inputs=${mixInputs.length}:duration=longest:dropout_transition=0[finala]`,
-	);
-	return { filter: stages.join(";"), finalLabel: "[finala]" };
+	if (masterVolume !== 1) {
+		stages.push(
+			`${mixedLabel}volume=${clamp(masterVolume, 0, 4).toFixed(3)}[finala]`,
+		);
+		return { filter: stages.join(";"), finalLabel: "[finala]" };
+	}
+	return { filter: stages.join(";"), finalLabel: mixedLabel };
 }
 
 export function buildVideoFilterGraphFfmpegInvocation({
@@ -1372,6 +1538,7 @@ export function buildVideoFilterGraphFfmpegInvocation({
 				clipChainLabel: acrossfadeChain.finalLabel || null,
 				audioElements,
 				firstAudioInputIndex: mediaInputPaths.length + imageInputPaths.length,
+				audioSettings: plan.audioSettings ?? null,
 			})
 		: { filter: "", finalLabel: "" };
 

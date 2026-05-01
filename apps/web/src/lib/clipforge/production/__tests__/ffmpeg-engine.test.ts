@@ -2176,3 +2176,342 @@ describe("buildVideoFilterGraphFfmpegInvocation with audio elements", () => {
 		).toThrow(/expected 1 audio input paths/i);
 	});
 });
+
+describe("buildAudioMixChain per-element polish (fade, normalization)", () => {
+	test("emits afade=t=in for fadeInSeconds > 0", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "voiceover",
+					fadeInSeconds: 0.5,
+				},
+			],
+			firstAudioInputIndex: 4,
+		});
+		expect(result.filter).toContain("afade=t=in:st=0:d=0.500");
+	});
+
+	test("emits afade=t=out with start = duration - fadeOut", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					startTimeSeconds: 0,
+					durationSeconds: 6,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "music",
+					fadeOutSeconds: 1,
+				},
+			],
+			firstAudioInputIndex: 4,
+		});
+		expect(result.filter).toContain("afade=t=out:st=5.000:d=1.000");
+	});
+
+	test("emits volume=NdB filter for normalizationGainDb", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "voiceover",
+					normalizationGainDb: -3,
+				},
+			],
+			firstAudioInputIndex: 4,
+		});
+		expect(result.filter).toContain("volume=-3.00dB");
+	});
+
+	test("does not emit afade or normalization filters when knobs are zero/absent", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "voiceover",
+				},
+			],
+			firstAudioInputIndex: 4,
+		});
+		expect(result.filter).not.toContain("afade=");
+		expect(result.filter).not.toContain("dB");
+	});
+});
+
+describe("buildAudioMixChain master volume", () => {
+	test("appends a final volume= stage when masterVolume !== 1", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: "[outa]",
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "music",
+				},
+			],
+			firstAudioInputIndex: 4,
+			audioSettings: { masterVolume: 0.6, ducking: null },
+		});
+		// Mix is now [premix], master volume produces [finala]
+		expect(result.filter).toContain("amix=inputs=2");
+		expect(result.filter).toContain("[premix]volume=0.600[finala]");
+		expect(result.finalLabel).toBe("[finala]");
+	});
+
+	test("masterVolume = 1 leaves the mix label unchanged", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: "[outa]",
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "music",
+				},
+			],
+			firstAudioInputIndex: 4,
+			audioSettings: { masterVolume: 1, ducking: null },
+		});
+		expect(result.filter).not.toContain("[premix]");
+		expect(result.finalLabel).toBe("[finala]");
+	});
+});
+
+describe("buildAudioMixChain ducking", () => {
+	test("does nothing when ducking enabled but no voiceover present", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k1",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "music",
+				},
+			],
+			firstAudioInputIndex: 4,
+			audioSettings: {
+				masterVolume: 1,
+				ducking: { enabled: true, amount: 0.5, attackMs: 50, releaseMs: 250 },
+			},
+		});
+		expect(result.filter).not.toContain("sidechaincompress=");
+	});
+
+	test("does nothing when ducking enabled but only voiceover present", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "v",
+					storageKey: "kv",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "voiceover",
+				},
+			],
+			firstAudioInputIndex: 4,
+			audioSettings: {
+				masterVolume: 1,
+				ducking: { enabled: true, amount: 0.5, attackMs: 50, releaseMs: 250 },
+			},
+		});
+		expect(result.filter).not.toContain("sidechaincompress=");
+	});
+
+	test("with one voiceover + one music, applies sidechaincompress on music", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "v",
+					storageKey: "kv",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "voiceover",
+				},
+				{
+					mediaId: "m",
+					storageKey: "km",
+					startTimeSeconds: 0,
+					durationSeconds: 8,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "music",
+				},
+			],
+			firstAudioInputIndex: 4,
+			audioSettings: {
+				masterVolume: 1,
+				ducking: { enabled: true, amount: 0.5, attackMs: 60, releaseMs: 220 },
+			},
+		});
+		expect(result.filter).toContain("asplit=2[voice_main][voice_sc]");
+		expect(result.filter).toContain("sidechaincompress=threshold=0.05:ratio=4.50:attack=60:release=220");
+		// Final mix combines voice_main + duck0
+		expect(result.filter).toMatch(/\[voice_main\]\[duck0\]amix=/);
+	});
+
+	test("multiple non-voice elements each get a unique sidechain alias", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "v",
+					storageKey: "kv",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "voiceover",
+				},
+				{
+					mediaId: "m",
+					storageKey: "km",
+					startTimeSeconds: 0,
+					durationSeconds: 8,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "music",
+				},
+				{
+					mediaId: "s",
+					storageKey: "ks",
+					startTimeSeconds: 1,
+					durationSeconds: 2,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "sfx",
+				},
+			],
+			firstAudioInputIndex: 4,
+			audioSettings: {
+				masterVolume: 1,
+				ducking: { enabled: true, amount: 0.5, attackMs: 50, releaseMs: 250 },
+			},
+		});
+		expect(result.filter).toContain("[voice_sc]asplit=2[voice_sc][voice_sc1]");
+		expect(result.filter).toContain("[duck0]");
+		expect(result.filter).toContain("[duck1]");
+	});
+});
+
+describe("plan-builder threads project audio settings into video-filter-graph", () => {
+	test("non-default masterVolume triggers filter-graph plan and is captured", () => {
+		const project = makeProject({
+			scenes: [
+				makeMainScene({
+					elements: [makeVideoElement({ mediaId: "v_a", duration: 4 })],
+				}),
+			],
+		});
+		project.settings = {
+			...project.settings,
+			audio: {
+				masterVolume: 0.7,
+				duckingEnabled: false,
+				duckingAmount: 0,
+				duckingAttackMs: 50,
+				duckingReleaseMs: 250,
+			},
+		};
+		const input = buildRenderGraphInput({
+			project,
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_v" }],
+		});
+		const plan = buildFfmpegPlan({ input, features: { audioMixing: true } });
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.audioSettings?.masterVolume).toBe(0.7);
+		expect(plan.audioSettings?.ducking).toBeNull();
+	});
+
+	test("ducking enabled in project settings flows into plan with knobs", () => {
+		const project = makeProject({
+			scenes: [
+				makeMainScene({
+					elements: [makeVideoElement({ mediaId: "v_a", duration: 4 })],
+				}),
+			],
+		});
+		project.settings = {
+			...project.settings,
+			audio: {
+				masterVolume: 1,
+				duckingEnabled: true,
+				duckingAmount: 0.6,
+				duckingAttackMs: 70,
+				duckingReleaseMs: 300,
+			},
+		};
+		const input = buildRenderGraphInput({
+			project,
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_v" }],
+		});
+		const plan = buildFfmpegPlan({ input, features: { audioMixing: true } });
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.audioSettings?.ducking).toEqual({
+			enabled: true,
+			amount: 0.6,
+			attackMs: 70,
+			releaseMs: 300,
+		});
+	});
+});
