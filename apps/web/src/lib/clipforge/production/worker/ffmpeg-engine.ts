@@ -6,6 +6,7 @@ import {
 	buildVideoFilterGraphFfmpegInvocation,
 	type FfmpegFeatureFlags,
 	type FfmpegPlan,
+	type PlanFilterGraphAudioElement,
 	type PlanFilterGraphClip,
 	type PlanImageOverlay,
 } from "./ffmpeg-plan";
@@ -122,6 +123,10 @@ export class FfmpegRenderEngine implements RenderEngine {
 					clips: plan.clips,
 					cleanups,
 				});
+				const audioInputPaths = await this.materializeAudioElements({
+					audioElements: plan.audioElements ?? [],
+					cleanups,
+				});
 				const outputPath = this.fs.join(workDir, outputFileNameForFormat(plan.format));
 				invocation = buildVideoFilterGraphFfmpegInvocation({
 					plan,
@@ -129,6 +134,7 @@ export class FfmpegRenderEngine implements RenderEngine {
 					supportSummary,
 					imageInputPaths,
 					mediaInputPaths: localClips.map((c) => c.localPath),
+					audioInputPaths,
 					fontFile: this.fontFile,
 				});
 				durationSeconds = computeFilterGraphDuration(plan.clips);
@@ -200,6 +206,29 @@ export class FfmpegRenderEngine implements RenderEngine {
 					cloudStorageKey: overlay.storageKey,
 				},
 				mediaIndex: 1000 + i,
+			});
+			if (fetched.cleanup) cleanups.push(fetched.cleanup);
+			paths.push(fetched.localPath);
+		}
+		return paths;
+	}
+
+	private async materializeAudioElements({
+		audioElements,
+		cleanups,
+	}: {
+		audioElements: PlanFilterGraphAudioElement[];
+		cleanups: Array<() => Promise<void>>;
+	}): Promise<string[]> {
+		const paths: string[] = [];
+		for (let i = 0; i < audioElements.length; i += 1) {
+			const audio = audioElements[i]!;
+			const fetched = await this.mediaFetcher.fetchToLocalPath({
+				mediaRef: {
+					mediaId: audio.mediaId,
+					cloudStorageKey: audio.storageKey,
+				},
+				mediaIndex: 2000 + i,
 			});
 			if (fetched.cleanup) cleanups.push(fetched.cleanup);
 			paths.push(fetched.localPath);

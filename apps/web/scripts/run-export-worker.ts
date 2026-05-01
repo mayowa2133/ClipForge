@@ -73,6 +73,7 @@ function parseFeatureFlags(raw: string | null): {
 	captionWordReveals: boolean;
 	transitions: boolean;
 	colorAndEffects: boolean;
+	audioMixing: boolean;
 } {
 	const set = new Set(
 		(raw ?? "")
@@ -89,6 +90,8 @@ function parseFeatureFlags(raw: string | null): {
 		transitions: all || set.has("transitions") || set.has("xfade"),
 		colorAndEffects:
 			all || set.has("color") || set.has("effects") || set.has("color-and-effects"),
+		audioMixing:
+			all || set.has("audio") || set.has("audio-mix") || set.has("audio-mixing"),
 	};
 }
 

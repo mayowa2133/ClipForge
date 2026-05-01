@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	buildAcrossfadeChainFilter,
 	buildAdjustmentsFilter,
+	buildAudioMixChain,
 	buildBlackVideoFfmpegInvocation,
 	buildDrawtextFilter,
 	buildEffectFilter,
@@ -19,10 +20,12 @@ import {
 } from "@/lib/clipforge/production/worker/ffmpeg-engine";
 import type { TProject } from "@/types/project";
 import type {
+	AudioTrack,
 	ImageElement,
 	TScene,
 	TextElement,
 	TextTrack,
+	UploadAudioElement,
 	VideoElement,
 	VideoTrack,
 } from "@/types/timeline";
@@ -1770,5 +1773,406 @@ describe("xfade chain integrates color/effect filters per clip", () => {
 		const sharpIdx = result.filter.indexOf("unsharp=");
 		expect(blurIdx).toBeGreaterThan(-1);
 		expect(sharpIdx).toBeGreaterThan(blurIdx);
+	});
+});
+
+function makeUploadAudioElement(
+	overrides: Partial<UploadAudioElement> = {},
+): UploadAudioElement {
+	return {
+		id: "ae_1",
+		name: "voice.wav",
+		type: "audio",
+		sourceType: "upload",
+		mediaId: "audio_a",
+		duration: 4,
+		startTime: 0,
+		trimStart: 0,
+		trimEnd: 0,
+		volume: 1,
+		...overrides,
+	} as UploadAudioElement;
+}
+
+function makeSceneWithVideoAndAudio({
+	video,
+	audio,
+	audioTrackMuted = false,
+}: {
+	video: VideoElement[];
+	audio: UploadAudioElement[];
+	audioTrackMuted?: boolean;
+}): TScene {
+	const videoTrack: VideoTrack = {
+		id: "track_main",
+		name: "Main",
+		type: "video",
+		isMain: true,
+		muted: false,
+		hidden: false,
+		elements: video,
+	};
+	const audioTrack: AudioTrack = {
+		id: "track_audio",
+		name: "Audio",
+		type: "audio",
+		muted: audioTrackMuted,
+		elements: audio,
+	};
+	return {
+		id: "scene_av",
+		name: "av",
+		isMain: true,
+		tracks: [videoTrack, audioTrack],
+		bookmarks: [],
+		createdAt: new Date(),
+		updatedAt: new Date(),
+	};
+}
+
+describe("buildFfmpegPlan with audioMixing feature flag", () => {
+	test("upload audio elements are skipped when flag is off (with warning summary)", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeSceneWithVideoAndAudio({
+						video: [makeVideoElement({ mediaId: "v_a" })],
+						audio: [makeUploadAudioElement({ mediaId: "audio_a" })],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v_a", cloudStorageKey: "k_v" },
+				{ mediaId: "audio_a", cloudStorageKey: "k_a" },
+			],
+		});
+		const plan = buildFfmpegPlan({ input });
+		expect(plan.kind).toBe("video-concat");
+	});
+
+	test("upload audio with flag on routes to filter-graph and surfaces audioElements", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeSceneWithVideoAndAudio({
+						video: [makeVideoElement({ mediaId: "v_a", duration: 6 })],
+						audio: [
+							makeUploadAudioElement({
+								id: "ae_voice",
+								mediaId: "audio_a",
+								startTime: 1,
+								duration: 3,
+								volume: 0.7,
+								role: "voiceover",
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v_a", cloudStorageKey: "k_v" },
+				{ mediaId: "audio_a", cloudStorageKey: "k_a" },
+			],
+		});
+		const plan = buildFfmpegPlan({ input, features: { audioMixing: true } });
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.audioElements).toHaveLength(1);
+		expect(plan.audioElements?.[0]).toMatchObject({
+			mediaId: "audio_a",
+			startTimeSeconds: 1,
+			durationSeconds: 3,
+			volume: 0.7,
+			role: "voiceover",
+			storageKey: "k_a",
+		});
+	});
+
+	test("muted audio elements are dropped (element-level)", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeSceneWithVideoAndAudio({
+						video: [makeVideoElement({ mediaId: "v_a" })],
+						audio: [
+							makeUploadAudioElement({ mediaId: "audio_a", muted: true }),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v_a", cloudStorageKey: "k_v" },
+				{ mediaId: "audio_a", cloudStorageKey: "k_a" },
+			],
+		});
+		const plan = buildFfmpegPlan({ input, features: { audioMixing: true } });
+		expect(plan.kind).toBe("video-concat");
+	});
+
+	test("muted audio track drops all its elements", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeSceneWithVideoAndAudio({
+						video: [makeVideoElement({ mediaId: "v_a" })],
+						audio: [makeUploadAudioElement({ mediaId: "audio_a" })],
+						audioTrackMuted: true,
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v_a", cloudStorageKey: "k_v" },
+				{ mediaId: "audio_a", cloudStorageKey: "k_a" },
+			],
+		});
+		const plan = buildFfmpegPlan({ input, features: { audioMixing: true } });
+		expect(plan.kind).toBe("video-concat");
+	});
+
+	test("audio element missing cloud media yields unsupported plan", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeSceneWithVideoAndAudio({
+						video: [makeVideoElement({ mediaId: "v_a" })],
+						audio: [makeUploadAudioElement({ mediaId: "audio_missing" })],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_v" }],
+		});
+		const plan = buildFfmpegPlan({ input, features: { audioMixing: true } });
+		expect(plan.kind).toBe("unsupported");
+		if (plan.kind !== "unsupported") return;
+		expect(plan.reasons.some((r) => r.includes("audio_missing"))).toBe(true);
+	});
+});
+
+describe("buildAudioMixChain", () => {
+	test("returns empty chain when there are no audio elements", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: "[outa]",
+			audioElements: [],
+			firstAudioInputIndex: 5,
+		});
+		expect(result.filter).toBe("");
+		expect(result.finalLabel).toBe("[outa]");
+	});
+
+	test("single audio element with volume + delay produces a single labeled stream", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					startTimeSeconds: 1.25,
+					durationSeconds: 3,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 0.5,
+					role: "voiceover",
+				},
+			],
+			firstAudioInputIndex: 4,
+		});
+		expect(result.filter).toContain("[4:a]");
+		expect(result.filter).toContain("atrim=start=0.000:duration=3.000");
+		expect(result.filter).toContain("volume=0.500");
+		expect(result.filter).toContain("adelay=1250|1250");
+		expect(result.filter).not.toContain("amix=");
+		expect(result.finalLabel).toBe("[ae0]");
+	});
+
+	test("clip-audio + one element mixes into [finala] via amix=2", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: "[outa]",
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "music",
+				},
+			],
+			firstAudioInputIndex: 4,
+		});
+		expect(result.filter).toContain("amix=inputs=2:duration=longest:dropout_transition=0[finala]");
+		expect(result.finalLabel).toBe("[finala]");
+		// The mix order should put [outa] first, then [ae0]
+		expect(result.filter).toMatch(/\[outa\]\[ae0\]amix=/);
+	});
+
+	test("multiple elements without clip audio still mix together", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k1",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "music",
+				},
+				{
+					mediaId: "b",
+					storageKey: "k2",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "sfx",
+				},
+			],
+			firstAudioInputIndex: 4,
+		});
+		expect(result.filter).toContain("amix=inputs=2");
+		expect(result.finalLabel).toBe("[finala]");
+		expect(result.filter).toMatch(/\[ae0\]\[ae1\]amix=/);
+	});
+
+	test("trims pass through to atrim correctly", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					startTimeSeconds: 0,
+					durationSeconds: 2,
+					trimStartSeconds: 0.5,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "voiceover",
+				},
+			],
+			firstAudioInputIndex: 4,
+		});
+		expect(result.filter).toContain("atrim=start=0.500:duration=2.000");
+	});
+});
+
+describe("buildVideoFilterGraphFfmpegInvocation with audio elements", () => {
+	test("emits N media -i + image -loop 1 -i + audio -i in that order", () => {
+		const invocation = buildVideoFilterGraphFfmpegInvocation({
+			plan: {
+				kind: "video-filter-graph",
+				canvasSize: { width: 1080, height: 1920 },
+				includeAudio: true,
+				format: "mp4",
+				quality: "high",
+				clips: [
+					{
+						mediaId: "v_a",
+						storageKey: "k_v",
+						durationSeconds: 4,
+						trimStartSeconds: 0,
+						trimEndSeconds: 0,
+						transitionInFromPrev: null,
+					},
+				],
+				textOverlays: [],
+				imageOverlays: [],
+				audioElements: [
+					{
+						mediaId: "audio_a",
+						storageKey: "k_a",
+						startTimeSeconds: 0.5,
+						durationSeconds: 3,
+						trimStartSeconds: 0,
+						trimEndSeconds: 0,
+						volume: 1,
+						role: "music",
+					},
+				],
+			},
+			outputPath: "/tmp/out.mp4",
+			supportSummary: [],
+			mediaInputPaths: ["/tmp/v_a.mp4"],
+			audioInputPaths: ["/tmp/audio_a.wav"],
+		});
+		// Inputs: 1 video + 0 image + 1 audio = 2 -i flags total
+		const inputCount = invocation.args.filter((a) => a === "-i").length;
+		expect(inputCount).toBe(2);
+		const filterValue =
+			invocation.args[invocation.args.indexOf("-filter_complex") + 1]!;
+		// Audio element is input index 1 → [1:a]
+		expect(filterValue).toContain("[1:a]");
+		expect(filterValue).toContain("amix=inputs=2");
+		// Final audio map should be [finala]
+		const mapValues = invocation.args
+			.map((a, i) => (a === "-map" ? invocation.args[i + 1] : null))
+			.filter((v): v is string => v !== null);
+		expect(mapValues).toContain("[finala]");
+	});
+
+	test("throws when audioInputPaths length doesn't match audioElements", () => {
+		expect(() =>
+			buildVideoFilterGraphFfmpegInvocation({
+				plan: {
+					kind: "video-filter-graph",
+					canvasSize: { width: 1080, height: 1920 },
+					includeAudio: true,
+					format: "mp4",
+					quality: "high",
+					clips: [
+						{
+							mediaId: "v_a",
+							storageKey: "k_v",
+							durationSeconds: 4,
+							trimStartSeconds: 0,
+							trimEndSeconds: 0,
+							transitionInFromPrev: null,
+						},
+					],
+					textOverlays: [],
+					imageOverlays: [],
+					audioElements: [
+						{
+							mediaId: "audio_a",
+							storageKey: "k_a",
+							startTimeSeconds: 0,
+							durationSeconds: 3,
+							trimStartSeconds: 0,
+							trimEndSeconds: 0,
+							volume: 1,
+							role: "music",
+						},
+					],
+				},
+				outputPath: "/tmp/out.mp4",
+				supportSummary: [],
+				mediaInputPaths: ["/tmp/v_a.mp4"],
+				audioInputPaths: [],
+			}),
+		).toThrow(/expected 1 audio input paths/i);
 	});
 });

@@ -18,6 +18,7 @@ export interface FfmpegFeatureFlags {
 	captionWordReveals?: boolean;
 	transitions?: boolean;
 	colorAndEffects?: boolean;
+	audioMixing?: boolean;
 }
 
 export const DEFAULT_FFMPEG_FEATURES: Required<FfmpegFeatureFlags> = {
@@ -26,6 +27,7 @@ export const DEFAULT_FFMPEG_FEATURES: Required<FfmpegFeatureFlags> = {
 	captionWordReveals: false,
 	transitions: false,
 	colorAndEffects: false,
+	audioMixing: false,
 };
 
 const SUPPORTED_COLOR_KNOBS = new Set([
@@ -90,6 +92,19 @@ export interface PlanColorAdjustments {
 	saturation: number;
 }
 
+export type PlanAudioRole = "voiceover" | "music" | "sfx" | "audio";
+
+export interface PlanFilterGraphAudioElement {
+	mediaId: string;
+	storageKey: string;
+	startTimeSeconds: number;
+	durationSeconds: number;
+	trimStartSeconds: number;
+	trimEndSeconds: number;
+	volume: number;
+	role: PlanAudioRole;
+}
+
 export interface PlanFilterGraphClip {
 	mediaId: string;
 	storageKey: string;
@@ -140,6 +155,7 @@ export type FfmpegPlan =
 			clips: PlanFilterGraphClip[];
 			textOverlays: PlanTextOverlay[];
 			imageOverlays: PlanImageOverlay[];
+			audioElements?: PlanFilterGraphAudioElement[];
 	  }
 	| {
 			kind: "unsupported";
@@ -159,6 +175,80 @@ interface PlanProgress {
 		unsupportedAdjustmentKnobs: string[];
 	}>;
 	reasons: string[];
+}
+
+interface UploadAudioCandidate {
+	mediaId: string;
+	startTimeSeconds: number;
+	durationSeconds: number;
+	trimStartSeconds: number;
+	trimEndSeconds: number;
+	volume: number;
+	role: PlanAudioRole;
+	muted: boolean;
+}
+
+interface UploadAudioCollection {
+	supported: UploadAudioCandidate[];
+	libraryCount: number;
+	playbackRateCount: number;
+	fadeCount: number;
+	normalizationCount: number;
+}
+
+function collectUploadAudioElements({
+	scenes,
+}: {
+	scenes: TScene[];
+}): UploadAudioCollection {
+	const supported: UploadAudioCandidate[] = [];
+	let libraryCount = 0;
+	let playbackRateCount = 0;
+	let fadeCount = 0;
+	let normalizationCount = 0;
+
+	for (const scene of scenes) {
+		for (const track of scene.tracks) {
+			if (track.type !== "audio") continue;
+			for (const element of track.elements) {
+				if (element.sourceType !== "upload") {
+					libraryCount += 1;
+					continue;
+				}
+				if (
+					typeof element.playbackRate === "number" &&
+					element.playbackRate !== 1 &&
+					element.playbackRate !== 0
+				) {
+					playbackRateCount += 1;
+				}
+				if (
+					(typeof element.fadeInDuration === "number" && element.fadeInDuration > 0) ||
+					(typeof element.fadeOutDuration === "number" && element.fadeOutDuration > 0)
+				) {
+					fadeCount += 1;
+				}
+				if (
+					typeof element.normalizationGainDb === "number" &&
+					element.normalizationGainDb !== 0
+				) {
+					normalizationCount += 1;
+				}
+				supported.push({
+					mediaId: element.mediaId,
+					startTimeSeconds: element.startTime,
+					durationSeconds: element.duration,
+					trimStartSeconds: element.trimStart,
+					trimEndSeconds: element.trimEnd,
+					volume: typeof element.volume === "number" ? element.volume : 1,
+					role: element.role ?? "audio",
+					muted: element.muted === true || track.muted === true,
+				});
+			}
+		}
+	}
+
+	return { supported, libraryCount, playbackRateCount, fadeCount, normalizationCount };
 }
 
 function extractEffects(
@@ -274,7 +364,16 @@ function summarizeUnsupportedFeatures({
 			}
 			if (track.type === "text" && !features.textOverlays) textCount += track.elements.length;
 			if (track.type === "sticker") stickerCount += track.elements.length;
-			if (track.type === "audio") audioCount += track.elements.length;
+			if (track.type === "audio") {
+				if (!features.audioMixing) {
+					audioCount += track.elements.length;
+				} else {
+					// Library audio is not yet supported even with the flag on
+					for (const el of track.elements) {
+						if (el.sourceType !== "upload") audioCount += 1;
+					}
+				}
+			}
 		}
 	}
 
@@ -283,7 +382,12 @@ function summarizeUnsupportedFeatures({
 	if (textCount > 0)
 		reasons.add(`${textCount} text/caption element(s) skipped (enable textOverlays to render)`);
 	if (stickerCount > 0) reasons.add(`${stickerCount} sticker element(s) skipped`);
-	if (audioCount > 0) reasons.add(`${audioCount} dedicated audio track element(s) skipped`);
+	if (audioCount > 0)
+		reasons.add(
+			features.audioMixing
+				? `${audioCount} library audio element(s) skipped (only upload audio is wired through cloud media)`
+				: `${audioCount} dedicated audio track element(s) skipped (enable audioMixing to render)`,
+		);
 	if (nonMainVideoTrackCount > 0)
 		reasons.add(`${nonMainVideoTrackCount} extra video track(s) skipped (only the main track is rendered)`);
 	if (transitionSkippedCount > 0)
@@ -589,17 +693,41 @@ export function buildFfmpegPlan({
 		});
 	}
 
+	const audioCollection = resolvedFeatures.audioMixing
+		? collectUploadAudioElements({ scenes })
+		: { supported: [], libraryCount: 0, playbackRateCount: 0, fadeCount: 0, normalizationCount: 0 };
+	const audioElements: PlanFilterGraphAudioElement[] = [];
+	for (const candidate of audioCollection.supported) {
+		if (candidate.muted) continue;
+		const ref = mediaRefIndex.get(candidate.mediaId);
+		if (!ref || !ref.cloudStorageKey) {
+			missingMediaIds.add(candidate.mediaId);
+			continue;
+		}
+		audioElements.push({
+			mediaId: candidate.mediaId,
+			storageKey: ref.cloudStorageKey,
+			startTimeSeconds: candidate.startTimeSeconds,
+			durationSeconds: candidate.durationSeconds,
+			trimStartSeconds: candidate.trimStartSeconds,
+			trimEndSeconds: candidate.trimEndSeconds,
+			volume: candidate.volume,
+			role: candidate.role,
+		});
+	}
+
 	if (missingMediaIds.size > 0) {
 		return {
 			kind: "unsupported",
 			reasons: [
 				...reasons,
-				`Missing cloud media for ${missingMediaIds.size} clip(s)/overlay(s): ${Array.from(missingMediaIds).join(", ")}. Upload media to cloud first.`,
+				`Missing cloud media for ${missingMediaIds.size} clip(s)/overlay(s)/audio(s): ${Array.from(missingMediaIds).join(", ")}. Upload media to cloud first.`,
 			],
 		};
 	}
 
-	if (anyXfadeTransition || anyTrimmedClip || anyColorOrEffect) {
+	const anyAudioElement = audioElements.length > 0;
+	if (anyXfadeTransition || anyTrimmedClip || anyColorOrEffect || anyAudioElement) {
 		return {
 			kind: "video-filter-graph",
 			canvasSize: input.canvasSize,
@@ -609,6 +737,7 @@ export function buildFfmpegPlan({
 			clips: filterGraphClips,
 			textOverlays,
 			imageOverlays,
+			audioElements,
 		};
 	}
 
@@ -1124,12 +1253,70 @@ export function buildAcrossfadeChainFilter({
 	return { filter: stages.join(";"), finalLabel: currentLabel };
 }
 
+export interface AudioMixChainResult {
+	filter: string;
+	finalLabel: string;
+}
+
+export function buildAudioMixChain({
+	clipChainLabel,
+	audioElements,
+	firstAudioInputIndex,
+}: {
+	clipChainLabel: string | null;
+	audioElements: PlanFilterGraphAudioElement[];
+	firstAudioInputIndex: number;
+}): AudioMixChainResult {
+	if (audioElements.length === 0) {
+		return {
+			filter: "",
+			finalLabel: clipChainLabel ?? "[finala]",
+		};
+	}
+
+	const stages: string[] = [];
+	const mixInputs: string[] = [];
+	if (clipChainLabel) mixInputs.push(clipChainLabel);
+
+	for (let i = 0; i < audioElements.length; i += 1) {
+		const audio = audioElements[i]!;
+		const inputIndex = firstAudioInputIndex + i;
+		const trimStart = audio.trimStartSeconds.toFixed(3);
+		const duration = audio.durationSeconds.toFixed(3);
+		const delayMs = Math.max(0, Math.round(audio.startTimeSeconds * 1000));
+		const volume = clamp(audio.volume, 0, 4);
+		const filters: string[] = [
+			`atrim=start=${trimStart}:duration=${duration}`,
+			"asetpts=PTS-STARTPTS",
+		];
+		if (volume !== 1) filters.push(`volume=${volume.toFixed(3)}`);
+		if (delayMs > 0) filters.push(`adelay=${delayMs}|${delayMs}`);
+		const label = `[ae${i}]`;
+		stages.push(`[${inputIndex}:a]${filters.join(",")}${label}`);
+		mixInputs.push(label);
+	}
+
+	if (mixInputs.length === 1) {
+		// Only one input → no need to amix; just rename
+		return {
+			filter: stages.join(";"),
+			finalLabel: mixInputs[0]!,
+		};
+	}
+
+	stages.push(
+		`${mixInputs.join("")}amix=inputs=${mixInputs.length}:duration=longest:dropout_transition=0[finala]`,
+	);
+	return { filter: stages.join(";"), finalLabel: "[finala]" };
+}
+
 export function buildVideoFilterGraphFfmpegInvocation({
 	plan,
 	outputPath,
 	supportSummary,
 	imageInputPaths = [],
 	mediaInputPaths,
+	audioInputPaths = [],
 	fontFile,
 }: {
 	plan: Extract<FfmpegPlan, { kind: "video-filter-graph" }>;
@@ -1137,11 +1324,18 @@ export function buildVideoFilterGraphFfmpegInvocation({
 	supportSummary: string[];
 	imageInputPaths?: string[];
 	mediaInputPaths: string[];
+	audioInputPaths?: string[];
 	fontFile?: string | null;
 }): FfmpegInvocation {
 	if (mediaInputPaths.length !== plan.clips.length) {
 		throw new Error(
 			`buildVideoFilterGraphFfmpegInvocation: expected ${plan.clips.length} media input paths, got ${mediaInputPaths.length}`,
+		);
+	}
+	const audioElements = plan.audioElements ?? [];
+	if (audioInputPaths.length !== audioElements.length) {
+		throw new Error(
+			`buildVideoFilterGraphFfmpegInvocation: expected ${audioElements.length} audio input paths, got ${audioInputPaths.length}`,
 		);
 	}
 
@@ -1152,6 +1346,9 @@ export function buildVideoFilterGraphFfmpegInvocation({
 	}
 	for (const imagePath of imageInputPaths) {
 		args.push("-loop", "1", "-i", imagePath);
+	}
+	for (const audioPath of audioInputPaths) {
+		args.push("-i", audioPath);
 	}
 
 	const xfadeChain = buildXfadeChainFilter({
@@ -1169,7 +1366,14 @@ export function buildVideoFilterGraphFfmpegInvocation({
 	});
 	const acrossfadeChain = includeAudio
 		? buildAcrossfadeChainFilter({ clips: plan.clips })
-		: { filter: "", finalLabel: "[outa]" };
+		: { filter: "", finalLabel: "" };
+	const audioMixChain = includeAudio
+		? buildAudioMixChain({
+				clipChainLabel: acrossfadeChain.finalLabel || null,
+				audioElements,
+				firstAudioInputIndex: mediaInputPaths.length + imageInputPaths.length,
+			})
+		: { filter: "", finalLabel: "" };
 
 	const filterParts: string[] = [];
 	if (xfadeChain.filter) {
@@ -1182,6 +1386,7 @@ export function buildVideoFilterGraphFfmpegInvocation({
 	}
 	if (overlayFilter) filterParts.push(overlayFilter);
 	if (acrossfadeChain.filter) filterParts.push(acrossfadeChain.filter);
+	if (audioMixChain.filter) filterParts.push(audioMixChain.filter);
 
 	const finalVideoLabel =
 		plan.textOverlays.length > 0
@@ -1203,7 +1408,7 @@ export function buildVideoFilterGraphFfmpegInvocation({
 		"yuv420p",
 	);
 	if (includeAudio) {
-		args.push("-map", acrossfadeChain.finalLabel);
+		args.push("-map", audioMixChain.finalLabel || acrossfadeChain.finalLabel);
 		args.push("-c:a", audioCodecForFormat(format), "-b:a", audioBitrateForQuality(quality));
 	} else {
 		args.push("-an");
