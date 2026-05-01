@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
 	buildAcrossfadeChainFilter,
+	buildAdjustmentsFilter,
 	buildBlackVideoFfmpegInvocation,
 	buildDrawtextFilter,
+	buildEffectFilter,
 	buildFfmpegPlan,
 	buildVideoConcatFfmpegInvocation,
 	buildVideoFilterGraphFfmpegInvocation,
@@ -1486,5 +1488,287 @@ describe("buildAcrossfadeChainFilter", () => {
 		expect(result.filter).toContain("acrossfade=d=1");
 		expect(result.filter).toContain("concat=n=2:v=0:a=1");
 		expect(result.finalLabel).toBe("[outa]");
+	});
+});
+
+describe("buildAdjustmentsFilter", () => {
+	test("returns null when all knobs are zero", () => {
+		expect(
+			buildAdjustmentsFilter({
+				adjustments: { exposure: 0, contrast: 0, saturation: 0 },
+			}),
+		).toBeNull();
+	});
+
+	test("includes exposure as brightness, clamped to [-1, 1]", () => {
+		expect(
+			buildAdjustmentsFilter({
+				adjustments: { exposure: 0.4, contrast: 0, saturation: 0 },
+			}),
+		).toContain("brightness=0.400");
+		expect(
+			buildAdjustmentsFilter({
+				adjustments: { exposure: 5, contrast: 0, saturation: 0 },
+			}),
+		).toContain("brightness=1.000");
+	});
+
+	test("maps contrast to 1+offset and saturation to 1+offset, both clamped", () => {
+		const filter = buildAdjustmentsFilter({
+			adjustments: { exposure: 0, contrast: 0.5, saturation: -0.25 },
+		});
+		expect(filter).toContain("contrast=1.500");
+		expect(filter).toContain("saturation=0.750");
+	});
+
+	test("returns the eq= prefix when any knob is non-zero", () => {
+		const filter = buildAdjustmentsFilter({
+			adjustments: { exposure: 0.1, contrast: 0, saturation: 0 },
+		});
+		expect(filter?.startsWith("eq=")).toBe(true);
+	});
+});
+
+describe("buildEffectFilter", () => {
+	test("blur maps to gblur=sigma=N", () => {
+		expect(buildEffectFilter({ effect: { kind: "blur", radius: 4 } })).toBe(
+			"gblur=sigma=4.000",
+		);
+	});
+
+	test("blur clamps a 0-radius to 0.1 (ffmpeg requires sigma > 0)", () => {
+		expect(buildEffectFilter({ effect: { kind: "blur", radius: 0 } })).toContain(
+			"sigma=0.100",
+		);
+	});
+
+	test("sharpen maps to unsharp with luma amount", () => {
+		expect(
+			buildEffectFilter({ effect: { kind: "sharpen", amount: 0.5 } }),
+		).toBe("unsharp=lx=5:ly=5:la=0.500");
+	});
+
+	test("vignette maps to vignette=angle=intensity * pi/4", () => {
+		const filter = buildEffectFilter({
+			effect: { kind: "vignette", intensity: 0.5 },
+		});
+		// 0.5 * pi/4 ≈ 0.393
+		expect(filter).toContain("vignette=angle=");
+		expect(filter).toContain("0.393");
+	});
+});
+
+describe("buildFfmpegPlan with colorAndEffects feature flag", () => {
+	test("clips with effects stay video-concat when flag is off, with skip warning", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 4,
+								effects: [
+									{ id: "e1", kind: "blur", enabled: true, radius: 5 },
+								],
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
+		});
+		const plan = buildFfmpegPlan({ input });
+		expect(plan.kind).toBe("video-concat");
+	});
+
+	test("clip with effect is rendered when flag is on (forces filter-graph)", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 4,
+								effects: [
+									{ id: "e1", kind: "blur", enabled: true, radius: 4 },
+								],
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
+		});
+		const plan = buildFfmpegPlan({ input, features: { colorAndEffects: true } });
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.clips[0]!.effects).toEqual([{ kind: "blur", radius: 4 }]);
+	});
+
+	test("disabled effects are not applied even with flag on", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 4,
+								effects: [
+									{ id: "e1", kind: "blur", enabled: false, radius: 4 },
+								],
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
+		});
+		const plan = buildFfmpegPlan({ input, features: { colorAndEffects: true } });
+		// No effects to apply, no other reason to switch to filter-graph
+		expect(plan.kind).toBe("video-concat");
+	});
+
+	test("clip with non-zero exposure routes to filter-graph and emits adjustments", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 4,
+								adjustments: {
+									exposure: 0.2,
+									contrast: 0,
+									saturation: 0,
+									temperature: 0,
+									tint: 0,
+									highlights: 0,
+									shadows: 0,
+								},
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
+		});
+		const plan = buildFfmpegPlan({ input, features: { colorAndEffects: true } });
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.clips[0]!.adjustments).toEqual({
+			exposure: 0.2,
+			contrast: 0,
+			saturation: 0,
+		});
+	});
+
+	test("temperature/tint/highlights/shadows are reported as unsupported when flag is on", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 4,
+								adjustments: {
+									exposure: 0,
+									contrast: 0,
+									saturation: 0,
+									temperature: 0.3,
+									tint: 0,
+									highlights: 0.5,
+									shadows: 0,
+								},
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
+		});
+		const plan = buildFfmpegPlan({ input, features: { colorAndEffects: true } });
+		// No supported color/effect → falls back to concat
+		expect(plan.kind).toBe("video-concat");
+	});
+});
+
+describe("xfade chain integrates color/effect filters per clip", () => {
+	test("emits eq before format=yuv420p and after baseScale", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+					adjustments: { exposure: 0.1, contrast: 0, saturation: 0 },
+					effects: [],
+				},
+			],
+		});
+		expect(result.filter).toContain("eq=brightness=0.100");
+		const eqIdx = result.filter.indexOf("eq=");
+		const fmtIdx = result.filter.indexOf("format=yuv420p");
+		const scaleIdx = result.filter.indexOf("scale=");
+		expect(scaleIdx).toBeLessThan(eqIdx);
+		expect(eqIdx).toBeLessThan(fmtIdx);
+	});
+
+	test("emits effect filters in declaration order", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+					adjustments: null,
+					effects: [
+						{ kind: "blur", radius: 2 },
+						{ kind: "sharpen", amount: 0.4 },
+					],
+				},
+			],
+		});
+		const blurIdx = result.filter.indexOf("gblur=");
+		const sharpIdx = result.filter.indexOf("unsharp=");
+		expect(blurIdx).toBeGreaterThan(-1);
+		expect(sharpIdx).toBeGreaterThan(blurIdx);
 	});
 });

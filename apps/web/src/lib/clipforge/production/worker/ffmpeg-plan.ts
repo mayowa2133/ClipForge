@@ -8,6 +8,8 @@ import type {
 	TScene,
 	TextElement,
 	VideoTrack,
+	VisualAdjustments,
+	VisualEffect,
 } from "@/types/timeline";
 
 export interface FfmpegFeatureFlags {
@@ -15,6 +17,7 @@ export interface FfmpegFeatureFlags {
 	imageOverlays?: boolean;
 	captionWordReveals?: boolean;
 	transitions?: boolean;
+	colorAndEffects?: boolean;
 }
 
 export const DEFAULT_FFMPEG_FEATURES: Required<FfmpegFeatureFlags> = {
@@ -22,7 +25,20 @@ export const DEFAULT_FFMPEG_FEATURES: Required<FfmpegFeatureFlags> = {
 	imageOverlays: false,
 	captionWordReveals: false,
 	transitions: false,
+	colorAndEffects: false,
 };
+
+const SUPPORTED_COLOR_KNOBS = new Set([
+	"exposure",
+	"contrast",
+	"saturation",
+]);
+const UNSUPPORTED_COLOR_KNOBS = new Set([
+	"temperature",
+	"tint",
+	"highlights",
+	"shadows",
+]);
 
 const TRANSITION_PRESET_TO_XFADE: Record<string, XfadeTransitionKind | null> = {
 	"cross-dissolve": "fade",
@@ -63,6 +79,17 @@ export interface PlanImageOverlay {
 
 export type XfadeTransitionKind = "fade" | "fadeblack" | "fadewhite" | "slideleft";
 
+export type PlanVisualEffect =
+	| { kind: "blur"; radius: number }
+	| { kind: "sharpen"; amount: number }
+	| { kind: "vignette"; intensity: number };
+
+export interface PlanColorAdjustments {
+	exposure: number;
+	contrast: number;
+	saturation: number;
+}
+
 export interface PlanFilterGraphClip {
 	mediaId: string;
 	storageKey: string;
@@ -73,6 +100,8 @@ export interface PlanFilterGraphClip {
 		kind: XfadeTransitionKind;
 		durationSeconds: number;
 	} | null;
+	effects?: PlanVisualEffect[];
+	adjustments?: PlanColorAdjustments | null;
 }
 
 export type FfmpegPlan =
@@ -125,8 +154,50 @@ interface PlanProgress {
 		trimEndSeconds: number;
 		transitionInPreset: string | null;
 		transitionInDuration: number | null;
+		effects: PlanVisualEffect[];
+		adjustments: PlanColorAdjustments | null;
+		unsupportedAdjustmentKnobs: string[];
 	}>;
 	reasons: string[];
+}
+
+function extractEffects(
+	rawEffects: VisualEffect[] | null | undefined,
+): PlanVisualEffect[] {
+	if (!rawEffects) return [];
+	const result: PlanVisualEffect[] = [];
+	for (const effect of rawEffects) {
+		if (!effect.enabled) continue;
+		if (effect.kind === "blur") {
+			result.push({ kind: "blur", radius: effect.radius });
+		} else if (effect.kind === "sharpen") {
+			result.push({ kind: "sharpen", amount: effect.amount });
+		} else if (effect.kind === "vignette") {
+			result.push({ kind: "vignette", intensity: effect.intensity });
+		}
+	}
+	return result;
+}
+
+function extractAdjustments(
+	raw: VisualAdjustments | null | undefined,
+): { adjustments: PlanColorAdjustments | null; unsupportedKnobs: string[] } {
+	if (!raw) return { adjustments: null, unsupportedKnobs: [] };
+	const exposure = raw.exposure ?? 0;
+	const contrast = raw.contrast ?? 0;
+	const saturation = raw.saturation ?? 0;
+	const unsupportedKnobs: string[] = [];
+	for (const knob of UNSUPPORTED_COLOR_KNOBS) {
+		const value = (raw as unknown as Record<string, number>)[knob];
+		if (typeof value === "number" && value !== 0) unsupportedKnobs.push(knob);
+	}
+	if (exposure === 0 && contrast === 0 && saturation === 0) {
+		return { adjustments: null, unsupportedKnobs };
+	}
+	return {
+		adjustments: { exposure, contrast, saturation },
+		unsupportedKnobs,
+	};
 }
 
 function getMainVideoTrack(scene: TScene): VideoTrack | null {
@@ -159,6 +230,7 @@ function summarizeUnsupportedFeatures({
 	let keyframeCount = 0;
 	let effectCount = 0;
 	let adjustmentCount = 0;
+	let unsupportedColorKnobs = new Set<string>();
 
 	for (const scene of scenes) {
 		let videoTracksSeen = 0;
@@ -178,8 +250,25 @@ function summarizeUnsupportedFeatures({
 							}
 						}
 						if (element.keyframes) keyframeCount += 1;
-						if (element.effects && element.effects.length > 0) effectCount += 1;
-						if (element.adjustments) adjustmentCount += 1;
+						const enabledEffects = (element.effects ?? []).filter(
+							(eff) => eff.enabled,
+						);
+						if (enabledEffects.length > 0 && !features.colorAndEffects) {
+							effectCount += 1;
+						}
+						if (element.adjustments) {
+							const { adjustments, unsupportedKnobs } = extractAdjustments(
+								element.adjustments,
+							);
+							if (!features.colorAndEffects && (adjustments || unsupportedKnobs.length > 0)) {
+								adjustmentCount += 1;
+							}
+							if (features.colorAndEffects) {
+								for (const knob of unsupportedKnobs) {
+									unsupportedColorKnobs.add(knob);
+								}
+							}
+						}
 					}
 				}
 			}
@@ -206,9 +295,17 @@ function summarizeUnsupportedFeatures({
 	if (keyframeCount > 0)
 		reasons.add(`${keyframeCount} clip(s) with keyframe animation rendered without animation`);
 	if (effectCount > 0)
-		reasons.add(`${effectCount} clip(s) with visual effects rendered without effects`);
+		reasons.add(
+			`${effectCount} clip(s) with visual effects skipped (enable colorAndEffects to render)`,
+		);
 	if (adjustmentCount > 0)
-		reasons.add(`${adjustmentCount} clip(s) with color adjustments rendered without adjustments`);
+		reasons.add(
+			`${adjustmentCount} clip(s) with color adjustments skipped (enable colorAndEffects to render)`,
+		);
+	if (unsupportedColorKnobs.size > 0)
+		reasons.add(
+			`Color knob(s) not yet supported by ffmpeg renderer (only exposure/contrast/saturation are wired): ${Array.from(unsupportedColorKnobs).join(", ")}`,
+		);
 	return Array.from(reasons);
 }
 
@@ -226,6 +323,9 @@ function collectMainVideoClips({
 		);
 		for (const element of elementsInOrder) {
 			if (element.type !== "video") continue;
+			const { adjustments, unsupportedKnobs } = extractAdjustments(
+				element.adjustments,
+			);
 			progress.supportedVideoClips.push({
 				mediaId: element.mediaId,
 				durationSeconds: element.duration,
@@ -233,6 +333,9 @@ function collectMainVideoClips({
 				trimEndSeconds: element.trimEnd,
 				transitionInPreset: element.transitionIn?.preset ?? null,
 				transitionInDuration: element.transitionIn?.duration ?? null,
+				effects: extractEffects(element.effects),
+				adjustments,
+				unsupportedAdjustmentKnobs: unsupportedKnobs,
 			});
 		}
 	}
@@ -426,6 +529,7 @@ export function buildFfmpegPlan({
 	const filterGraphClips: PlanFilterGraphClip[] = [];
 	let anyXfadeTransition = false;
 	let anyTrimmedClip = false;
+	let anyColorOrEffect = false;
 	for (let i = 0; i < collected.supportedVideoClips.length; i += 1) {
 		const clip = collected.supportedVideoClips[i]!;
 		const ref = mediaRefIndex.get(clip.mediaId);
@@ -468,6 +572,11 @@ export function buildFfmpegPlan({
 				anyXfadeTransition = true;
 			}
 		}
+		const planEffects = resolvedFeatures.colorAndEffects ? clip.effects : [];
+		const planAdjustments = resolvedFeatures.colorAndEffects
+			? clip.adjustments
+			: null;
+		if (planEffects.length > 0 || planAdjustments) anyColorOrEffect = true;
 		filterGraphClips.push({
 			mediaId: clip.mediaId,
 			storageKey: ref.cloudStorageKey,
@@ -475,6 +584,8 @@ export function buildFfmpegPlan({
 			trimStartSeconds: clip.trimStartSeconds,
 			trimEndSeconds: clip.trimEndSeconds,
 			transitionInFromPrev,
+			effects: planEffects,
+			adjustments: planAdjustments,
 		});
 	}
 
@@ -488,7 +599,7 @@ export function buildFfmpegPlan({
 		};
 	}
 
-	if (anyXfadeTransition || anyTrimmedClip) {
+	if (anyXfadeTransition || anyTrimmedClip || anyColorOrEffect) {
 		return {
 			kind: "video-filter-graph",
 			canvasSize: input.canvasSize,
@@ -850,6 +961,57 @@ function buildTrimFilters({
 	return { video, audio };
 }
 
+export function buildAdjustmentsFilter({
+	adjustments,
+}: {
+	adjustments: PlanColorAdjustments;
+}): string | null {
+	const params: string[] = [];
+	// eq filter: brightness range -1 to 1, contrast range -2 to 2 (default 1),
+	// saturation range 0 to 3 (default 1). The editor's adjustments use 0-centered
+	// units; map them so 0 = neutral.
+	if (adjustments.exposure !== 0) {
+		const brightness = clamp(adjustments.exposure, -1, 1);
+		params.push(`brightness=${brightness.toFixed(3)}`);
+	}
+	if (adjustments.contrast !== 0) {
+		const contrast = clamp(1 + adjustments.contrast, -2, 2);
+		params.push(`contrast=${contrast.toFixed(3)}`);
+	}
+	if (adjustments.saturation !== 0) {
+		const saturation = clamp(1 + adjustments.saturation, 0, 3);
+		params.push(`saturation=${saturation.toFixed(3)}`);
+	}
+	if (params.length === 0) return null;
+	return `eq=${params.join(":")}`;
+}
+
+export function buildEffectFilter({
+	effect,
+}: {
+	effect: PlanVisualEffect;
+}): string {
+	if (effect.kind === "blur") {
+		const sigma = Math.max(0.1, effect.radius);
+		return `gblur=sigma=${sigma.toFixed(3)}`;
+	}
+	if (effect.kind === "sharpen") {
+		const amount = Math.max(0, effect.amount);
+		return `unsharp=lx=5:ly=5:la=${amount.toFixed(3)}`;
+	}
+	if (effect.kind === "vignette") {
+		const angle = clamp(effect.intensity, 0, 1) * (Math.PI / 4);
+		return `vignette=angle=${angle.toFixed(3)}`;
+	}
+	const _exhaustive: never = effect;
+	return _exhaustive;
+}
+
+function clamp(value: number, min: number, max: number): number {
+	if (Number.isNaN(value)) return min;
+	return Math.max(min, Math.min(max, value));
+}
+
 export function buildXfadeChainFilter({
 	clips,
 	canvasSize,
@@ -867,11 +1029,19 @@ export function buildXfadeChainFilter({
 	for (let i = 0; i < clips.length; i += 1) {
 		const clip = clips[i]!;
 		const trimFilters = buildTrimFilters({ clip });
-		const inputPipeline =
-			trimFilters.video.length > 0
-				? `${trimFilters.video.join(",")},${baseScale},format=yuv420p`
-				: `${baseScale},format=yuv420p`;
-		stages.push(`[${i}:v]${inputPipeline}[v${i}]`);
+		const colorFilter = clip.adjustments
+			? buildAdjustmentsFilter({ adjustments: clip.adjustments })
+			: null;
+		const effectFilters = (clip.effects ?? []).map((effect) =>
+			buildEffectFilter({ effect }),
+		);
+		const pipelineParts: string[] = [];
+		if (trimFilters.video.length > 0) pipelineParts.push(...trimFilters.video);
+		pipelineParts.push(baseScale);
+		if (colorFilter) pipelineParts.push(colorFilter);
+		for (const filter of effectFilters) pipelineParts.push(filter);
+		pipelineParts.push("format=yuv420p");
+		stages.push(`[${i}:v]${pipelineParts.join(",")}[v${i}]`);
 	}
 
 	if (clips.length === 1) {

@@ -72,6 +72,7 @@ function parseFeatureFlags(raw: string | null): {
 	imageOverlays: boolean;
 	captionWordReveals: boolean;
 	transitions: boolean;
+	colorAndEffects: boolean;
 } {
 	const set = new Set(
 		(raw ?? "")
@@ -86,6 +87,8 @@ function parseFeatureFlags(raw: string | null): {
 		captionWordReveals:
 			all || set.has("captions") || set.has("caption-words") || set.has("words"),
 		transitions: all || set.has("transitions") || set.has("xfade"),
+		colorAndEffects:
+			all || set.has("color") || set.has("effects") || set.has("color-and-effects"),
 	};
 }
 
