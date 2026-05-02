@@ -21,6 +21,14 @@ export interface MediaFetcher {
 		mediaRef: RenderGraphMediaRef;
 		mediaIndex: number;
 	}): Promise<{ localPath: string; cleanup?: () => Promise<void> }>;
+	/**
+	 * Fetches arbitrary HTTP(S) or worker-relative URLs (e.g. bundled library
+	 * audio). Optional so existing fetchers stay backwards compatible.
+	 */
+	fetchUrlToLocalPath?(args: {
+		sourceUrl: string;
+		mediaIndex: number;
+	}): Promise<{ localPath: string; cleanup?: () => Promise<void> }>;
 }
 
 export interface FfmpegRunner {
@@ -223,13 +231,30 @@ export class FfmpegRenderEngine implements RenderEngine {
 		const paths: string[] = [];
 		for (let i = 0; i < audioElements.length; i += 1) {
 			const audio = audioElements[i]!;
-			const fetched = await this.mediaFetcher.fetchToLocalPath({
-				mediaRef: {
-					mediaId: audio.mediaId,
-					cloudStorageKey: audio.storageKey,
-				},
-				mediaIndex: 2000 + i,
-			});
+			let fetched: { localPath: string; cleanup?: () => Promise<void> };
+			if (audio.storageKey) {
+				fetched = await this.mediaFetcher.fetchToLocalPath({
+					mediaRef: {
+						mediaId: audio.mediaId,
+						cloudStorageKey: audio.storageKey,
+					},
+					mediaIndex: 2000 + i,
+				});
+			} else if (audio.sourceUrl) {
+				if (!this.mediaFetcher.fetchUrlToLocalPath) {
+					throw new Error(
+						`MediaFetcher does not implement fetchUrlToLocalPath; cannot fetch library audio "${audio.sourceUrl}"`,
+					);
+				}
+				fetched = await this.mediaFetcher.fetchUrlToLocalPath({
+					sourceUrl: audio.sourceUrl,
+					mediaIndex: 2000 + i,
+				});
+			} else {
+				throw new Error(
+					`Audio element ${audio.mediaId} has neither storageKey nor sourceUrl`,
+				);
+			}
 			if (fetched.cleanup) cleanups.push(fetched.cleanup);
 			paths.push(fetched.localPath);
 		}

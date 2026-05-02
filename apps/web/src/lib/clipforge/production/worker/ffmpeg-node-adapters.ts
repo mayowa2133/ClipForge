@@ -92,6 +92,11 @@ export class HttpMediaFetcher implements MediaFetcher {
 			downloadFetch?: typeof fetch;
 			fs: NodeFileSystemAdapter;
 			workDir: string;
+			/**
+			 * Used to resolve relative URLs (e.g. `/library/sfx/...`) for library
+			 * audio. Defaults to the worker base URL.
+			 */
+			libraryBaseUrl?: string;
 		},
 	) {}
 
@@ -111,12 +116,34 @@ export class HttpMediaFetcher implements MediaFetcher {
 			workerHttp: this.args.workerHttp,
 			mediaRef,
 		});
+		return this.streamUrlToFile({ url: downloadUrl, mediaIndex });
+	}
+
+	async fetchUrlToLocalPath({
+		sourceUrl,
+		mediaIndex,
+	}: {
+		sourceUrl: string;
+		mediaIndex: number;
+	}): Promise<{ localPath: string; cleanup?: () => Promise<void> }> {
+		const url = resolveLibraryUrl({
+			sourceUrl,
+			libraryBaseUrl: this.args.libraryBaseUrl,
+		});
+		return this.streamUrlToFile({ url, mediaIndex });
+	}
+
+	private async streamUrlToFile({
+		url,
+		mediaIndex,
+	}: {
+		url: string;
+		mediaIndex: number;
+	}): Promise<{ localPath: string; cleanup?: () => Promise<void> }> {
 		const callFetch = this.args.downloadFetch ?? fetch;
-		const response = await callFetch(downloadUrl);
+		const response = await callFetch(url);
 		if (!response.ok || !response.body) {
-			throw new Error(
-				`Failed to download ${mediaRef.cloudStorageKey}: HTTP ${response.status}`,
-			);
+			throw new Error(`Failed to download ${url}: HTTP ${response.status}`);
 		}
 		const localPath = this.args.fs.join(
 			this.args.workDir,
@@ -128,6 +155,28 @@ export class HttpMediaFetcher implements MediaFetcher {
 		);
 		return { localPath };
 	}
+}
+
+export function resolveLibraryUrl({
+	sourceUrl,
+	libraryBaseUrl,
+}: {
+	sourceUrl: string;
+	libraryBaseUrl?: string;
+}): string {
+	const trimmed = sourceUrl.trim();
+	if (!trimmed) {
+		throw new Error("Library audio sourceUrl is empty.");
+	}
+	if (/^https?:\/\//i.test(trimmed)) return trimmed;
+	if (!libraryBaseUrl) {
+		throw new Error(
+			`Cannot resolve relative library URL "${trimmed}": worker has no libraryBaseUrl configured (set CLIPFORGE_WORKER_BASE_URL).`,
+		);
+	}
+	const base = libraryBaseUrl.replace(/\/+$/, "");
+	const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+	return `${base}${path}`;
 }
 
 async function resolveDownloadUrl({

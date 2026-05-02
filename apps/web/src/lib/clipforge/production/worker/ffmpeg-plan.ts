@@ -96,7 +96,16 @@ export type PlanAudioRole = "voiceover" | "music" | "sfx" | "audio";
 
 export interface PlanFilterGraphAudioElement {
 	mediaId: string;
-	storageKey: string;
+	/**
+	 * Set for cloud-uploaded media. Mutually exclusive with `sourceUrl`.
+	 */
+	storageKey?: string | null;
+	/**
+	 * Set for library/bundled audio whose bytes the worker fetches by URL
+	 * (relative paths are resolved against the worker base URL). Mutually
+	 * exclusive with `storageKey`.
+	 */
+	sourceUrl?: string | null;
 	startTimeSeconds: number;
 	durationSeconds: number;
 	trimStartSeconds: number;
@@ -194,7 +203,7 @@ interface PlanProgress {
 	reasons: string[];
 }
 
-interface UploadAudioCandidate {
+interface AudioCandidate {
 	mediaId: string;
 	startTimeSeconds: number;
 	durationSeconds: number;
@@ -207,11 +216,15 @@ interface UploadAudioCandidate {
 	fadeOutSeconds: number;
 	normalizationGainDb: number;
 	playbackRate: number;
+	/** Cloud-uploaded media id (when sourceType === "upload"). */
+	storageKeyMediaId?: string;
+	/** Direct URL (when sourceType === "library"). */
+	sourceUrl?: string;
 }
 
-interface UploadAudioCollection {
-	supported: UploadAudioCandidate[];
-	libraryCount: number;
+interface AudioCollection {
+	upload: AudioCandidate[];
+	library: AudioCandidate[];
 }
 
 function extractAudioSettings({
@@ -244,22 +257,18 @@ function extractAudioSettings({
 	return { masterVolume, ducking };
 }
 
-function collectUploadAudioElements({
+function collectAudioElements({
 	scenes,
 }: {
 	scenes: TScene[];
-}): UploadAudioCollection {
-	const supported: UploadAudioCandidate[] = [];
-	let libraryCount = 0;
+}): AudioCollection {
+	const upload: AudioCandidate[] = [];
+	const library: AudioCandidate[] = [];
 
 	for (const scene of scenes) {
 		for (const track of scene.tracks) {
 			if (track.type !== "audio") continue;
 			for (const element of track.elements) {
-				if (element.sourceType !== "upload") {
-					libraryCount += 1;
-					continue;
-				}
 				const fadeInSeconds = Math.max(
 					0,
 					typeof element.fadeInDuration === "number" ? element.fadeInDuration : 0,
@@ -276,25 +285,40 @@ function collectUploadAudioElements({
 					typeof element.playbackRate === "number" && element.playbackRate > 0
 						? element.playbackRate
 						: 1;
-				supported.push({
-					mediaId: element.mediaId,
+				const base = {
 					startTimeSeconds: element.startTime,
 					durationSeconds: element.duration,
 					trimStartSeconds: element.trimStart,
 					trimEndSeconds: element.trimEnd,
 					volume: typeof element.volume === "number" ? element.volume : 1,
-					role: element.role ?? "audio",
+					role: element.role ?? ("audio" as PlanAudioRole),
 					muted: element.muted === true || track.muted === true,
 					fadeInSeconds,
 					fadeOutSeconds,
 					normalizationGainDb,
 					playbackRate,
-				});
+				};
+				if (element.sourceType === "upload") {
+					upload.push({
+						...base,
+						mediaId: element.mediaId,
+						storageKeyMediaId: element.mediaId,
+					});
+				} else {
+					// Library audio: use the element id as the synthetic mediaId so
+					// downstream code can still index/log per element. The bytes are
+					// fetched by sourceUrl rather than via the cloud media records.
+					library.push({
+						...base,
+						mediaId: element.id,
+						sourceUrl: element.sourceUrl,
+					});
+				}
 			}
 		}
 	}
 
-	return { supported, libraryCount };
+	return { upload, library };
 }
 
 function extractEffects(
@@ -410,15 +434,8 @@ function summarizeUnsupportedFeatures({
 			}
 			if (track.type === "text" && !features.textOverlays) textCount += track.elements.length;
 			if (track.type === "sticker") stickerCount += track.elements.length;
-			if (track.type === "audio") {
-				if (!features.audioMixing) {
-					audioCount += track.elements.length;
-				} else {
-					// Library audio is not yet supported even with the flag on
-					for (const el of track.elements) {
-						if (el.sourceType !== "upload") audioCount += 1;
-					}
-				}
+			if (track.type === "audio" && !features.audioMixing) {
+				audioCount += track.elements.length;
 			}
 		}
 	}
@@ -430,9 +447,7 @@ function summarizeUnsupportedFeatures({
 	if (stickerCount > 0) reasons.add(`${stickerCount} sticker element(s) skipped`);
 	if (audioCount > 0)
 		reasons.add(
-			features.audioMixing
-				? `${audioCount} library audio element(s) skipped (only upload audio is wired through cloud media)`
-				: `${audioCount} dedicated audio track element(s) skipped (enable audioMixing to render)`,
+			`${audioCount} dedicated audio track element(s) skipped (enable audioMixing to render)`,
 		);
 	if (nonMainVideoTrackCount > 0)
 		reasons.add(`${nonMainVideoTrackCount} extra video track(s) skipped (only the main track is rendered)`);
@@ -747,10 +762,10 @@ export function buildFfmpegPlan({
 	}
 
 	const audioCollection = resolvedFeatures.audioMixing
-		? collectUploadAudioElements({ scenes })
-		: { supported: [], libraryCount: 0 };
+		? collectAudioElements({ scenes })
+		: { upload: [], library: [] };
 	const audioElements: PlanFilterGraphAudioElement[] = [];
-	for (const candidate of audioCollection.supported) {
+	for (const candidate of audioCollection.upload) {
 		if (candidate.muted) continue;
 		const ref = mediaRefIndex.get(candidate.mediaId);
 		if (!ref || !ref.cloudStorageKey) {
@@ -761,6 +776,25 @@ export function buildFfmpegPlan({
 		audioElements.push({
 			mediaId: candidate.mediaId,
 			storageKey: ref.cloudStorageKey,
+			startTimeSeconds: candidate.startTimeSeconds,
+			durationSeconds: candidate.durationSeconds,
+			trimStartSeconds: candidate.trimStartSeconds,
+			trimEndSeconds: candidate.trimEndSeconds,
+			volume: candidate.volume,
+			role: candidate.role,
+			fadeInSeconds: candidate.fadeInSeconds,
+			fadeOutSeconds: candidate.fadeOutSeconds,
+			normalizationGainDb: candidate.normalizationGainDb,
+			playbackRate: candidate.playbackRate,
+		});
+	}
+	for (const candidate of audioCollection.library) {
+		if (candidate.muted) continue;
+		if (!candidate.sourceUrl) continue;
+		if (candidate.playbackRate !== 1) anyPlaybackRate = true;
+		audioElements.push({
+			mediaId: candidate.mediaId,
+			sourceUrl: candidate.sourceUrl,
 			startTimeSeconds: candidate.startTimeSeconds,
 			durationSeconds: candidate.durationSeconds,
 			trimStartSeconds: candidate.trimStartSeconds,

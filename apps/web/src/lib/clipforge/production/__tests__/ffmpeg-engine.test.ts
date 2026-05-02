@@ -23,6 +23,7 @@ import type { TProject } from "@/types/project";
 import type {
 	AudioTrack,
 	ImageElement,
+	LibraryAudioElement,
 	TScene,
 	TextElement,
 	TextTrack,
@@ -2786,5 +2787,204 @@ describe("buildFfmpegPlan with playbackRate", () => {
 		});
 		const plan = buildFfmpegPlan({ input });
 		expect(plan.kind).toBe("video-concat");
+	});
+});
+
+function makeLibraryAudioElement(
+	overrides: Partial<LibraryAudioElement> = {},
+): LibraryAudioElement {
+	return {
+		id: "lae_1",
+		name: "library-sfx.wav",
+		type: "audio",
+		sourceType: "library",
+		sourceUrl: "/library/sfx/click.wav",
+		duration: 1.5,
+		startTime: 2,
+		trimStart: 0,
+		trimEnd: 0,
+		volume: 0.8,
+		role: "sfx",
+		...overrides,
+	} as LibraryAudioElement;
+}
+
+function makeSceneWithLibraryAudio({
+	video,
+	library,
+}: {
+	video: VideoElement[];
+	library: LibraryAudioElement[];
+}): TScene {
+	const videoTrack: VideoTrack = {
+		id: "track_main",
+		name: "Main",
+		type: "video",
+		isMain: true,
+		muted: false,
+		hidden: false,
+		elements: video,
+	};
+	const audioTrack: AudioTrack = {
+		id: "track_audio_lib",
+		name: "Library Audio",
+		type: "audio",
+		muted: false,
+		elements: library,
+	};
+	return {
+		id: "scene_lib",
+		name: "library scene",
+		isMain: true,
+		tracks: [videoTrack, audioTrack],
+		bookmarks: [],
+		createdAt: new Date(),
+		updatedAt: new Date(),
+	};
+}
+
+describe("buildFfmpegPlan with library audio elements", () => {
+	test("library audio elements are skipped when audioMixing flag is off", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeSceneWithLibraryAudio({
+						video: [makeVideoElement({ mediaId: "v_a" })],
+						library: [makeLibraryAudioElement()],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_v" }],
+		});
+		const plan = buildFfmpegPlan({ input });
+		expect(plan.kind).toBe("video-concat");
+	});
+
+	test("library audio is included when audioMixing flag is on (no missing-media error)", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeSceneWithLibraryAudio({
+						video: [makeVideoElement({ mediaId: "v_a" })],
+						library: [
+							makeLibraryAudioElement({
+								id: "lae_a",
+								sourceUrl: "/library/sfx/typing.wav",
+								startTime: 1,
+								duration: 2,
+								volume: 0.5,
+								role: "sfx",
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_v" }],
+		});
+		const plan = buildFfmpegPlan({ input, features: { audioMixing: true } });
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.audioElements).toHaveLength(1);
+		const audio = plan.audioElements?.[0]!;
+		expect(audio.sourceUrl).toBe("/library/sfx/typing.wav");
+		expect(audio.storageKey ?? null).toBeNull();
+		expect(audio.role).toBe("sfx");
+		expect(audio.startTimeSeconds).toBe(1);
+	});
+
+	test("muted library audio is dropped (track or element)", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeSceneWithLibraryAudio({
+						video: [makeVideoElement({ mediaId: "v_a" })],
+						library: [
+							makeLibraryAudioElement({ id: "lae_off", muted: true }),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_v" }],
+		});
+		const plan = buildFfmpegPlan({ input, features: { audioMixing: true } });
+		expect(plan.kind).toBe("video-concat");
+	});
+
+	test("mixed upload + library audio both flow into the plan", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					{
+						id: "scene_mixed",
+						name: "mixed",
+						isMain: true,
+						bookmarks: [],
+						createdAt: new Date(),
+						updatedAt: new Date(),
+						tracks: [
+							{
+								id: "tv",
+								name: "Main",
+								type: "video",
+								isMain: true,
+								muted: false,
+								hidden: false,
+								elements: [makeVideoElement({ mediaId: "v_a" })],
+							},
+							{
+								id: "ta",
+								name: "Audio",
+								type: "audio",
+								muted: false,
+								elements: [
+									makeUploadAudioElement({
+										id: "voice_one",
+										mediaId: "audio_voice",
+										role: "voiceover",
+									}),
+									makeLibraryAudioElement({
+										id: "music_lib",
+										sourceUrl: "/library/music/upbeat.mp3",
+										role: "music",
+										startTime: 0,
+										duration: 6,
+									}),
+								],
+							},
+						],
+					},
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v_a", cloudStorageKey: "k_v" },
+				{ mediaId: "audio_voice", cloudStorageKey: "k_voice" },
+			],
+		});
+		const plan = buildFfmpegPlan({ input, features: { audioMixing: true } });
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.audioElements).toHaveLength(2);
+		const upload = plan.audioElements?.find((e) => e.role === "voiceover");
+		const library = plan.audioElements?.find((e) => e.role === "music");
+		expect(upload?.storageKey).toBe("k_voice");
+		expect(upload?.sourceUrl ?? null).toBeNull();
+		expect(library?.sourceUrl).toBe("/library/music/upbeat.mp3");
+		expect(library?.storageKey ?? null).toBeNull();
 	});
 });

@@ -54,6 +54,7 @@ async function main() {
 	const engine: RenderEngine = await buildRenderEngine({
 		kind: rendererKind,
 		http,
+		baseUrl,
 	});
 	console.log(`[export-worker] renderer=${engine.id}`);
 
@@ -98,9 +99,11 @@ function parseFeatureFlags(raw: string | null): {
 async function buildRenderEngine({
 	kind,
 	http,
+	baseUrl,
 }: {
 	kind: string;
 	http: HttpWorkerClient;
+	baseUrl: string;
 }): Promise<RenderEngine> {
 	if (kind === "stub") return new StubRenderEngine();
 	if (kind === "ffmpeg") {
@@ -108,15 +111,21 @@ async function buildRenderEngine({
 		const workDir = await fs.makeTempDir("clipforge-worker-");
 		const features = parseFeatureFlags(readEnv("CLIPFORGE_FFMPEG_FEATURES"));
 		const fontFile = readEnv("CLIPFORGE_FFMPEG_DEFAULT_FONT");
+		const libraryBaseUrl = readEnv("CLIPFORGE_LIBRARY_BASE_URL") ?? baseUrl;
 		console.log(
-			`[export-worker] ffmpeg features=${JSON.stringify(features)} font=${fontFile ?? "<system default>"}`,
+			`[export-worker] ffmpeg features=${JSON.stringify(features)} font=${fontFile ?? "<system default>"} libraryBase=${libraryBaseUrl}`,
 		);
 		return new FfmpegRenderEngine({
 			ffmpegRunner: new SpawnFfmpegRunner({
 				ffmpegBinary: readEnv("CLIPFORGE_FFMPEG_BIN") ?? "ffmpeg",
 				logger: (line) => console.log(`[ffmpeg] ${line}`),
 			}),
-			mediaFetcher: new HttpMediaFetcher({ workerHttp: http, fs, workDir }),
+			mediaFetcher: new HttpMediaFetcher({
+				workerHttp: http,
+				fs,
+				workDir,
+				libraryBaseUrl,
+			}),
 			fs,
 			features,
 			fontFile,
