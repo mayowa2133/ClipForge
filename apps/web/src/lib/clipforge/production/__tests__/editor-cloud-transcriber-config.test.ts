@@ -231,3 +231,68 @@ describe("buildEditorManagedCloudConfig.resolveExistingMedia", () => {
 		expect(fetchCalls.filter((u) => u.endsWith("/media"))).toHaveLength(1);
 	});
 });
+
+describe("buildEditorManagedCloudConfig with stored cloudProjectId", () => {
+	function withCloudLink(project: TProject, id: string | null): TProject {
+		return {
+			...project,
+			clipforge: {
+				...(project.clipforge as object),
+				cloudProjectId: id,
+			} as TProject["clipforge"],
+		};
+	}
+
+	test("returns the stored ID when it exists in the cloud projects list", async () => {
+		installFetch(() =>
+			new Response(
+				JSON.stringify({
+					projects: [
+						makeCloudProject("Original Name", "cp_linked"),
+						makeCloudProject("Renamed locally", "cp_unrelated"),
+					],
+				}),
+				{ status: 200 },
+			),
+		);
+		const linked = withCloudLink(makeProject("Renamed locally"), "cp_linked");
+		const config = buildEditorManagedCloudConfig({
+			getActiveProject: () => linked,
+		});
+		expect(await config.resolveCloudProjectId(makeAsset("a"))).toBe("cp_linked");
+	});
+
+	test("returns null (does NOT fall back to name match) when stored ID is broken", async () => {
+		installFetch(() =>
+			new Response(
+				JSON.stringify({
+					projects: [makeCloudProject("My Project", "cp_byname")],
+				}),
+				{ status: 200 },
+			),
+		);
+		const project = withCloudLink(makeProject("My Project"), "cp_gone");
+		const config = buildEditorManagedCloudConfig({
+			getActiveProject: () => project,
+		});
+		// Linked ID takes precedence; if it's broken we surface that as null
+		// rather than silently using the same-name project (which could be
+		// completely unrelated).
+		expect(await config.resolveCloudProjectId(makeAsset("a"))).toBeNull();
+	});
+
+	test("falls back to name match when no cloudProjectId is stored", async () => {
+		installFetch(() =>
+			new Response(
+				JSON.stringify({
+					projects: [makeCloudProject("Legacy", "cp_legacy")],
+				}),
+				{ status: 200 },
+			),
+		);
+		const config = buildEditorManagedCloudConfig({
+			getActiveProject: () => makeProject("Legacy"),
+		});
+		expect(await config.resolveCloudProjectId(makeAsset("a"))).toBe("cp_legacy");
+	});
+});

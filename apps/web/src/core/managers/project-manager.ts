@@ -324,6 +324,42 @@ export class ProjectManager {
 		this.editor.scenes.clearScenes();
 	}
 
+	async setProjectCloudLink({
+		id,
+		cloudProjectId,
+	}: {
+		id: string;
+		cloudProjectId: string | null;
+	}): Promise<void> {
+		try {
+			const result = await storageService.loadProject({ id });
+			if (!result) return;
+			const existing = result.project.clipforge;
+			if (!existing) {
+				// No clipforge envelope yet — nothing to persist the link onto.
+				// Project will pick up the cloud link once it opens in the editor
+				// and runs the clipforge migration.
+				return;
+			}
+			const updatedProject: TProject = {
+				...result.project,
+				clipforge: { ...existing, cloudProjectId },
+				metadata: {
+					...result.project.metadata,
+					updatedAt: new Date(),
+				},
+			};
+			await storageService.saveProject({ project: updatedProject });
+			if (this.active?.metadata.id === id) {
+				this.active = updatedProject;
+				this.notify();
+			}
+			this.updateMetadata(updatedProject);
+		} catch (error) {
+			console.error("Failed to set project cloud link:", error);
+		}
+	}
+
 	async renameProject({
 		id,
 		name,

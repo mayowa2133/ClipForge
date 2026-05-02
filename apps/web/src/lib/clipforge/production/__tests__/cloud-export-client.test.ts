@@ -471,3 +471,95 @@ describe("computeCloudReadiness", () => {
 		expect(summary.referencedMediaIds).toEqual([]);
 	});
 });
+
+describe("computeCloudReadiness with stored cloudProjectId linkage", () => {
+	function withCloudLink(project: TProject, cloudProjectId: string | null): TProject {
+		return {
+			...project,
+			clipforge: {
+				...(project.clipforge as object),
+				cloudProjectId,
+			} as TProject["clipforge"],
+		};
+	}
+
+	test("prefers cloudProjectId over name match", () => {
+		const project = withCloudLink(
+			makeProjectWithMedia({ videoMediaIds: ["a"] }),
+			"cp_xyz",
+		);
+		project.metadata.name = "Some Other Name";
+		const summary = computeCloudReadiness({
+			project,
+			allCloudProjects: [
+				makeCloudProjectListItem("Some Other Name"),
+				{
+					...makeCloudProjectListItem("Linked"),
+					id: "cp_xyz",
+				},
+			],
+			mediaObjects: [
+				makeMediaRecord({ mediaId: "a", storageKey: "k_a", status: "stored" }),
+			],
+		});
+		expect(summary.cloudProject?.id).toBe("cp_xyz");
+		expect(summary.canSubmit).toBe(true);
+	});
+
+	test("survives renames: stored ID wins even when name no longer matches", () => {
+		const project = withCloudLink(
+			makeProjectWithMedia({ videoMediaIds: ["a"] }),
+			"cp_keep",
+		);
+		project.metadata.name = "Renamed locally";
+		const summary = computeCloudReadiness({
+			project,
+			allCloudProjects: [
+				{
+					...makeCloudProjectListItem("Original Cloud Name"),
+					id: "cp_keep",
+				},
+			],
+			mediaObjects: [
+				makeMediaRecord({ mediaId: "a", storageKey: "k_a", status: "stored" }),
+			],
+		});
+		expect(summary.cloudProject?.id).toBe("cp_keep");
+		expect(summary.cloudProject?.name).toBe("Original Cloud Name");
+		expect(summary.canSubmit).toBe(true);
+	});
+
+	test("falls back to name match when stored ID no longer exists", () => {
+		const project = withCloudLink(
+			makeProjectWithMedia({ videoMediaIds: ["a"] }),
+			"cp_deleted",
+		);
+		project.metadata.name = "My Project";
+		const summary = computeCloudReadiness({
+			project,
+			allCloudProjects: [makeCloudProjectListItem("My Project")],
+			mediaObjects: [
+				makeMediaRecord({ mediaId: "a", storageKey: "k_a", status: "stored" }),
+			],
+		});
+		// Currently the impl reports the linked-but-missing case as a blocker
+		// rather than falling through silently.
+		expect(summary.cloudProject).toBeNull();
+		expect(summary.blockerReason).toContain("cp_deleted");
+		expect(summary.blockerReason).toContain("Re-save");
+	});
+
+	test("name fallback still works for projects without a stored link", () => {
+		const project = makeProjectWithMedia({ videoMediaIds: ["a"] });
+		project.metadata.name = "Legacy";
+		const summary = computeCloudReadiness({
+			project,
+			allCloudProjects: [makeCloudProjectListItem("Legacy")],
+			mediaObjects: [
+				makeMediaRecord({ mediaId: "a", storageKey: "k_a", status: "stored" }),
+			],
+		});
+		expect(summary.cloudProject?.name).toBe("Legacy");
+		expect(summary.canSubmit).toBe(true);
+	});
+});

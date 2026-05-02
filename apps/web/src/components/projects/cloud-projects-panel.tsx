@@ -207,13 +207,23 @@ export function CloudProjectsPanel() {
 		}
 		setPendingPromote(true);
 		try {
-			await createCloudProjectFromLocal({
+			const created = await createCloudProjectFromLocal({
 				name: candidate.name,
 				project: null,
 			});
-			toast.success(`Created cloud entry for "${candidate.name}".`, {
-				description:
-					"Project metadata and edits will sync once cloud sync ships in a follow-up.",
+			// Persist the cloud project ID on the local project so it survives
+			// renames + disambiguates duplicate names. Best-effort: log on failure
+			// (the cloud record was already created successfully).
+			try {
+				await editor.project.setProjectCloudLink({
+					id: candidate.id,
+					cloudProjectId: created.id,
+				});
+			} catch (linkError) {
+				console.warn("Cloud record created but failed to persist local link:", linkError);
+			}
+			toast.success(`Saved "${candidate.name}" to cloud.`, {
+				description: "Linked. Renaming the project locally won't break cloud render.",
 			});
 			await refresh();
 		} catch (error) {

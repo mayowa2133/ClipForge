@@ -976,6 +976,7 @@ export interface ClipForgeProjectData {
 	referenceMatchLocks: Record<string, ReferenceMatchLock>;
 	chatMemory: ClipForgeChatMemory;
 	opsAudit: TimelineDiffAuditEntry[];
+	cloudProjectId?: string | null;
 }
 
 export interface SerializedClipForgeProjectData

@@ -106,9 +106,21 @@ export function computeCloudReadiness({
 	mediaObjects: CloudMediaObjectRecord[];
 	matchByName?: boolean;
 }): CloudReadinessSummary {
-	const matching = matchByName
-		? (allCloudProjects.find((cp) => cp.name === project.metadata.name) ?? null)
+	// Prefer the explicit cloudProjectId stored on the project (survives renames
+	// and disambiguates duplicate names). When a link is set but the cloud
+	// record is gone we report the broken link rather than silently falling
+	// back to a name match (which could resolve to an unrelated project that
+	// happens to share the name). Only projects with no link at all fall back
+	// to name match.
+	const linkedId = project.clipforge?.cloudProjectId ?? null;
+	const linked = linkedId
+		? (allCloudProjects.find((cp) => cp.id === linkedId) ?? null)
 		: null;
+	const matching = linkedId
+		? linked
+		: matchByName
+			? (allCloudProjects.find((cp) => cp.name === project.metadata.name) ?? null)
+			: null;
 	const referencedMediaIds = collectReferencedMediaIds({ project }).mediaIds;
 	const storedMediaIds = mediaObjects
 		.filter((m) => m.status === "stored")
@@ -118,7 +130,10 @@ export function computeCloudReadiness({
 
 	let blockerReason: string | null = null;
 	if (!matching) {
-		blockerReason = `No cloud project named "${project.metadata.name}" found.`;
+		blockerReason =
+			linkedId && !linked
+				? `Linked cloud project ${linkedId} no longer exists. Re-save the project to cloud to relink.`
+				: `No cloud project named "${project.metadata.name}" found.`;
 	} else if (missingMediaIds.length > 0) {
 		blockerReason = `${missingMediaIds.length} referenced media asset(s) are not uploaded to cloud.`;
 	}
