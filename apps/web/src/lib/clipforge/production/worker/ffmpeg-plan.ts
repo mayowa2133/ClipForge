@@ -106,6 +106,7 @@ export interface PlanFilterGraphAudioElement {
 	fadeInSeconds?: number;
 	fadeOutSeconds?: number;
 	normalizationGainDb?: number;
+	playbackRate?: number;
 }
 
 export interface PlanAudioSettings {
@@ -130,6 +131,7 @@ export interface PlanFilterGraphClip {
 	} | null;
 	effects?: PlanVisualEffect[];
 	adjustments?: PlanColorAdjustments | null;
+	playbackRate?: number;
 }
 
 export type FfmpegPlan =
@@ -187,6 +189,7 @@ interface PlanProgress {
 		effects: PlanVisualEffect[];
 		adjustments: PlanColorAdjustments | null;
 		unsupportedAdjustmentKnobs: string[];
+		playbackRate: number;
 	}>;
 	reasons: string[];
 }
@@ -203,12 +206,12 @@ interface UploadAudioCandidate {
 	fadeInSeconds: number;
 	fadeOutSeconds: number;
 	normalizationGainDb: number;
+	playbackRate: number;
 }
 
 interface UploadAudioCollection {
 	supported: UploadAudioCandidate[];
 	libraryCount: number;
-	playbackRateCount: number;
 }
 
 function extractAudioSettings({
@@ -248,7 +251,6 @@ function collectUploadAudioElements({
 }): UploadAudioCollection {
 	const supported: UploadAudioCandidate[] = [];
 	let libraryCount = 0;
-	let playbackRateCount = 0;
 
 	for (const scene of scenes) {
 		for (const track of scene.tracks) {
@@ -257,13 +259,6 @@ function collectUploadAudioElements({
 				if (element.sourceType !== "upload") {
 					libraryCount += 1;
 					continue;
-				}
-				if (
-					typeof element.playbackRate === "number" &&
-					element.playbackRate !== 1 &&
-					element.playbackRate !== 0
-				) {
-					playbackRateCount += 1;
 				}
 				const fadeInSeconds = Math.max(
 					0,
@@ -277,6 +272,10 @@ function collectUploadAudioElements({
 					typeof element.normalizationGainDb === "number"
 						? element.normalizationGainDb
 						: 0;
+				const playbackRate =
+					typeof element.playbackRate === "number" && element.playbackRate > 0
+						? element.playbackRate
+						: 1;
 				supported.push({
 					mediaId: element.mediaId,
 					startTimeSeconds: element.startTime,
@@ -289,12 +288,13 @@ function collectUploadAudioElements({
 					fadeInSeconds,
 					fadeOutSeconds,
 					normalizationGainDb,
+					playbackRate,
 				});
 			}
 		}
 	}
 
-	return { supported, libraryCount, playbackRateCount };
+	return { supported, libraryCount };
 }
 
 function extractEffects(
@@ -434,14 +434,6 @@ function summarizeUnsupportedFeatures({
 				? `${audioCount} library audio element(s) skipped (only upload audio is wired through cloud media)`
 				: `${audioCount} dedicated audio track element(s) skipped (enable audioMixing to render)`,
 		);
-	if (features.audioMixing) {
-		const audioCheck = collectUploadAudioElements({ scenes });
-		if (audioCheck.playbackRateCount > 0) {
-			reasons.add(
-				`${audioCheck.playbackRateCount} audio element(s) with custom playbackRate rendered at original speed (atempo follow-up)`,
-			);
-		}
-	}
 	if (nonMainVideoTrackCount > 0)
 		reasons.add(`${nonMainVideoTrackCount} extra video track(s) skipped (only the main track is rendered)`);
 	if (transitionSkippedCount > 0)
@@ -484,6 +476,9 @@ function collectMainVideoClips({
 			const { adjustments, unsupportedKnobs } = extractAdjustments(
 				element.adjustments,
 			);
+			const rawRate = element.playbackRate;
+			const playbackRate =
+				typeof rawRate === "number" && rawRate > 0 ? rawRate : 1;
 			progress.supportedVideoClips.push({
 				mediaId: element.mediaId,
 				durationSeconds: element.duration,
@@ -494,6 +489,7 @@ function collectMainVideoClips({
 				effects: extractEffects(element.effects),
 				adjustments,
 				unsupportedAdjustmentKnobs: unsupportedKnobs,
+				playbackRate,
 			});
 		}
 	}
@@ -688,6 +684,7 @@ export function buildFfmpegPlan({
 	let anyXfadeTransition = false;
 	let anyTrimmedClip = false;
 	let anyColorOrEffect = false;
+	let anyPlaybackRate = false;
 	for (let i = 0; i < collected.supportedVideoClips.length; i += 1) {
 		const clip = collected.supportedVideoClips[i]!;
 		const ref = mediaRefIndex.get(clip.mediaId);
@@ -735,6 +732,7 @@ export function buildFfmpegPlan({
 			? clip.adjustments
 			: null;
 		if (planEffects.length > 0 || planAdjustments) anyColorOrEffect = true;
+		if (clip.playbackRate !== 1) anyPlaybackRate = true;
 		filterGraphClips.push({
 			mediaId: clip.mediaId,
 			storageKey: ref.cloudStorageKey,
@@ -744,12 +742,13 @@ export function buildFfmpegPlan({
 			transitionInFromPrev,
 			effects: planEffects,
 			adjustments: planAdjustments,
+			playbackRate: clip.playbackRate,
 		});
 	}
 
 	const audioCollection = resolvedFeatures.audioMixing
 		? collectUploadAudioElements({ scenes })
-		: { supported: [], libraryCount: 0, playbackRateCount: 0 };
+		: { supported: [], libraryCount: 0 };
 	const audioElements: PlanFilterGraphAudioElement[] = [];
 	for (const candidate of audioCollection.supported) {
 		if (candidate.muted) continue;
@@ -758,6 +757,7 @@ export function buildFfmpegPlan({
 			missingMediaIds.add(candidate.mediaId);
 			continue;
 		}
+		if (candidate.playbackRate !== 1) anyPlaybackRate = true;
 		audioElements.push({
 			mediaId: candidate.mediaId,
 			storageKey: ref.cloudStorageKey,
@@ -770,6 +770,7 @@ export function buildFfmpegPlan({
 			fadeInSeconds: candidate.fadeInSeconds,
 			fadeOutSeconds: candidate.fadeOutSeconds,
 			normalizationGainDb: candidate.normalizationGainDb,
+			playbackRate: candidate.playbackRate,
 		});
 	}
 
@@ -796,7 +797,8 @@ export function buildFfmpegPlan({
 		anyTrimmedClip ||
 		anyColorOrEffect ||
 		anyAudioElement ||
-		anyAudioSettings
+		anyAudioSettings ||
+		anyPlaybackRate
 	) {
 		return {
 			kind: "video-filter-graph",
@@ -1150,15 +1152,47 @@ function buildTrimFilters({
 }): TrimFilterChunks {
 	const video: string[] = [];
 	const audio: string[] = [];
-	if (clip.trimStartSeconds > 0 || clip.trimEndSeconds > 0) {
+	const playbackRate = clip.playbackRate ?? 1;
+	const isTrimmed = clip.trimStartSeconds > 0 || clip.trimEndSeconds > 0;
+	if (isTrimmed) {
 		const start = clip.trimStartSeconds.toFixed(3);
-		const duration = clip.durationSeconds.toFixed(3);
-		video.push(`trim=start=${start}:duration=${duration}`);
+		// Source duration = timeline duration * playbackRate so the post-setpts
+		// stream matches durationSeconds on the timeline.
+		const sourceDuration = (clip.durationSeconds * playbackRate).toFixed(3);
+		video.push(`trim=start=${start}:duration=${sourceDuration}`);
 		video.push("setpts=PTS-STARTPTS");
-		audio.push(`atrim=start=${start}:duration=${duration}`);
+		audio.push(`atrim=start=${start}:duration=${sourceDuration}`);
 		audio.push("asetpts=PTS-STARTPTS");
 	}
 	return { video, audio };
+}
+
+export function buildAtempoChain({
+	playbackRate,
+}: {
+	playbackRate: number;
+}): string[] {
+	if (!Number.isFinite(playbackRate) || playbackRate <= 0 || playbackRate === 1) {
+		return [];
+	}
+	// atempo accepts [0.5, 100]. Chain multiple stages to reach values outside
+	// that range. Use the closest in-range step each pass.
+	const stages: string[] = [];
+	let remaining = playbackRate;
+	const maxStep = 100;
+	const minStep = 0.5;
+	while (remaining > maxStep) {
+		stages.push(`atempo=${maxStep}`);
+		remaining = remaining / maxStep;
+	}
+	while (remaining < minStep) {
+		stages.push(`atempo=${minStep}`);
+		remaining = remaining / minStep;
+	}
+	if (Math.abs(remaining - 1) > 1e-6) {
+		stages.push(`atempo=${remaining.toFixed(6)}`);
+	}
+	return stages;
 }
 
 export function buildAdjustmentsFilter({
@@ -1235,8 +1269,12 @@ export function buildXfadeChainFilter({
 		const effectFilters = (clip.effects ?? []).map((effect) =>
 			buildEffectFilter({ effect }),
 		);
+		const playbackRate = clip.playbackRate ?? 1;
 		const pipelineParts: string[] = [];
 		if (trimFilters.video.length > 0) pipelineParts.push(...trimFilters.video);
+		if (playbackRate !== 1) {
+			pipelineParts.push(`setpts=PTS/${playbackRate.toFixed(6)}`);
+		}
 		pipelineParts.push(baseScale);
 		if (colorFilter) pipelineParts.push(colorFilter);
 		for (const filter of effectFilters) pipelineParts.push(filter);
@@ -1292,8 +1330,10 @@ export function buildAcrossfadeChainFilter({
 	for (let i = 0; i < clips.length; i += 1) {
 		const clip = clips[i]!;
 		const audioPipeline = buildTrimFilters({ clip }).audio;
-		if (audioPipeline.length > 0) {
-			stages.push(`[${i}:a]${audioPipeline.join(",")}[a${i}]`);
+		const atempoChain = buildAtempoChain({ playbackRate: clip.playbackRate ?? 1 });
+		const combined = [...audioPipeline, ...atempoChain];
+		if (combined.length > 0) {
+			stages.push(`[${i}:a]${combined.join(",")}[a${i}]`);
 		} else {
 			stages.push(`[${i}:a]anull[a${i}]`);
 		}
@@ -1357,19 +1397,25 @@ export function buildAudioMixChain({
 	for (let i = 0; i < audioElements.length; i += 1) {
 		const audio = audioElements[i]!;
 		const inputIndex = firstAudioInputIndex + i;
+		const playbackRate = audio.playbackRate ?? 1;
 		const trimStart = audio.trimStartSeconds.toFixed(3);
-		const duration = audio.durationSeconds.toFixed(3);
+		// Source duration = timeline duration * playbackRate so the post-atempo
+		// stream matches durationSeconds on the timeline.
+		const sourceDuration = (audio.durationSeconds * playbackRate).toFixed(3);
 		const delayMs = Math.max(0, Math.round(audio.startTimeSeconds * 1000));
 		const volume = clamp(audio.volume, 0, 4);
 		const filters: string[] = [
-			`atrim=start=${trimStart}:duration=${duration}`,
+			`atrim=start=${trimStart}:duration=${sourceDuration}`,
 			"asetpts=PTS-STARTPTS",
 		];
+		const atempoChain = buildAtempoChain({ playbackRate });
+		for (const step of atempoChain) filters.push(step);
 		if (volume !== 1) filters.push(`volume=${volume.toFixed(3)}`);
 		const normalizationGainDb = audio.normalizationGainDb ?? 0;
 		if (normalizationGainDb !== 0) {
 			filters.push(`volume=${normalizationGainDb.toFixed(2)}dB`);
 		}
+		// fadeIn/fadeOut are evaluated in the post-atempo (timeline) duration.
 		const fadeInSeconds = audio.fadeInSeconds ?? 0;
 		if (fadeInSeconds > 0) {
 			filters.push(`afade=t=in:st=0:d=${fadeInSeconds.toFixed(3)}`);

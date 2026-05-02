@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	buildAcrossfadeChainFilter,
 	buildAdjustmentsFilter,
+	buildAtempoChain,
 	buildAudioMixChain,
 	buildBlackVideoFfmpegInvocation,
 	buildDrawtextFilter,
@@ -2513,5 +2514,277 @@ describe("plan-builder threads project audio settings into video-filter-graph", 
 			attackMs: 70,
 			releaseMs: 300,
 		});
+	});
+});
+
+describe("buildAtempoChain", () => {
+	test("returns empty for playbackRate=1", () => {
+		expect(buildAtempoChain({ playbackRate: 1 })).toEqual([]);
+	});
+
+	test("returns empty for invalid (zero/negative/NaN) playbackRate", () => {
+		expect(buildAtempoChain({ playbackRate: 0 })).toEqual([]);
+		expect(buildAtempoChain({ playbackRate: -2 })).toEqual([]);
+		expect(buildAtempoChain({ playbackRate: Number.NaN })).toEqual([]);
+	});
+
+	test("single stage for in-range rate (0.5 ≤ N ≤ 100)", () => {
+		expect(buildAtempoChain({ playbackRate: 2 })).toEqual([
+			"atempo=2.000000",
+		]);
+		expect(buildAtempoChain({ playbackRate: 0.75 })).toEqual([
+			"atempo=0.750000",
+		]);
+	});
+
+	test("chains atempo for very-slow rate (< 0.5)", () => {
+		const chain = buildAtempoChain({ playbackRate: 0.25 });
+		// 0.5 * 0.5 = 0.25
+		expect(chain.length).toBe(2);
+		expect(chain[0]).toBe("atempo=0.5");
+		expect(chain[1]).toBe("atempo=0.500000");
+	});
+
+	test("chains atempo for very-fast rate (> 100)", () => {
+		const chain = buildAtempoChain({ playbackRate: 200 });
+		expect(chain.length).toBe(2);
+		expect(chain[0]).toBe("atempo=100");
+		expect(chain[1]).toBe("atempo=2.000000");
+	});
+});
+
+describe("buildXfadeChainFilter applies setpts for playbackRate", () => {
+	test("emits setpts=PTS/N when playbackRate ≠ 1, after trim and before scale", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 4,
+					trimStartSeconds: 0.5,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+					playbackRate: 2,
+				},
+			],
+		});
+		expect(result.filter).toContain("setpts=PTS/2.000000");
+		const trimIdx = result.filter.indexOf("trim=");
+		const setptsIdx = result.filter.indexOf("setpts=PTS/");
+		const scaleIdx = result.filter.indexOf("scale=");
+		expect(trimIdx).toBeGreaterThan(-1);
+		expect(setptsIdx).toBeGreaterThan(trimIdx);
+		expect(scaleIdx).toBeGreaterThan(setptsIdx);
+	});
+
+	test("trim duration switches to source-time (timeline duration * playbackRate)", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 4,
+					trimStartSeconds: 1,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+					playbackRate: 2,
+				},
+			],
+		});
+		// Source duration consumed = 4 * 2 = 8s
+		expect(result.filter).toContain("trim=start=1.000:duration=8.000");
+	});
+
+	test("playbackRate=1 keeps trim duration at timeline duration and omits setpts", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 4,
+					trimStartSeconds: 1,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+			],
+		});
+		expect(result.filter).toContain("trim=start=1.000:duration=4.000");
+		expect(result.filter).not.toContain("setpts=PTS/");
+	});
+});
+
+describe("buildAcrossfadeChainFilter applies atempo for playbackRate", () => {
+	test("emits atempo=N when playbackRate ≠ 1", () => {
+		const result = buildAcrossfadeChainFilter({
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					durationSeconds: 4,
+					trimStartSeconds: 0.5,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+					playbackRate: 0.5,
+				},
+			],
+		});
+		expect(result.filter).toContain("atempo=0.500000");
+		// Source duration = 4 * 0.5 = 2s
+		expect(result.filter).toContain("atrim=start=0.500:duration=2.000");
+	});
+
+	test("playbackRate=1 emits anull (no trim, no atempo) for untrimmed clip", () => {
+		const result = buildAcrossfadeChainFilter({
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+			],
+		});
+		expect(result.filter).toBe("[0:a]anull[a0]");
+	});
+});
+
+describe("buildAudioMixChain applies atempo for playbackRate on dedicated audio elements", () => {
+	test("emits atempo and adjusts atrim to source-time", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0.25,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "voiceover",
+					playbackRate: 2,
+				},
+			],
+			firstAudioInputIndex: 4,
+		});
+		// Source duration = 4 * 2 = 8s
+		expect(result.filter).toContain("atrim=start=0.250:duration=8.000");
+		expect(result.filter).toContain("atempo=2.000000");
+	});
+
+	test("chained atempo for very-slow rate appears between asetpts and volume/fades", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: null,
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 0.5,
+					role: "music",
+					playbackRate: 0.25,
+				},
+			],
+			firstAudioInputIndex: 4,
+		});
+		expect(result.filter).toContain("atempo=0.5,atempo=0.500000");
+		const atempoIdx = result.filter.indexOf("atempo=0.5,");
+		const volumeIdx = result.filter.indexOf("volume=0.500");
+		expect(atempoIdx).toBeGreaterThan(-1);
+		expect(volumeIdx).toBeGreaterThan(atempoIdx);
+	});
+});
+
+describe("buildFfmpegPlan with playbackRate", () => {
+	test("video clip with playbackRate ≠ 1 forces filter-graph", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 4,
+								playbackRate: 2,
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_v" }],
+		});
+		const plan = buildFfmpegPlan({ input });
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.clips[0]!.playbackRate).toBe(2);
+	});
+
+	test("audio element with playbackRate ≠ 1 forces filter-graph (with audioMixing on)", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeSceneWithVideoAndAudio({
+						video: [makeVideoElement({ mediaId: "v_a" })],
+						audio: [
+							makeUploadAudioElement({
+								mediaId: "audio_a",
+								playbackRate: 0.5,
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: true,
+			publishDestination: "generic-export",
+			mediaRefs: [
+				{ mediaId: "v_a", cloudStorageKey: "k_v" },
+				{ mediaId: "audio_a", cloudStorageKey: "k_a" },
+			],
+		});
+		const plan = buildFfmpegPlan({ input, features: { audioMixing: true } });
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.audioElements?.[0]!.playbackRate).toBe(0.5);
+	});
+
+	test("invalid playbackRate (zero or negative) falls back to 1 and stays video-concat", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 4,
+								playbackRate: 0,
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_v" }],
+		});
+		const plan = buildFfmpegPlan({ input });
+		expect(plan.kind).toBe("video-concat");
 	});
 });
