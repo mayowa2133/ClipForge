@@ -5,6 +5,7 @@ import {
 	buildAtempoChain,
 	buildAudioMixChain,
 	buildBlackVideoFfmpegInvocation,
+	buildColorBalanceFilter,
 	buildDrawtextFilter,
 	buildEffectFilter,
 	buildFfmpegPlan,
@@ -1688,10 +1689,14 @@ describe("buildFfmpegPlan with colorAndEffects feature flag", () => {
 			exposure: 0.2,
 			contrast: 0,
 			saturation: 0,
+			temperature: 0,
+			tint: 0,
+			highlights: 0,
+			shadows: 0,
 		});
 	});
 
-	test("temperature/tint/highlights/shadows are reported as unsupported when flag is on", () => {
+	test("temperature/tint/highlights/shadows are now supported and route to filter-graph", () => {
 		const input = buildRenderGraphInput({
 			project: makeProject({
 				scenes: [
@@ -1722,8 +1727,10 @@ describe("buildFfmpegPlan with colorAndEffects feature flag", () => {
 			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
 		});
 		const plan = buildFfmpegPlan({ input, features: { colorAndEffects: true } });
-		// No supported color/effect → falls back to concat
-		expect(plan.kind).toBe("video-concat");
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.clips[0]!.adjustments?.temperature).toBe(0.3);
+		expect(plan.clips[0]!.adjustments?.highlights).toBe(0.5);
 	});
 });
 
@@ -2986,5 +2993,203 @@ describe("buildFfmpegPlan with library audio elements", () => {
 		expect(upload?.sourceUrl ?? null).toBeNull();
 		expect(library?.sourceUrl).toBe("/library/music/upbeat.mp3");
 		expect(library?.storageKey ?? null).toBeNull();
+	});
+});
+
+describe("buildColorBalanceFilter", () => {
+	test("returns null when all extra knobs are zero", () => {
+		expect(
+			buildColorBalanceFilter({
+				adjustments: {
+					exposure: 0.5,
+					contrast: 0.2,
+					saturation: 0.1,
+					temperature: 0,
+					tint: 0,
+					highlights: 0,
+					shadows: 0,
+				},
+			}),
+		).toBeNull();
+	});
+
+	test("returns null when extra knobs are absent (undefined)", () => {
+		expect(
+			buildColorBalanceFilter({
+				adjustments: { exposure: 0.5, contrast: 0, saturation: 0 },
+			}),
+		).toBeNull();
+	});
+
+	test("temperature: positive (warm) emits +rm and -bm in midtones", () => {
+		const filter = buildColorBalanceFilter({
+			adjustments: {
+				exposure: 0,
+				contrast: 0,
+				saturation: 0,
+				temperature: 0.4,
+				tint: 0,
+				highlights: 0,
+				shadows: 0,
+			},
+		});
+		expect(filter).toBe("colorbalance=rm=0.400:bm=-0.400");
+	});
+
+	test("temperature: negative (cold) flips the sign", () => {
+		const filter = buildColorBalanceFilter({
+			adjustments: {
+				exposure: 0,
+				contrast: 0,
+				saturation: 0,
+				temperature: -0.6,
+				tint: 0,
+				highlights: 0,
+				shadows: 0,
+			},
+		});
+		expect(filter).toContain("rm=-0.600");
+		expect(filter).toContain("bm=0.600");
+	});
+
+	test("tint: positive (magenta) emits negative gm in midtones", () => {
+		const filter = buildColorBalanceFilter({
+			adjustments: {
+				exposure: 0,
+				contrast: 0,
+				saturation: 0,
+				temperature: 0,
+				tint: 0.3,
+				highlights: 0,
+				shadows: 0,
+			},
+		});
+		expect(filter).toBe("colorbalance=gm=-0.300");
+	});
+
+	test("highlights: shifts every channel in the highlight bucket", () => {
+		const filter = buildColorBalanceFilter({
+			adjustments: {
+				exposure: 0,
+				contrast: 0,
+				saturation: 0,
+				temperature: 0,
+				tint: 0,
+				highlights: 0.5,
+				shadows: 0,
+			},
+		});
+		expect(filter).toBe("colorbalance=rh=0.500:gh=0.500:bh=0.500");
+	});
+
+	test("shadows: shifts every channel in the shadow bucket", () => {
+		const filter = buildColorBalanceFilter({
+			adjustments: {
+				exposure: 0,
+				contrast: 0,
+				saturation: 0,
+				temperature: 0,
+				tint: 0,
+				highlights: 0,
+				shadows: -0.4,
+			},
+		});
+		expect(filter).toBe("colorbalance=rs=-0.400:gs=-0.400:bs=-0.400");
+	});
+
+	test("clamps each knob to [-1, 1]", () => {
+		const filter = buildColorBalanceFilter({
+			adjustments: {
+				exposure: 0,
+				contrast: 0,
+				saturation: 0,
+				temperature: 5,
+				tint: -3,
+				highlights: 99,
+				shadows: -50,
+			},
+		});
+		// temperature: clamp(5, -1, 1) = 1 → rm=1.000, bm=-1.000
+		expect(filter).toContain("rm=1.000");
+		expect(filter).toContain("bm=-1.000");
+		// tint: clamp(-3, -1, 1) = -1; gm = -tint = 1.000
+		expect(filter).toContain("gm=1.000");
+		// highlights: clamp(99) = 1 → rh/gh/bh = 1.000
+		expect(filter).toContain("rh=1.000");
+		// shadows: clamp(-50) = -1 → rs/gs/bs = -1.000
+		expect(filter).toContain("rs=-1.000");
+	});
+
+	test("combines multiple knobs into a single colorbalance filter", () => {
+		const filter = buildColorBalanceFilter({
+			adjustments: {
+				exposure: 0,
+				contrast: 0,
+				saturation: 0,
+				temperature: 0.2,
+				tint: 0.1,
+				highlights: 0.3,
+				shadows: -0.2,
+			},
+		});
+		expect(filter?.startsWith("colorbalance=")).toBe(true);
+		expect(filter).toContain("rm=0.200");
+		expect(filter).toContain("gm=-0.100");
+		expect(filter).toContain("rh=0.300");
+		expect(filter).toContain("rs=-0.200");
+	});
+});
+
+describe("xfade chain wires colorbalance after eq", () => {
+	test("emits eq then colorbalance, both before format=yuv420p", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+					adjustments: {
+						exposure: 0.1,
+						contrast: 0,
+						saturation: 0,
+						temperature: 0.2,
+						tint: 0,
+						highlights: 0,
+						shadows: 0,
+					},
+					effects: [],
+				},
+			],
+		});
+		const eqIdx = result.filter.indexOf("eq=brightness");
+		const cbIdx = result.filter.indexOf("colorbalance=");
+		const fmtIdx = result.filter.indexOf("format=yuv420p");
+		expect(eqIdx).toBeGreaterThan(-1);
+		expect(cbIdx).toBeGreaterThan(eqIdx);
+		expect(fmtIdx).toBeGreaterThan(cbIdx);
+	});
+
+	test("omits colorbalance entirely when only the eq knobs are set", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+					adjustments: { exposure: 0.1, contrast: 0, saturation: 0 },
+					effects: [],
+				},
+			],
+		});
+		expect(result.filter).toContain("eq=brightness=0.100");
+		expect(result.filter).not.toContain("colorbalance=");
 	});
 });

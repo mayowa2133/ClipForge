@@ -30,17 +30,6 @@ export const DEFAULT_FFMPEG_FEATURES: Required<FfmpegFeatureFlags> = {
 	audioMixing: false,
 };
 
-const SUPPORTED_COLOR_KNOBS = new Set([
-	"exposure",
-	"contrast",
-	"saturation",
-]);
-const UNSUPPORTED_COLOR_KNOBS = new Set([
-	"temperature",
-	"tint",
-	"highlights",
-	"shadows",
-]);
 
 const TRANSITION_PRESET_TO_XFADE: Record<string, XfadeTransitionKind | null> = {
 	"cross-dissolve": "fade",
@@ -90,6 +79,10 @@ export interface PlanColorAdjustments {
 	exposure: number;
 	contrast: number;
 	saturation: number;
+	temperature?: number;
+	tint?: number;
+	highlights?: number;
+	shadows?: number;
 }
 
 export type PlanAudioRole = "voiceover" | "music" | "sfx" | "audio";
@@ -197,7 +190,6 @@ interface PlanProgress {
 		transitionInDuration: number | null;
 		effects: PlanVisualEffect[];
 		adjustments: PlanColorAdjustments | null;
-		unsupportedAdjustmentKnobs: string[];
 		playbackRate: number;
 	}>;
 	reasons: string[];
@@ -341,22 +333,36 @@ function extractEffects(
 
 function extractAdjustments(
 	raw: VisualAdjustments | null | undefined,
-): { adjustments: PlanColorAdjustments | null; unsupportedKnobs: string[] } {
-	if (!raw) return { adjustments: null, unsupportedKnobs: [] };
-	const exposure = raw.exposure ?? 0;
-	const contrast = raw.contrast ?? 0;
-	const saturation = raw.saturation ?? 0;
-	const unsupportedKnobs: string[] = [];
-	for (const knob of UNSUPPORTED_COLOR_KNOBS) {
-		const value = (raw as unknown as Record<string, number>)[knob];
-		if (typeof value === "number" && value !== 0) unsupportedKnobs.push(knob);
-	}
-	if (exposure === 0 && contrast === 0 && saturation === 0) {
-		return { adjustments: null, unsupportedKnobs };
+): { adjustments: PlanColorAdjustments | null } {
+	if (!raw) return { adjustments: null };
+	const exposure = typeof raw.exposure === "number" ? raw.exposure : 0;
+	const contrast = typeof raw.contrast === "number" ? raw.contrast : 0;
+	const saturation = typeof raw.saturation === "number" ? raw.saturation : 0;
+	const temperature = typeof raw.temperature === "number" ? raw.temperature : 0;
+	const tint = typeof raw.tint === "number" ? raw.tint : 0;
+	const highlights = typeof raw.highlights === "number" ? raw.highlights : 0;
+	const shadows = typeof raw.shadows === "number" ? raw.shadows : 0;
+	if (
+		exposure === 0 &&
+		contrast === 0 &&
+		saturation === 0 &&
+		temperature === 0 &&
+		tint === 0 &&
+		highlights === 0 &&
+		shadows === 0
+	) {
+		return { adjustments: null };
 	}
 	return {
-		adjustments: { exposure, contrast, saturation },
-		unsupportedKnobs,
+		adjustments: {
+			exposure,
+			contrast,
+			saturation,
+			temperature,
+			tint,
+			highlights,
+			shadows,
+		},
 	};
 }
 
@@ -390,7 +396,6 @@ function summarizeUnsupportedFeatures({
 	let keyframeCount = 0;
 	let effectCount = 0;
 	let adjustmentCount = 0;
-	let unsupportedColorKnobs = new Set<string>();
 
 	for (const scene of scenes) {
 		let videoTracksSeen = 0;
@@ -417,16 +422,11 @@ function summarizeUnsupportedFeatures({
 							effectCount += 1;
 						}
 						if (element.adjustments) {
-							const { adjustments, unsupportedKnobs } = extractAdjustments(
+							const { adjustments } = extractAdjustments(
 								element.adjustments,
 							);
-							if (!features.colorAndEffects && (adjustments || unsupportedKnobs.length > 0)) {
+							if (!features.colorAndEffects && adjustments) {
 								adjustmentCount += 1;
-							}
-							if (features.colorAndEffects) {
-								for (const knob of unsupportedKnobs) {
-									unsupportedColorKnobs.add(knob);
-								}
 							}
 						}
 					}
@@ -467,10 +467,6 @@ function summarizeUnsupportedFeatures({
 		reasons.add(
 			`${adjustmentCount} clip(s) with color adjustments skipped (enable colorAndEffects to render)`,
 		);
-	if (unsupportedColorKnobs.size > 0)
-		reasons.add(
-			`Color knob(s) not yet supported by ffmpeg renderer (only exposure/contrast/saturation are wired): ${Array.from(unsupportedColorKnobs).join(", ")}`,
-		);
 	return Array.from(reasons);
 }
 
@@ -488,9 +484,7 @@ function collectMainVideoClips({
 		);
 		for (const element of elementsInOrder) {
 			if (element.type !== "video") continue;
-			const { adjustments, unsupportedKnobs } = extractAdjustments(
-				element.adjustments,
-			);
+			const { adjustments } = extractAdjustments(element.adjustments);
 			const rawRate = element.playbackRate;
 			const playbackRate =
 				typeof rawRate === "number" && rawRate > 0 ? rawRate : 1;
@@ -503,7 +497,6 @@ function collectMainVideoClips({
 				transitionInDuration: element.transitionIn?.duration ?? null,
 				effects: extractEffects(element.effects),
 				adjustments,
-				unsupportedAdjustmentKnobs: unsupportedKnobs,
 				playbackRate,
 			});
 		}
@@ -1254,6 +1247,50 @@ export function buildAdjustmentsFilter({
 	return `eq=${params.join(":")}`;
 }
 
+export function buildColorBalanceFilter({
+	adjustments,
+}: {
+	adjustments: PlanColorAdjustments;
+}): string | null {
+	// Approximation: ffmpeg's colorbalance filter exposes per-bucket per-channel
+	// offsets. Map each editor knob to the closest bucket. This won't match a
+	// professional grading curve exactly but produces visually correct shifts
+	// for short-form footage.
+	//   temperature  → midtones red (warm) / blue (cold)
+	//   tint         → midtones green (negative) / magenta (positive); ffmpeg's
+	//                  gm is green so we negate the editor sign.
+	//   highlights   → highlight bucket on every channel (lift/lower)
+	//   shadows      → shadow bucket on every channel
+	const params: string[] = [];
+	const temp = clamp(adjustments.temperature ?? 0, -1, 1);
+	if (temp !== 0) {
+		// Warm (positive editor value) = +red and -blue in midtones.
+		params.push(`rm=${temp.toFixed(3)}`);
+		params.push(`bm=${(-temp).toFixed(3)}`);
+	}
+	const tint = clamp(adjustments.tint ?? 0, -1, 1);
+	if (tint !== 0) {
+		// Editor convention: positive tint → magenta (less green).
+		params.push(`gm=${(-tint).toFixed(3)}`);
+	}
+	const highlights = clamp(adjustments.highlights ?? 0, -1, 1);
+	if (highlights !== 0) {
+		const v = highlights.toFixed(3);
+		params.push(`rh=${v}`);
+		params.push(`gh=${v}`);
+		params.push(`bh=${v}`);
+	}
+	const shadows = clamp(adjustments.shadows ?? 0, -1, 1);
+	if (shadows !== 0) {
+		const v = shadows.toFixed(3);
+		params.push(`rs=${v}`);
+		params.push(`gs=${v}`);
+		params.push(`bs=${v}`);
+	}
+	if (params.length === 0) return null;
+	return `colorbalance=${params.join(":")}`;
+}
+
 export function buildEffectFilter({
 	effect,
 }: {
@@ -1297,8 +1334,11 @@ export function buildXfadeChainFilter({
 	for (let i = 0; i < clips.length; i += 1) {
 		const clip = clips[i]!;
 		const trimFilters = buildTrimFilters({ clip });
-		const colorFilter = clip.adjustments
+		const eqFilter = clip.adjustments
 			? buildAdjustmentsFilter({ adjustments: clip.adjustments })
+			: null;
+		const colorBalanceFilter = clip.adjustments
+			? buildColorBalanceFilter({ adjustments: clip.adjustments })
 			: null;
 		const effectFilters = (clip.effects ?? []).map((effect) =>
 			buildEffectFilter({ effect }),
@@ -1310,7 +1350,8 @@ export function buildXfadeChainFilter({
 			pipelineParts.push(`setpts=PTS/${playbackRate.toFixed(6)}`);
 		}
 		pipelineParts.push(baseScale);
-		if (colorFilter) pipelineParts.push(colorFilter);
+		if (eqFilter) pipelineParts.push(eqFilter);
+		if (colorBalanceFilter) pipelineParts.push(colorBalanceFilter);
 		for (const filter of effectFilters) pipelineParts.push(filter);
 		pipelineParts.push("format=yuv420p");
 		stages.push(`[${i}:v]${pipelineParts.join(",")}[v${i}]`);
