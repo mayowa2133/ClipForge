@@ -10,6 +10,7 @@ import type {
 	VideoTrack,
 	VisualAdjustments,
 	VisualEffect,
+	VisualKeyframeMap,
 } from "@/types/timeline";
 
 export interface FfmpegFeatureFlags {
@@ -19,6 +20,7 @@ export interface FfmpegFeatureFlags {
 	transitions?: boolean;
 	colorAndEffects?: boolean;
 	audioMixing?: boolean;
+	keyframeAnimations?: boolean;
 }
 
 export const DEFAULT_FFMPEG_FEATURES: Required<FfmpegFeatureFlags> = {
@@ -28,6 +30,7 @@ export const DEFAULT_FFMPEG_FEATURES: Required<FfmpegFeatureFlags> = {
 	transitions: false,
 	colorAndEffects: false,
 	audioMixing: false,
+	keyframeAnimations: false,
 };
 
 
@@ -66,9 +69,19 @@ export interface PlanImageOverlay {
 	canvasOffset: { x: number; y: number };
 	scale: number;
 	opacity: number;
+	/**
+	 * Optional opacity keyframes (0..1) over the overlay's local timeline
+	 * (relative to startTime). When set, replaces the constant `opacity`.
+	 */
+	opacityKeyframes?: PlanKeyframeStep[];
 }
 
 export type XfadeTransitionKind = "fade" | "fadeblack" | "fadewhite" | "slideleft";
+
+export interface PlanKeyframeStep {
+	timeSeconds: number;
+	value: number;
+}
 
 export type PlanVisualEffect =
 	| { kind: "blur"; radius: number }
@@ -134,6 +147,7 @@ export interface PlanFilterGraphClip {
 	effects?: PlanVisualEffect[];
 	adjustments?: PlanColorAdjustments | null;
 	playbackRate?: number;
+	rotateKeyframes?: PlanKeyframeStep[];
 }
 
 export type FfmpegPlan =
@@ -191,8 +205,45 @@ interface PlanProgress {
 		effects: PlanVisualEffect[];
 		adjustments: PlanColorAdjustments | null;
 		playbackRate: number;
+		rotateKeyframes: PlanKeyframeStep[];
 	}>;
 	reasons: string[];
+}
+
+function extractRotateKeyframes(
+	keyframes: VisualKeyframeMap | null | undefined,
+): PlanKeyframeStep[] {
+	const rawRotate = keyframes?.rotate;
+	if (!rawRotate || rawRotate.length === 0) return [];
+	return rawRotate
+		.filter((k) => typeof k.time === "number" && typeof k.value === "number")
+		.map((k) => ({ timeSeconds: k.time, value: k.value }));
+}
+
+function extractOpacityKeyframes(
+	keyframes: VisualKeyframeMap | null | undefined,
+): PlanKeyframeStep[] {
+	const rawOpacity = keyframes?.opacity;
+	if (!rawOpacity || rawOpacity.length === 0) return [];
+	return rawOpacity
+		.filter((k) => typeof k.time === "number" && typeof k.value === "number")
+		.map((k) => ({ timeSeconds: k.time, value: k.value }));
+}
+
+function hasUnsupportedKeyframeProperty(
+	keyframes: VisualKeyframeMap | null | undefined,
+): boolean {
+	if (!keyframes) return false;
+	const props: ReadonlyArray<keyof VisualKeyframeMap> = [
+		"positionX",
+		"positionY",
+		"scale",
+	];
+	for (const prop of props) {
+		const arr = keyframes[prop];
+		if (Array.isArray(arr) && arr.length > 0) return true;
+	}
+	return false;
 }
 
 interface AudioCandidate {
@@ -396,6 +447,7 @@ function summarizeUnsupportedFeatures({
 	let keyframeCount = 0;
 	let effectCount = 0;
 	let adjustmentCount = 0;
+	let unsupportedKeyframePropertyCount = 0;
 
 	for (const scene of scenes) {
 		let videoTracksSeen = 0;
@@ -414,7 +466,13 @@ function summarizeUnsupportedFeatures({
 								unsupportedTransitionPresets.add(element.transitionIn.preset);
 							}
 						}
-						if (element.keyframes) keyframeCount += 1;
+						if (element.keyframes) {
+							if (!features.keyframeAnimations) {
+								keyframeCount += 1;
+							} else if (hasUnsupportedKeyframeProperty(element.keyframes)) {
+								unsupportedKeyframePropertyCount += 1;
+							}
+						}
 						const enabledEffects = (element.effects ?? []).filter(
 							(eff) => eff.enabled,
 						);
@@ -458,7 +516,13 @@ function summarizeUnsupportedFeatures({
 			`Unsupported transition preset(s) skipped: ${Array.from(unsupportedTransitionPresets).join(", ")}`,
 		);
 	if (keyframeCount > 0)
-		reasons.add(`${keyframeCount} clip(s) with keyframe animation rendered without animation`);
+		reasons.add(
+			`${keyframeCount} clip(s) with keyframe animation rendered without animation (enable keyframeAnimations to render)`,
+		);
+	if (unsupportedKeyframePropertyCount > 0)
+		reasons.add(
+			`${unsupportedKeyframePropertyCount} clip(s) have unsupported keyframe properties (only rotate is wired for video clips; positionX/positionY/scale are deferred)`,
+		);
 	if (effectCount > 0)
 		reasons.add(
 			`${effectCount} clip(s) with visual effects skipped (enable colorAndEffects to render)`,
@@ -498,6 +562,7 @@ function collectMainVideoClips({
 				effects: extractEffects(element.effects),
 				adjustments,
 				playbackRate,
+				rotateKeyframes: extractRotateKeyframes(element.keyframes),
 			});
 		}
 	}
@@ -590,11 +655,13 @@ function collectImageOverlays({
 	canvasSize,
 	mediaRefIndex,
 	missingMediaIds,
+	enableKeyframes,
 }: {
 	scenes: TScene[];
 	canvasSize: { width: number; height: number };
 	mediaRefIndex: Map<string, RenderGraphMediaRef>;
 	missingMediaIds: Set<string>;
+	enableKeyframes: boolean;
 }): PlanImageOverlay[] {
 	const overlays: PlanImageOverlay[] = [];
 	for (const scene of scenes) {
@@ -609,6 +676,9 @@ function collectImageOverlays({
 					missingMediaIds.add(image.mediaId);
 					continue;
 				}
+				const opacityKeyframes = enableKeyframes
+					? extractOpacityKeyframes(image.keyframes)
+					: [];
 				overlays.push({
 					id: image.id,
 					mediaId: image.mediaId,
@@ -621,6 +691,8 @@ function collectImageOverlays({
 					},
 					scale: image.transform.scale ?? 1,
 					opacity: image.opacity ?? 1,
+					opacityKeyframes:
+						opacityKeyframes.length > 0 ? opacityKeyframes : undefined,
 				});
 			}
 		}
@@ -662,8 +734,12 @@ export function buildFfmpegPlan({
 				canvasSize: input.canvasSize,
 				mediaRefIndex,
 				missingMediaIds,
+				enableKeyframes: resolvedFeatures.keyframeAnimations,
 			})
 		: [];
+	let anyKeyframeAnimation = imageOverlays.some(
+		(o) => o.opacityKeyframes && o.opacityKeyframes.length > 0,
+	);
 
 	if (collected.supportedVideoClips.length === 0) {
 		if (missingMediaIds.size > 0) {
@@ -741,6 +817,11 @@ export function buildFfmpegPlan({
 			: null;
 		if (planEffects.length > 0 || planAdjustments) anyColorOrEffect = true;
 		if (clip.playbackRate !== 1) anyPlaybackRate = true;
+		const planRotateKeyframes =
+			resolvedFeatures.keyframeAnimations && clip.rotateKeyframes.length > 0
+				? clip.rotateKeyframes
+				: undefined;
+		if (planRotateKeyframes) anyKeyframeAnimation = true;
 		filterGraphClips.push({
 			mediaId: clip.mediaId,
 			storageKey: ref.cloudStorageKey,
@@ -751,6 +832,7 @@ export function buildFfmpegPlan({
 			effects: planEffects,
 			adjustments: planAdjustments,
 			playbackRate: clip.playbackRate,
+			rotateKeyframes: planRotateKeyframes,
 		});
 	}
 
@@ -825,7 +907,8 @@ export function buildFfmpegPlan({
 		anyColorOrEffect ||
 		anyAudioElement ||
 		anyAudioSettings ||
-		anyPlaybackRate
+		anyPlaybackRate ||
+		anyKeyframeAnimation
 	) {
 		return {
 			kind: "video-filter-graph",
@@ -968,15 +1051,25 @@ export function buildOverlayFilterChain({
 		const { startInputIndex, overlay } = imageInputs[i]!;
 		const nextLabel = `[ovl${i}]`;
 		const enableExpr = `between(t\\,${overlay.startTime}\\,${overlay.endTime})`;
-		const opacityFilter =
-			overlay.opacity < 1
+		const animatedOpacity = buildOpacityKeyframeFilter({
+			keyframes: overlay.opacityKeyframes,
+			startTimeSeconds: overlay.startTime,
+		});
+		// Three opacity modes: keyframed (animated), constant<1 (static alpha
+		// channel), or no filter at all (constant 1).
+		const opacityPipeline = animatedOpacity
+			? `[${startInputIndex}:v]format=rgba,${animatedOpacity}[a${i}];`
+			: overlay.opacity < 1
 				? `[${startInputIndex}:v]format=rgba,colorchannelmixer=aa=${overlay.opacity}[a${i}];`
 				: "";
-		const sourceLabel = overlay.opacity < 1 ? `[a${i}]` : `[${startInputIndex}:v]`;
+		const usesAlphaStream = animatedOpacity !== null || overlay.opacity < 1;
+		const sourceLabel = usesAlphaStream
+			? `[a${i}]`
+			: `[${startInputIndex}:v]`;
 		const xExpr = `${overlay.canvasOffset.x}-overlay_w/2`;
 		const yExpr = `${overlay.canvasOffset.y}-overlay_h/2`;
 		stages.push(
-			`${opacityFilter}${currentLabel}${sourceLabel}overlay=x=${xExpr}:y=${yExpr}:enable='${enableExpr}'${nextLabel}`,
+			`${opacityPipeline}${currentLabel}${sourceLabel}overlay=x=${xExpr}:y=${yExpr}:enable='${enableExpr}'${nextLabel}`,
 		);
 		currentLabel = nextLabel;
 	}
@@ -1317,6 +1410,102 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * Translates a sorted-by-time list of keyframes into an ffmpeg expression
+ * (piecewise linear interpolation) over the variable `t`. Times must be in
+ * seconds within the per-stream local timeline (so the first emitted segment
+ * starts where t == keyframes[0].timeSeconds).
+ *
+ * Returns the constant-string fallback when there are no keyframes; returns a
+ * constant when there is only one keyframe; otherwise returns a nested if(…)
+ * chain that ramps linearly between adjacent pairs and clamps to the boundary
+ * values outside the keyframed range.
+ */
+export function buildKeyframeExpression({
+	keyframes,
+	transformValue = (value) => value,
+	fallback,
+}: {
+	keyframes: PlanKeyframeStep[] | undefined | null;
+	transformValue?: (value: number) => number;
+	fallback: string;
+}): string {
+	if (!keyframes || keyframes.length === 0) return fallback;
+	const sorted = [...keyframes]
+		.map((k) => ({ time: k.timeSeconds, value: transformValue(k.value) }))
+		.sort((a, b) => a.time - b.time);
+	if (sorted.length === 1) {
+		return formatNumber(sorted[0]!.value);
+	}
+
+	const first = sorted[0]!;
+	const last = sorted[sorted.length - 1]!;
+	let expression = formatNumber(last.value);
+	// Walk pairs in reverse so the innermost branch (last segment) is built
+	// first and successive outer branches wrap it.
+	for (let i = sorted.length - 2; i >= 0; i -= 1) {
+		const a = sorted[i]!;
+		const b = sorted[i + 1]!;
+		const span = b.time - a.time;
+		const segmentExpression =
+			span === 0
+				? formatNumber(b.value)
+				: `(${formatNumber(a.value)}+(${formatNumber(b.value - a.value)})*((t-${formatNumber(a.time)})/${formatNumber(span)}))`;
+		expression = `if(lt(t,${formatNumber(b.time)}),${segmentExpression},${expression})`;
+	}
+	// Clamp below the first keyframe to its value.
+	expression = `if(lt(t,${formatNumber(first.time)}),${formatNumber(first.value)},${expression})`;
+	return expression;
+}
+
+function formatNumber(value: number): string {
+	if (!Number.isFinite(value)) return "0";
+	if (Number.isInteger(value)) return value.toString();
+	// Avoid scientific notation; cap precision so expressions stay terse.
+	return value.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+const DEG_TO_RAD = Math.PI / 180;
+
+export function buildRotateKeyframeFilter({
+	keyframes,
+}: {
+	keyframes: PlanKeyframeStep[] | undefined;
+}): string | null {
+	if (!keyframes || keyframes.length === 0) return null;
+	const expression = buildKeyframeExpression({
+		keyframes,
+		transformValue: (value) => value * DEG_TO_RAD,
+		fallback: "0",
+	});
+	// rotate=A:fillcolor=black:ow=iw:oh=ih keeps the canvas dimensions stable
+	// (rotation around the center, transparent corners filled black).
+	return `rotate='${expression}':fillcolor=black:ow=iw:oh=ih`;
+}
+
+export function buildOpacityKeyframeFilter({
+	keyframes,
+	startTimeSeconds,
+}: {
+	keyframes: PlanKeyframeStep[] | undefined;
+	startTimeSeconds: number;
+}): string | null {
+	if (!keyframes || keyframes.length === 0) return null;
+	// Image overlays' time space starts at startTimeSeconds on the canvas
+	// timeline. The colorchannelmixer expression sees `t` from canvas zero,
+	// so shift each keyframe by startTimeSeconds.
+	const shifted = keyframes.map((k) => ({
+		timeSeconds: k.timeSeconds + startTimeSeconds,
+		value: k.value,
+	}));
+	const expression = buildKeyframeExpression({
+		keyframes: shifted,
+		transformValue: (value) => clamp(value, 0, 1),
+		fallback: "1",
+	});
+	return `colorchannelmixer=aa='${expression}':eval=frame`;
+}
+
 export function buildXfadeChainFilter({
 	clips,
 	canvasSize,
@@ -1344,6 +1533,9 @@ export function buildXfadeChainFilter({
 			buildEffectFilter({ effect }),
 		);
 		const playbackRate = clip.playbackRate ?? 1;
+		const rotateFilter = buildRotateKeyframeFilter({
+			keyframes: clip.rotateKeyframes,
+		});
 		const pipelineParts: string[] = [];
 		if (trimFilters.video.length > 0) pipelineParts.push(...trimFilters.video);
 		if (playbackRate !== 1) {
@@ -1353,6 +1545,7 @@ export function buildXfadeChainFilter({
 		if (eqFilter) pipelineParts.push(eqFilter);
 		if (colorBalanceFilter) pipelineParts.push(colorBalanceFilter);
 		for (const filter of effectFilters) pipelineParts.push(filter);
+		if (rotateFilter) pipelineParts.push(rotateFilter);
 		pipelineParts.push("format=yuv420p");
 		stages.push(`[${i}:v]${pipelineParts.join(",")}[v${i}]`);
 	}

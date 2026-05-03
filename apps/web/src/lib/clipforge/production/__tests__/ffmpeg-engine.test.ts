@@ -9,6 +9,10 @@ import {
 	buildDrawtextFilter,
 	buildEffectFilter,
 	buildFfmpegPlan,
+	buildKeyframeExpression,
+	buildOpacityKeyframeFilter,
+	buildOverlayFilterChain,
+	buildRotateKeyframeFilter,
 	buildVideoConcatFfmpegInvocation,
 	buildVideoFilterGraphFfmpegInvocation,
 	buildXfadeChainFilter,
@@ -3191,5 +3195,376 @@ describe("xfade chain wires colorbalance after eq", () => {
 		});
 		expect(result.filter).toContain("eq=brightness=0.100");
 		expect(result.filter).not.toContain("colorbalance=");
+	});
+});
+
+describe("buildKeyframeExpression", () => {
+	test("returns the fallback when keyframes are empty / missing", () => {
+		expect(
+			buildKeyframeExpression({ keyframes: [], fallback: "0" }),
+		).toBe("0");
+		expect(
+			buildKeyframeExpression({ keyframes: undefined, fallback: "1" }),
+		).toBe("1");
+		expect(
+			buildKeyframeExpression({ keyframes: null, fallback: "2.5" }),
+		).toBe("2.5");
+	});
+
+	test("single keyframe collapses to a constant", () => {
+		expect(
+			buildKeyframeExpression({
+				keyframes: [{ timeSeconds: 1, value: 0.7 }],
+				fallback: "0",
+			}),
+		).toBe("0.7");
+	});
+
+	test("two keyframes produce a single linear ramp with boundary clamps", () => {
+		const expr = buildKeyframeExpression({
+			keyframes: [
+				{ timeSeconds: 0, value: 0 },
+				{ timeSeconds: 2, value: 1 },
+			],
+			fallback: "0",
+		});
+		// Below the first keyframe time (0), value clamps to 0.
+		expect(expr).toContain("if(lt(t,0),0,");
+		// Inside [0, 2], lerp from 0 to 1 over span 2.
+		expect(expr).toContain("(0+(1)*((t-0)/2))");
+		// Above the last keyframe (t >= 2) the inner branch falls through to 1.
+		expect(expr).toContain(",1)");
+	});
+
+	test("three keyframes produce two nested segments", () => {
+		const expr = buildKeyframeExpression({
+			keyframes: [
+				{ timeSeconds: 0, value: 0 },
+				{ timeSeconds: 1, value: 1 },
+				{ timeSeconds: 3, value: 0 },
+			],
+			fallback: "0",
+		});
+		expect(expr).toContain("if(lt(t,1)");
+		expect(expr).toContain("if(lt(t,3)");
+		// First segment ramps 0→1 over span 1
+		expect(expr).toContain("(0+(1)*((t-0)/1))");
+		// Second segment ramps 1→0 over span 2
+		expect(expr).toContain("(1+(-1)*((t-1)/2))");
+	});
+
+	test("transformValue is applied per keyframe value (e.g. degrees → radians)", () => {
+		const expr = buildKeyframeExpression({
+			keyframes: [
+				{ timeSeconds: 0, value: 0 },
+				{ timeSeconds: 1, value: 180 },
+			],
+			transformValue: (v) => v * (Math.PI / 180),
+			fallback: "0",
+		});
+		// 180 degrees → π radians ≈ 3.141593
+		expect(expr).toContain("3.141593");
+	});
+
+	test("unsorted input is sorted before building", () => {
+		const expr = buildKeyframeExpression({
+			keyframes: [
+				{ timeSeconds: 2, value: 1 },
+				{ timeSeconds: 0, value: 0 },
+			],
+			fallback: "0",
+		});
+		expect(expr).toContain("if(lt(t,0)");
+		expect(expr).toContain("(0+(1)*((t-0)/2))");
+	});
+});
+
+describe("buildRotateKeyframeFilter", () => {
+	test("returns null for empty / missing keyframes", () => {
+		expect(buildRotateKeyframeFilter({ keyframes: undefined })).toBeNull();
+		expect(buildRotateKeyframeFilter({ keyframes: [] })).toBeNull();
+	});
+
+	test("emits rotate=… with radians + canvas-stable ow/oh", () => {
+		const filter = buildRotateKeyframeFilter({
+			keyframes: [
+				{ timeSeconds: 0, value: 0 },
+				{ timeSeconds: 1, value: 90 },
+			],
+		});
+		expect(filter).not.toBeNull();
+		expect(filter).toContain("rotate='");
+		// 90 deg → π/2 radians ≈ 1.570796
+		expect(filter).toContain("1.570796");
+		expect(filter).toContain("fillcolor=black");
+		expect(filter).toContain("ow=iw:oh=ih");
+	});
+});
+
+describe("buildOpacityKeyframeFilter", () => {
+	test("returns null when there are no keyframes", () => {
+		expect(
+			buildOpacityKeyframeFilter({
+				keyframes: undefined,
+				startTimeSeconds: 0,
+			}),
+		).toBeNull();
+	});
+
+	test("emits colorchannelmixer=aa=… with eval=frame and clamps values to [0,1]", () => {
+		const filter = buildOpacityKeyframeFilter({
+			keyframes: [
+				{ timeSeconds: 0, value: -2 },
+				{ timeSeconds: 1, value: 5 },
+			],
+			startTimeSeconds: 0,
+		});
+		expect(filter).toContain("colorchannelmixer=aa='");
+		expect(filter).toContain(":eval=frame");
+		// -2 clamps to 0 and 5 clamps to 1
+		expect(filter).toMatch(/0\+\(1\)\*\(\(t-0\)\/1\)/);
+	});
+
+	test("shifts keyframe times by startTimeSeconds (canvas-zero coordinates)", () => {
+		const filter = buildOpacityKeyframeFilter({
+			keyframes: [
+				{ timeSeconds: 0, value: 0 },
+				{ timeSeconds: 2, value: 1 },
+			],
+			startTimeSeconds: 5,
+		});
+		// Keyframes shift to [5, 7]; below 5 clamps to 0, above 7 clamps to 1.
+		expect(filter).toContain("if(lt(t,5),0,");
+		expect(filter).toContain("if(lt(t,7)");
+	});
+});
+
+describe("buildXfadeChainFilter applies rotate keyframes per clip", () => {
+	test("emits rotate filter only when rotateKeyframes are set", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+					rotateKeyframes: [
+						{ timeSeconds: 0, value: 0 },
+						{ timeSeconds: 4, value: 360 },
+					],
+				},
+			],
+		});
+		expect(result.filter).toContain("rotate='");
+		const rotateIdx = result.filter.indexOf("rotate='");
+		const formatIdx = result.filter.indexOf("format=yuv420p");
+		expect(rotateIdx).toBeLessThan(formatIdx);
+	});
+
+	test("omits rotate when no keyframes are present", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					transitionInFromPrev: null,
+				},
+			],
+		});
+		expect(result.filter).not.toContain("rotate='");
+	});
+});
+
+describe("buildOverlayFilterChain applies opacity keyframes for image overlays", () => {
+	test("uses animated colorchannelmixer when opacityKeyframes are present", () => {
+		const filter = buildOverlayFilterChain({
+			textOverlays: [],
+			imageOverlays: [
+				{
+					id: "img1",
+					mediaId: "m1",
+					storageKey: "k1",
+					startTime: 0,
+					endTime: 4,
+					canvasOffset: { x: 540, y: 960 },
+					scale: 1,
+					opacity: 1,
+					opacityKeyframes: [
+						{ timeSeconds: 0, value: 0 },
+						{ timeSeconds: 1, value: 1 },
+					],
+				},
+			],
+			imageInputs: [
+				{
+					startInputIndex: 1,
+					overlay: {
+						id: "img1",
+						mediaId: "m1",
+						storageKey: "k1",
+						startTime: 0,
+						endTime: 4,
+						canvasOffset: { x: 540, y: 960 },
+						scale: 1,
+						opacity: 1,
+						opacityKeyframes: [
+							{ timeSeconds: 0, value: 0 },
+							{ timeSeconds: 1, value: 1 },
+						],
+					},
+				},
+			],
+		});
+		expect(filter).toContain("format=rgba,colorchannelmixer=aa='");
+		expect(filter).toContain(":eval=frame");
+	});
+
+	test("falls back to constant alpha for opacity<1 without keyframes", () => {
+		const filter = buildOverlayFilterChain({
+			textOverlays: [],
+			imageOverlays: [
+				{
+					id: "img1",
+					mediaId: "m1",
+					storageKey: "k1",
+					startTime: 0,
+					endTime: 4,
+					canvasOffset: { x: 540, y: 960 },
+					scale: 1,
+					opacity: 0.5,
+				},
+			],
+			imageInputs: [
+				{
+					startInputIndex: 1,
+					overlay: {
+						id: "img1",
+						mediaId: "m1",
+						storageKey: "k1",
+						startTime: 0,
+						endTime: 4,
+						canvasOffset: { x: 540, y: 960 },
+						scale: 1,
+						opacity: 0.5,
+					},
+				},
+			],
+		});
+		expect(filter).toContain("colorchannelmixer=aa=0.5");
+		expect(filter).not.toContain("eval=frame");
+	});
+});
+
+describe("plan-builder routes to filter-graph for keyframe animations", () => {
+	test("video clip with rotate keyframes routes to filter-graph and surfaces them", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 4,
+								keyframes: {
+									rotate: [
+										{ time: 0, value: 0 },
+										{ time: 4, value: 90 },
+									],
+								},
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_v" }],
+		});
+		const plan = buildFfmpegPlan({
+			input,
+			features: { keyframeAnimations: true },
+		});
+		expect(plan.kind).toBe("video-filter-graph");
+		if (plan.kind !== "video-filter-graph") return;
+		expect(plan.clips[0]!.rotateKeyframes).toEqual([
+			{ timeSeconds: 0, value: 0 },
+			{ timeSeconds: 4, value: 90 },
+		]);
+	});
+
+	test("flag off keeps clip on video-concat path even with keyframes set", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 4,
+								keyframes: {
+									rotate: [
+										{ time: 0, value: 0 },
+										{ time: 4, value: 90 },
+									],
+								},
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_v" }],
+		});
+		const plan = buildFfmpegPlan({ input });
+		expect(plan.kind).toBe("video-concat");
+	});
+
+	test("scale keyframes are reported as unsupported when flag is on", () => {
+		const input = buildRenderGraphInput({
+			project: makeProject({
+				scenes: [
+					makeMainScene({
+						elements: [
+							makeVideoElement({
+								id: "a",
+								mediaId: "v_a",
+								duration: 4,
+								keyframes: {
+									scale: [
+										{ time: 0, value: 1 },
+										{ time: 4, value: 1.5 },
+									],
+								},
+							}),
+						],
+					}),
+				],
+			}),
+			format: "mp4",
+			quality: "high",
+			includeAudio: false,
+			publishDestination: "generic-export",
+			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_v" }],
+		});
+		// No rotate or supported keyframes → falls back to concat
+		const plan = buildFfmpegPlan({
+			input,
+			features: { keyframeAnimations: true },
+		});
+		expect(plan.kind).toBe("video-concat");
 	});
 });

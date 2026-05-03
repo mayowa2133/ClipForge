@@ -75,6 +75,7 @@ function parseFeatureFlags(raw: string | null): {
 	transitions: boolean;
 	colorAndEffects: boolean;
 	audioMixing: boolean;
+	keyframeAnimations: boolean;
 } {
 	const set = new Set(
 		(raw ?? "")
@@ -93,6 +94,8 @@ function parseFeatureFlags(raw: string | null): {
 			all || set.has("color") || set.has("effects") || set.has("color-and-effects"),
 		audioMixing:
 			all || set.has("audio") || set.has("audio-mix") || set.has("audio-mixing"),
+		keyframeAnimations:
+			all || set.has("keyframes") || set.has("keyframe-animations"),
 	};
 }
 
