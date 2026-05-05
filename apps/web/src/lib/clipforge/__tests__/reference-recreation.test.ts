@@ -129,7 +129,7 @@ describe("reference recreation", () => {
 			height: 1920,
 		});
 		expect(videoTrack?.elements.length).toBeGreaterThan(1);
-		expect(textTrack?.elements[0]?.content).toBe("THIS");
+		expect(textTrack?.elements[0]?.content).toBe("THIS IS YOUR SIGN");
 		expect(
 			audioTrack?.elements.some((element) => element.role === "voiceover"),
 		).toBe(true);
@@ -192,7 +192,7 @@ describe("reference recreation", () => {
 		);
 		expect(result.plan.caption_generation.source).toBe("compound-audio");
 		expect(result.plan.caption_generation.uses_word_timings).toBe(false);
-		expect(textTrack?.elements[0]?.content).toBe("THIS");
+		expect(textTrack?.elements[0]?.content).toBe("THIS IS YOUR SIGN");
 		expect(textTrack?.elements[0]?.captionTiming?.words[0]?.text).toBe("THIS");
 	});
 });

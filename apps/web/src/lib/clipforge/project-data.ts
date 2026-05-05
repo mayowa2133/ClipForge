@@ -1186,11 +1186,11 @@ function normalizeReferenceRecreationPlan(
 			max_words_per_caption:
 				typeof source.caption_generation?.max_words_per_caption === "number"
 					? source.caption_generation.max_words_per_caption
-					: 1,
+					: 4,
 			min_display_ms:
 				typeof source.caption_generation?.min_display_ms === "number"
 					? source.caption_generation.min_display_ms
-					: 160,
+					: 520,
 			uses_word_timings:
 				typeof source.caption_generation?.uses_word_timings === "boolean"
 					? source.caption_generation.uses_word_timings

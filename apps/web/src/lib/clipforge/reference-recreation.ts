@@ -145,7 +145,7 @@ export function buildReferenceEditAnalysis({
 		cut_count: cutPoints.length,
 		average_cut_ms: averageCutMs,
 		caption_style: {
-			mode: "word",
+			mode: "phrase",
 			text_transform: "uppercase",
 			style_id: "reference-word-pop",
 			font: "Anton",
@@ -674,8 +674,8 @@ export function buildReferenceRecreationPlan({
 		caption_generation: {
 			source: hasCaptionTranscript ? "compound-audio" : "none",
 			template_id: referenceEditAnalysis.caption_style.style_id,
-			max_words_per_caption: 1,
-			min_display_ms: 160,
+			max_words_per_caption: 4,
+			min_display_ms: 520,
 			uses_word_timings: usesWordTimings,
 		},
 		audio_mix: musicAnalysis
@@ -897,7 +897,7 @@ function buildCompoundCaptionElements({
 		words: compoundWords,
 		options: {
 			maxWordsPerChunk: plan.caption_generation.max_words_per_caption,
-			maxCharsPerLine: 16,
+			maxCharsPerLine: 24,
 			maxLines: 1,
 			minDisplaySeconds: plan.caption_generation.min_display_ms / 1000,
 		},
