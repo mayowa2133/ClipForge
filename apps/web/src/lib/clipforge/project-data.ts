@@ -86,7 +86,9 @@ export function normalizeClipForgeMediaMetadata({
 function normalizeFootageReport({
 	report,
 }: {
-	report?: Partial<import("@/types/clipforge").FootageIntelligenceReport> | null;
+	report?: Partial<
+		import("@/types/clipforge").FootageIntelligenceReport
+	> | null;
 }): import("@/types/clipforge").FootageIntelligenceReport | null {
 	if (!report) return null;
 	return {
@@ -117,14 +119,15 @@ function normalizeFootageReport({
 							reasons: Array.isArray(candidate.reasons)
 								? candidate.reasons.filter(
 										(reason): reason is string => typeof reason === "string",
-								  )
+									)
 								: [],
 						};
 					})
 					.filter(
 						(
 							candidate,
-						): candidate is import("@/types/clipforge").HookCandidate => candidate !== null,
+						): candidate is import("@/types/clipforge").HookCandidate =>
+							candidate !== null,
 					)
 			: [],
 		momentScores: Array.isArray(report.momentScores)
@@ -150,14 +153,13 @@ function normalizeFootageReport({
 							reasons: Array.isArray(score.reasons)
 								? score.reasons.filter(
 										(reason): reason is string => typeof reason === "string",
-								  )
+									)
 								: [],
 						};
 					})
 					.filter(
-						(
-							score,
-						): score is import("@/types/clipforge").FootageMomentScore => score !== null,
+						(score): score is import("@/types/clipforge").FootageMomentScore =>
+							score !== null,
 					)
 			: [],
 		keepCutRecommendations: Array.isArray(report.keepCutRecommendations)
@@ -187,7 +189,7 @@ function normalizeFootageReport({
 							reasons: Array.isArray(recommendation.reasons)
 								? recommendation.reasons.filter(
 										(reason): reason is string => typeof reason === "string",
-								  )
+									)
 								: [],
 						};
 					})
@@ -201,7 +203,7 @@ function normalizeFootageReport({
 		warnings: Array.isArray(report.warnings)
 			? report.warnings.filter(
 					(warning): warning is string => typeof warning === "string",
-			  )
+				)
 			: [],
 	};
 }
@@ -232,8 +234,10 @@ function normalizeTrendSoundReferences({
 				id: reference.id,
 				label: reference.label,
 				platform: reference.platform,
-				creator: typeof reference.creator === "string" ? reference.creator : null,
-				sourceUrl: typeof reference.sourceUrl === "string" ? reference.sourceUrl : null,
+				creator:
+					typeof reference.creator === "string" ? reference.creator : null,
+				sourceUrl:
+					typeof reference.sourceUrl === "string" ? reference.sourceUrl : null,
 				notes: typeof reference.notes === "string" ? reference.notes : null,
 				createdAt: reference.createdAt,
 			},
@@ -241,7 +245,9 @@ function normalizeTrendSoundReferences({
 	});
 }
 
-function normalizeCommandScope(value: unknown): import("@/types/clipforge").ClipForgeCommandScope {
+function normalizeCommandScope(
+	value: unknown,
+): import("@/types/clipforge").ClipForgeCommandScope {
 	return value === "scene" || value === "project" ? value : "selection";
 }
 
@@ -256,11 +262,13 @@ function normalizeTurnSummary(value: unknown): ClipForgeChatTurnSummary | null {
 		return null;
 	}
 
-	const commandKinds = Array.isArray((value as { commandKinds?: unknown }).commandKinds)
+	const commandKinds = Array.isArray(
+		(value as { commandKinds?: unknown }).commandKinds,
+	)
 		? ((value as { commandKinds?: unknown }).commandKinds as unknown[]).filter(
 				(kind): kind is ClipForgeChatTurnSummary["commandKinds"][number] =>
 					typeof kind === "string",
-		  )
+			)
 		: [];
 
 	return {
@@ -287,16 +295,16 @@ function normalizeAppliedCommandSummary(
 	const segmentIds = Array.isArray(
 		(value as { targetSegmentIds?: unknown }).targetSegmentIds,
 	)
-		? ((value as { targetSegmentIds?: unknown }).targetSegmentIds as unknown[]).filter(
-				(id): id is string => typeof id === "string",
-		  )
+		? (
+				(value as { targetSegmentIds?: unknown }).targetSegmentIds as unknown[]
+			).filter((id): id is string => typeof id === "string")
 		: [];
 	const elementIds = Array.isArray(
 		(value as { targetElementIds?: unknown }).targetElementIds,
 	)
-		? ((value as { targetElementIds?: unknown }).targetElementIds as unknown[]).filter(
-				(id): id is string => typeof id === "string",
-		  )
+		? (
+				(value as { targetElementIds?: unknown }).targetElementIds as unknown[]
+			).filter((id): id is string => typeof id === "string")
 		: [];
 
 	return {
@@ -389,9 +397,10 @@ function normalizeRecentReferenceAssemblyChoice(
 		alternativeAssetIds: Array.isArray(
 			(value as { alternativeAssetIds?: unknown }).alternativeAssetIds,
 		)
-			? ((value as { alternativeAssetIds: unknown[] }).alternativeAssetIds as unknown[]).filter(
-					(assetId): assetId is string => typeof assetId === "string",
-			  )
+			? (
+					(value as { alternativeAssetIds: unknown[] })
+						.alternativeAssetIds as unknown[]
+				).filter((assetId): assetId is string => typeof assetId === "string")
 			: [],
 		createdAt: (value as { createdAt: string }).createdAt,
 	};
@@ -406,7 +415,7 @@ function normalizeChatMemory({
 		activeTargets: Array.isArray(memory?.activeTargets)
 			? memory.activeTargets.filter(
 					(target): target is string => typeof target === "string",
-			  )
+				)
 			: [],
 		styleIntent: memory?.styleIntent
 			? {
@@ -446,13 +455,16 @@ function normalizeChatMemory({
 						memory.styleIntent.audioPolishPresetId === "music-forward"
 							? memory.styleIntent.audioPolishPresetId
 							: null,
-			  }
+				}
 			: null,
 		publishIntent:
-			memory?.publishIntent && Array.isArray(memory.publishIntent.versionTargets)
+			memory?.publishIntent &&
+			Array.isArray(memory.publishIntent.versionTargets)
 				? {
 						versionTargets: memory.publishIntent.versionTargets.filter(
-							(target): target is import("@/types/project").ProjectVersionTarget =>
+							(
+								target,
+							): target is import("@/types/project").ProjectVersionTarget =>
 								target === "9:16" || target === "1:1" || target === "16:9",
 						),
 						activeTargetId:
@@ -461,7 +473,7 @@ function normalizeChatMemory({
 							memory.publishIntent.activeTargetId === "16:9"
 								? memory.publishIntent.activeTargetId
 								: null,
-				  }
+					}
 				: null,
 		finishIntent: memory?.finishIntent
 			? {
@@ -499,7 +511,7 @@ function normalizeChatMemory({
 						memory.finishIntent.mood === "minimal"
 							? memory.finishIntent.mood
 							: null,
-			  }
+				}
 			: null,
 		destinationIntent: memory?.destinationIntent
 			? {
@@ -510,7 +522,7 @@ function normalizeChatMemory({
 						memory.destinationIntent.publishDestination === "youtube"
 							? memory.destinationIntent.publishDestination
 							: null,
-			  }
+				}
 			: null,
 		referenceIntent: memory?.referenceIntent
 			? {
@@ -522,10 +534,11 @@ function normalizeChatMemory({
 						memory.referenceIntent.referenceMode === "exact-recreation"
 							? memory.referenceIntent.referenceMode
 							: null,
-			  }
+				}
 			: null,
 		assemblyIntent:
-			memory?.assemblyIntent && Array.isArray(memory.assemblyIntent.sourceAssetIds)
+			memory?.assemblyIntent &&
+			Array.isArray(memory.assemblyIntent.sourceAssetIds)
 				? {
 						referenceAssetId:
 							typeof memory.assemblyIntent.referenceAssetId === "string"
@@ -537,14 +550,14 @@ function normalizeChatMemory({
 						focusMatchIds: Array.isArray(memory.assemblyIntent.focusMatchIds)
 							? memory.assemblyIntent.focusMatchIds.filter(
 									(matchId): matchId is string => typeof matchId === "string",
-							  )
+								)
 							: [],
-				  }
+					}
 				: null,
 		lockedMatchIds: Array.isArray(memory?.lockedMatchIds)
 			? memory.lockedMatchIds.filter(
 					(matchId): matchId is string => typeof matchId === "string",
-			  )
+				)
 			: [],
 		recentTurnSummaries: Array.isArray(memory?.recentTurnSummaries)
 			? memory.recentTurnSummaries
@@ -552,30 +565,39 @@ function normalizeChatMemory({
 					.filter((value): value is ClipForgeChatTurnSummary => value !== null)
 					.slice(-MAX_CHAT_MEMORY_TURNS)
 			: [],
-		recentAppliedCommandSummaries: Array.isArray(memory?.recentAppliedCommandSummaries)
+		recentAppliedCommandSummaries: Array.isArray(
+			memory?.recentAppliedCommandSummaries,
+		)
 			? memory.recentAppliedCommandSummaries
 					.map((value) => normalizeAppliedCommandSummary(value))
-					.filter((value): value is ClipForgeAppliedCommandSummary => value !== null)
+					.filter(
+						(value): value is ClipForgeAppliedCommandSummary => value !== null,
+					)
 					.slice(-MAX_CHAT_MEMORY_APPLIED_COMMANDS)
 			: [],
 		recentAssetChoices: Array.isArray(memory?.recentAssetChoices)
 			? memory.recentAssetChoices
 					.map((value) => normalizeRecentAssetChoice(value))
-					.filter((value): value is ClipForgeRecentAssetChoice => value !== null)
+					.filter(
+						(value): value is ClipForgeRecentAssetChoice => value !== null,
+					)
 					.slice(-MAX_CHAT_MEMORY_ASSET_CHOICES)
 			: [],
-		recentReferenceComparisons: Array.isArray(memory?.recentReferenceComparisons)
+		recentReferenceComparisons: Array.isArray(
+			memory?.recentReferenceComparisons,
+		)
 			? memory.recentReferenceComparisons
 					.filter((value): value is string => typeof value === "string")
 					.slice(-MAX_CHAT_MEMORY_TURNS)
 			: [],
-		recentReferenceAssemblyChoices: Array.isArray(memory?.recentReferenceAssemblyChoices)
+		recentReferenceAssemblyChoices: Array.isArray(
+			memory?.recentReferenceAssemblyChoices,
+		)
 			? memory.recentReferenceAssemblyChoices
 					.map((value) => normalizeRecentReferenceAssemblyChoice(value))
 					.filter(
-						(
-							value,
-						): value is ClipForgeRecentReferenceAssemblyChoice => value !== null,
+						(value): value is ClipForgeRecentReferenceAssemblyChoice =>
+							value !== null,
 					)
 					.slice(-MAX_CHAT_MEMORY_TURNS)
 			: [],
@@ -595,7 +617,8 @@ function normalizeFootageDescriptor(value: unknown): FootageDescriptor | null {
 	}
 
 	const aspectRatio = (value as { aspect_ratio?: unknown }).aspect_ratio;
-	const activityIntensity = (value as { activity_intensity?: unknown }).activity_intensity;
+	const activityIntensity = (value as { activity_intensity?: unknown })
+		.activity_intensity;
 	const candidateRanges = Array.isArray(
 		(value as { candidate_ranges?: unknown }).candidate_ranges,
 	)
@@ -608,9 +631,12 @@ function normalizeFootageDescriptor(value: unknown): FootageDescriptor | null {
 						typeof (range as { label?: unknown }).label !== "string" ||
 						typeof (range as { start_ms?: unknown }).start_ms !== "number" ||
 						typeof (range as { end_ms?: unknown }).end_ms !== "number" ||
-						typeof (range as { hook_score?: unknown }).hook_score !== "number" ||
-						typeof (range as { activity_score?: unknown }).activity_score !== "number" ||
-						typeof (range as { semantic_summary?: unknown }).semantic_summary !== "string"
+						typeof (range as { hook_score?: unknown }).hook_score !==
+							"number" ||
+						typeof (range as { activity_score?: unknown }).activity_score !==
+							"number" ||
+						typeof (range as { semantic_summary?: unknown })
+							.semantic_summary !== "string"
 					) {
 						return null;
 					}
@@ -620,21 +646,23 @@ function normalizeFootageDescriptor(value: unknown): FootageDescriptor | null {
 						start_ms: (range as { start_ms: number }).start_ms,
 						end_ms: (range as { end_ms: number }).end_ms,
 						hook_score: (range as { hook_score: number }).hook_score,
-						activity_score: (range as { activity_score: number }).activity_score,
+						activity_score: (range as { activity_score: number })
+							.activity_score,
 						transcript_cues: Array.isArray(
 							(range as { transcript_cues?: unknown }).transcript_cues,
 						)
 							? (
-									(range as { transcript_cues: unknown[] }).transcript_cues as unknown[]
-							  ).filter((cue): cue is string => typeof cue === "string")
+									(range as { transcript_cues: unknown[] })
+										.transcript_cues as unknown[]
+								).filter((cue): cue is string => typeof cue === "string")
 							: [],
-						semantic_summary: (range as { semantic_summary: string }).semantic_summary,
+						semantic_summary: (range as { semantic_summary: string })
+							.semantic_summary,
 					};
 				})
 				.filter(
-					(
-						range,
-					): range is FootageDescriptor["candidate_ranges"][number] => range !== null,
+					(range): range is FootageDescriptor["candidate_ranges"][number] =>
+						range !== null,
 				)
 		: [];
 
@@ -651,7 +679,8 @@ function normalizeFootageDescriptor(value: unknown): FootageDescriptor | null {
 				? aspectRatio
 				: "unknown",
 		scene_cut_count:
-			typeof (value as { scene_cut_count?: unknown }).scene_cut_count === "number"
+			typeof (value as { scene_cut_count?: unknown }).scene_cut_count ===
+			"number"
 				? (value as { scene_cut_count: number }).scene_cut_count
 				: 0,
 		activity_intensity:
@@ -668,20 +697,23 @@ function normalizeFootageDescriptor(value: unknown): FootageDescriptor | null {
 			typeof (value as { hook_score?: unknown }).hook_score === "number"
 				? (value as { hook_score: number }).hook_score
 				: 0,
-		transcript_cues: Array.isArray((value as { transcript_cues?: unknown }).transcript_cues)
-			? ((value as { transcript_cues: unknown[] }).transcript_cues as unknown[]).filter(
-					(cue): cue is string => typeof cue === "string",
-			  )
+		transcript_cues: Array.isArray(
+			(value as { transcript_cues?: unknown }).transcript_cues,
+		)
+			? (
+					(value as { transcript_cues: unknown[] }).transcript_cues as unknown[]
+				).filter((cue): cue is string => typeof cue === "string")
 			: [],
 		semantic_summary:
-			typeof (value as { semantic_summary?: unknown }).semantic_summary === "string"
+			typeof (value as { semantic_summary?: unknown }).semantic_summary ===
+			"string"
 				? (value as { semantic_summary: string }).semantic_summary
 				: "",
 		candidate_ranges: candidateRanges,
 		warnings: Array.isArray((value as { warnings?: unknown }).warnings)
 			? ((value as { warnings: unknown[] }).warnings as unknown[]).filter(
 					(warning): warning is string => typeof warning === "string",
-			  )
+				)
 			: [],
 	};
 }
@@ -691,7 +723,8 @@ function normalizeReferenceShotPlan(value: unknown): ReferenceShotPlan | null {
 		typeof value !== "object" ||
 		value === null ||
 		typeof (value as { analyzedAt?: unknown }).analyzedAt !== "string" ||
-		typeof (value as { reference_asset_id?: unknown }).reference_asset_id !== "string"
+		typeof (value as { reference_asset_id?: unknown }).reference_asset_id !==
+			"string"
 	) {
 		return null;
 	}
@@ -704,16 +737,20 @@ function normalizeReferenceShotPlan(value: unknown): ReferenceShotPlan | null {
 						section === null ||
 						typeof (section as { match_id?: unknown }).match_id !== "string" ||
 						typeof (section as { label?: unknown }).label !== "string" ||
-						typeof (section as { target_start_ms?: unknown }).target_start_ms !== "number" ||
-						typeof (section as { target_duration_ms?: unknown }).target_duration_ms !==
-							"number" ||
-						typeof (section as { description?: unknown }).description !== "string"
+						typeof (section as { target_start_ms?: unknown })
+							.target_start_ms !== "number" ||
+						typeof (section as { target_duration_ms?: unknown })
+							.target_duration_ms !== "number" ||
+						typeof (section as { description?: unknown }).description !==
+							"string"
 					) {
 						return null;
 					}
 					const role = (section as { role?: unknown }).role;
-					const shotCadence = (section as { shot_cadence?: unknown }).shot_cadence;
-					const desiredEnergy = (section as { desired_energy?: unknown }).desired_energy;
+					const shotCadence = (section as { shot_cadence?: unknown })
+						.shot_cadence;
+					const desiredEnergy = (section as { desired_energy?: unknown })
+						.desired_energy;
 					if (
 						(role !== "hook" &&
 							role !== "body" &&
@@ -732,50 +769,58 @@ function normalizeReferenceShotPlan(value: unknown): ReferenceShotPlan | null {
 						match_id: (section as { match_id: string }).match_id,
 						label: (section as { label: string }).label,
 						role,
-						target_start_ms: (section as { target_start_ms: number }).target_start_ms,
-						target_duration_ms: (section as { target_duration_ms: number }).target_duration_ms,
+						target_start_ms: (section as { target_start_ms: number })
+							.target_start_ms,
+						target_duration_ms: (section as { target_duration_ms: number })
+							.target_duration_ms,
 						shot_cadence: shotCadence,
 						desired_energy: desiredEnergy,
 						overlay_moment:
-							typeof (section as { overlay_moment?: unknown }).overlay_moment === "boolean"
+							typeof (section as { overlay_moment?: unknown })
+								.overlay_moment === "boolean"
 								? (section as { overlay_moment: boolean }).overlay_moment
 								: false,
 						caption_moment:
-							typeof (section as { caption_moment?: unknown }).caption_moment === "boolean"
+							typeof (section as { caption_moment?: unknown })
+								.caption_moment === "boolean"
 								? (section as { caption_moment: boolean }).caption_moment
 								: false,
 						description: (section as { description: string }).description,
 					};
 				})
 				.filter(
-					(
-						section,
-					): section is ReferenceShotPlan["sections"][number] => section !== null,
+					(section): section is ReferenceShotPlan["sections"][number] =>
+						section !== null,
 				)
 		: [];
 
 	const endingShape = (value as { ending_shape?: unknown }).ending_shape;
 	return {
 		analyzedAt: (value as { analyzedAt: string }).analyzedAt,
-		reference_asset_id: (value as { reference_asset_id: string }).reference_asset_id,
+		reference_asset_id: (value as { reference_asset_id: string })
+			.reference_asset_id,
 		hook_pattern:
 			typeof (value as { hook_pattern?: unknown }).hook_pattern === "string"
 				? (value as { hook_pattern: string }).hook_pattern
 				: "front-loaded hook",
 		ending_shape:
-			endingShape === "payoff" || endingShape === "cta" || endingShape === "open-ended"
+			endingShape === "payoff" ||
+			endingShape === "cta" ||
+			endingShape === "open-ended"
 				? endingShape
 				: "payoff",
 		sections,
 		warnings: Array.isArray((value as { warnings?: unknown }).warnings)
 			? ((value as { warnings: unknown[] }).warnings as unknown[]).filter(
 					(warning): warning is string => typeof warning === "string",
-			  )
+				)
 			: [],
 	};
 }
 
-function normalizeReferenceMatchLock(value: unknown): ReferenceMatchLock | null {
+function normalizeReferenceMatchLock(
+	value: unknown,
+): ReferenceMatchLock | null {
 	if (
 		typeof value !== "object" ||
 		value === null ||
@@ -795,12 +840,15 @@ function normalizeReferenceMatchLock(value: unknown): ReferenceMatchLock | null 
 	};
 }
 
-function normalizeReferenceEditAnalysis(value: unknown): ReferenceEditAnalysis | null {
+function normalizeReferenceEditAnalysis(
+	value: unknown,
+): ReferenceEditAnalysis | null {
 	if (
 		typeof value !== "object" ||
 		value === null ||
 		typeof (value as { analyzedAt?: unknown }).analyzedAt !== "string" ||
-		typeof (value as { reference_asset_id?: unknown }).reference_asset_id !== "string" ||
+		typeof (value as { reference_asset_id?: unknown }).reference_asset_id !==
+			"string" ||
 		typeof (value as { duration_ms?: unknown }).duration_ms !== "number"
 	) {
 		return null;
@@ -842,7 +890,8 @@ function normalizeReferenceEditAnalysis(value: unknown): ReferenceEditAnalysis |
 		shadow:
 			typeof captionStyle?.shadow === "boolean" ? captionStyle.shadow : true,
 		safe_zone:
-			captionStyle?.safe_zone === "center" || captionStyle?.safe_zone === "bottom"
+			captionStyle?.safe_zone === "center" ||
+			captionStyle?.safe_zone === "bottom"
 				? captionStyle.safe_zone
 				: "lower-center",
 	};
@@ -856,7 +905,9 @@ function normalizeReferenceEditAnalysis(value: unknown): ReferenceEditAnalysis |
 		music_volume:
 			typeof audioMix?.music_volume === "number" ? audioMix.music_volume : 0.28,
 		ducking_amount:
-			typeof audioMix?.ducking_amount === "number" ? audioMix.ducking_amount : 0.62,
+			typeof audioMix?.ducking_amount === "number"
+				? audioMix.ducking_amount
+				: 0.62,
 		ducking_attack_ms:
 			typeof audioMix?.ducking_attack_ms === "number"
 				? audioMix.ducking_attack_ms
@@ -866,12 +917,27 @@ function normalizeReferenceEditAnalysis(value: unknown): ReferenceEditAnalysis |
 				? audioMix.ducking_release_ms
 				: 260,
 		soft_limiter:
-			typeof audioMix?.soft_limiter === "boolean" ? audioMix.soft_limiter : true,
+			typeof audioMix?.soft_limiter === "boolean"
+				? audioMix.soft_limiter
+				: true,
+		noise_reduction_enabled:
+			typeof audioMix?.noise_reduction_enabled === "boolean"
+				? audioMix.noise_reduction_enabled
+				: true,
+		noise_reduction_strength:
+			typeof audioMix?.noise_reduction_strength === "number"
+				? audioMix.noise_reduction_strength
+				: 0.7,
+		wind_reduction_enabled:
+			typeof audioMix?.wind_reduction_enabled === "boolean"
+				? audioMix.wind_reduction_enabled
+				: true,
 	};
 
 	return {
 		analyzedAt: (value as { analyzedAt: string }).analyzedAt,
-		reference_asset_id: (value as { reference_asset_id: string }).reference_asset_id,
+		reference_asset_id: (value as { reference_asset_id: string })
+			.reference_asset_id,
 		duration_ms: (value as { duration_ms: number }).duration_ms,
 		aspect_ratio:
 			aspectRatio === "9:16" ||
@@ -881,7 +947,9 @@ function normalizeReferenceEditAnalysis(value: unknown): ReferenceEditAnalysis |
 				? aspectRatio
 				: "unknown",
 		cut_points_ms: Array.isArray(source.cut_points_ms)
-			? source.cut_points_ms.filter((point): point is number => typeof point === "number")
+			? source.cut_points_ms.filter(
+					(point): point is number => typeof point === "number",
+				)
 			: [],
 		cut_count:
 			typeof source.cut_count === "number"
@@ -900,12 +968,16 @@ function normalizeReferenceEditAnalysis(value: unknown): ReferenceEditAnalysis |
 				? source.color_profile
 				: "unknown",
 		warnings: Array.isArray(source.warnings)
-			? source.warnings.filter((warning): warning is string => typeof warning === "string")
+			? source.warnings.filter(
+					(warning): warning is string => typeof warning === "string",
+				)
 			: [],
 	};
 }
 
-function normalizeSourceRecreationAnalysis(value: unknown): SourceRecreationAnalysis | null {
+function normalizeSourceRecreationAnalysis(
+	value: unknown,
+): SourceRecreationAnalysis | null {
 	if (
 		typeof value !== "object" ||
 		value === null ||
@@ -953,26 +1025,33 @@ function normalizeSourceRecreationAnalysis(value: unknown): SourceRecreationAnal
 							reasons: Array.isArray(range.reasons)
 								? range.reasons.filter(
 										(reason): reason is string => typeof reason === "string",
-								  )
+									)
 								: [],
 						},
 					];
-			  })
+				})
 			: [],
 		dead_air_ranges: Array.isArray(source.dead_air_ranges)
 			? source.dead_air_ranges.filter(
-					(range): range is SourceRecreationAnalysis["dead_air_ranges"][number] =>
-						typeof range?.start_ms === "number" && typeof range?.end_ms === "number",
-			  )
+					(
+						range,
+					): range is SourceRecreationAnalysis["dead_air_ranges"][number] =>
+						typeof range?.start_ms === "number" &&
+						typeof range?.end_ms === "number",
+				)
 			: [],
 		face_framing: source.face_framing === "centered" ? "centered" : "unknown",
 		warnings: Array.isArray(source.warnings)
-			? source.warnings.filter((warning): warning is string => typeof warning === "string")
+			? source.warnings.filter(
+					(warning): warning is string => typeof warning === "string",
+				)
 			: [],
 	};
 }
 
-function normalizeMusicTrackAnalysis(value: unknown): MusicTrackAnalysis | null {
+function normalizeMusicTrackAnalysis(
+	value: unknown,
+): MusicTrackAnalysis | null {
 	if (
 		typeof value !== "object" ||
 		value === null ||
@@ -989,7 +1068,9 @@ function normalizeMusicTrackAnalysis(value: unknown): MusicTrackAnalysis | null 
 		duration_ms: (value as { duration_ms: number }).duration_ms,
 		bpm: typeof source.bpm === "number" ? source.bpm : null,
 		recommended_volume:
-			typeof source.recommended_volume === "number" ? source.recommended_volume : 0.28,
+			typeof source.recommended_volume === "number"
+				? source.recommended_volume
+				: 0.28,
 		loop_to_project_end:
 			typeof source.loop_to_project_end === "boolean"
 				? source.loop_to_project_end
@@ -1001,19 +1082,25 @@ function normalizeMusicTrackAnalysis(value: unknown): MusicTrackAnalysis | null 
 				? source.rights_profile
 				: "unknown",
 		warnings: Array.isArray(source.warnings)
-			? source.warnings.filter((warning): warning is string => typeof warning === "string")
+			? source.warnings.filter(
+					(warning): warning is string => typeof warning === "string",
+				)
 			: [],
 	};
 }
 
-function normalizeReferenceRecreationPlan(value: unknown): ReferenceRecreationPlan | null {
+function normalizeReferenceRecreationPlan(
+	value: unknown,
+): ReferenceRecreationPlan | null {
 	if (
 		typeof value !== "object" ||
 		value === null ||
 		typeof (value as { plan_id?: unknown }).plan_id !== "string" ||
 		typeof (value as { createdAt?: unknown }).createdAt !== "string" ||
-		typeof (value as { reference_asset_id?: unknown }).reference_asset_id !== "string" ||
-		typeof (value as { target_duration_ms?: unknown }).target_duration_ms !== "number"
+		typeof (value as { reference_asset_id?: unknown }).reference_asset_id !==
+			"string" ||
+		typeof (value as { target_duration_ms?: unknown }).target_duration_ms !==
+			"number"
 	) {
 		return null;
 	}
@@ -1035,15 +1122,21 @@ function normalizeReferenceRecreationPlan(value: unknown): ReferenceRecreationPl
 	return {
 		plan_id: (value as { plan_id: string }).plan_id,
 		createdAt: (value as { createdAt: string }).createdAt,
-		reference_asset_id: (value as { reference_asset_id: string }).reference_asset_id,
+		reference_asset_id: (value as { reference_asset_id: string })
+			.reference_asset_id,
 		source_asset_ids: Array.isArray(source.source_asset_ids)
-			? source.source_asset_ids.filter((assetId): assetId is string => typeof assetId === "string")
+			? source.source_asset_ids.filter(
+					(assetId): assetId is string => typeof assetId === "string",
+				)
 			: [],
 		music_asset_id:
 			typeof source.music_asset_id === "string" ? source.music_asset_id : null,
-		target_duration_ms: (value as { target_duration_ms: number }).target_duration_ms,
+		target_duration_ms: (value as { target_duration_ms: number })
+			.target_duration_ms,
 		cut_points_ms: Array.isArray(source.cut_points_ms)
-			? source.cut_points_ms.filter((point): point is number => typeof point === "number")
+			? source.cut_points_ms.filter(
+					(point): point is number => typeof point === "number",
+				)
 			: [],
 		source_ranges: Array.isArray(source.source_ranges)
 			? source.source_ranges.flatMap((range) => {
@@ -1072,25 +1165,57 @@ function normalizeReferenceRecreationPlan(value: unknown): ReferenceRecreationPl
 							reasons: Array.isArray(range.reasons)
 								? range.reasons.filter(
 										(reason): reason is string => typeof reason === "string",
-								  )
+									)
 								: [],
 						},
 					];
-			  })
+				})
 			: [],
 		caption_style: referenceAnalysis.caption_style,
+		caption_generation: {
+			source:
+				source.caption_generation?.source === "compound-audio" ||
+				source.caption_generation?.source === "timeline-transcript" ||
+				source.caption_generation?.source === "none"
+					? source.caption_generation.source
+					: "compound-audio",
+			template_id:
+				typeof source.caption_generation?.template_id === "string"
+					? source.caption_generation.template_id
+					: referenceAnalysis.caption_style.style_id,
+			max_words_per_caption:
+				typeof source.caption_generation?.max_words_per_caption === "number"
+					? source.caption_generation.max_words_per_caption
+					: 1,
+			min_display_ms:
+				typeof source.caption_generation?.min_display_ms === "number"
+					? source.caption_generation.min_display_ms
+					: 160,
+			uses_word_timings:
+				typeof source.caption_generation?.uses_word_timings === "boolean"
+					? source.caption_generation.uses_word_timings
+					: false,
+		},
 		audio_mix: referenceAnalysis.audio_mix,
 		crop: {
 			target_aspect_ratio: "9:16",
 			canvas_width:
-				typeof source.crop?.canvas_width === "number" ? source.crop.canvas_width : 1080,
+				typeof source.crop?.canvas_width === "number"
+					? source.crop.canvas_width
+					: 1080,
 			canvas_height:
-				typeof source.crop?.canvas_height === "number" ? source.crop.canvas_height : 1920,
+				typeof source.crop?.canvas_height === "number"
+					? source.crop.canvas_height
+					: 1920,
 			strategy:
-				source.crop?.strategy === "center-face-safe" ? "center-face-safe" : "center-crop",
+				source.crop?.strategy === "center-face-safe"
+					? "center-face-safe"
+					: "center-crop",
 		},
 		warnings: Array.isArray(source.warnings)
-			? source.warnings.filter((warning): warning is string => typeof warning === "string")
+			? source.warnings.filter(
+					(warning): warning is string => typeof warning === "string",
+				)
 			: [],
 	};
 }
@@ -1117,7 +1242,9 @@ function normalizeReferenceVideoAnalysis(
 		return null;
 	}
 
-	const sectionPlan = Array.isArray((value as { sectionPlan?: unknown }).sectionPlan)
+	const sectionPlan = Array.isArray(
+		(value as { sectionPlan?: unknown }).sectionPlan,
+	)
 		? ((value as { sectionPlan?: unknown }).sectionPlan as unknown[])
 				.map((entry) => {
 					if (
@@ -1136,25 +1263,29 @@ function normalizeReferenceVideoAnalysis(
 						label: (entry as { label: string }).label,
 						start_ms: (entry as { start_ms: number }).start_ms,
 						end_ms: (entry as { end_ms: number }).end_ms,
-						role: (entry as {
-							role: "hook" | "body" | "payoff";
-						}).role,
+						role: (
+							entry as {
+								role: "hook" | "body" | "payoff";
+							}
+						).role,
 					};
 				})
 				.filter(
-					(
-						entry,
-					): entry is ReferenceVideoAnalysis["sectionPlan"][number] => entry !== null,
+					(entry): entry is ReferenceVideoAnalysis["sectionPlan"][number] =>
+						entry !== null,
 				)
 		: [];
 
 	const shotPatternSource = (value as { shotPattern?: unknown }).shotPattern;
-	const captionProfileSource = (value as { captionProfile?: unknown }).captionProfile;
+	const captionProfileSource = (value as { captionProfile?: unknown })
+		.captionProfile;
 	const audioProfileSource = (value as { audioProfile?: unknown }).audioProfile;
-	const overlayProfileSource = (value as { overlayProfile?: unknown }).overlayProfile;
-	const finishingProfileSource =
-		(value as { finishingProfile?: unknown }).finishingProfile;
-	const publishProfileSource = (value as { publishProfile?: unknown }).publishProfile;
+	const overlayProfileSource = (value as { overlayProfile?: unknown })
+		.overlayProfile;
+	const finishingProfileSource = (value as { finishingProfile?: unknown })
+		.finishingProfile;
+	const publishProfileSource = (value as { publishProfile?: unknown })
+		.publishProfile;
 
 	return {
 		analyzedAt: (value as { analyzedAt: string }).analyzedAt,
@@ -1162,58 +1293,71 @@ function normalizeReferenceVideoAnalysis(
 		sectionPlan,
 		shotPattern: {
 			average_shot_ms:
-				typeof (shotPatternSource as { average_shot_ms?: unknown })?.average_shot_ms ===
-				"number"
-					? ((shotPatternSource as { average_shot_ms: number }).average_shot_ms ?? null)
+				typeof (shotPatternSource as { average_shot_ms?: unknown })
+					?.average_shot_ms === "number"
+					? ((shotPatternSource as { average_shot_ms: number })
+							.average_shot_ms ?? null)
 					: null,
 			transition_cadence:
-				(shotPatternSource as { transition_cadence?: unknown })?.transition_cadence ===
-					"slow" ||
-				(shotPatternSource as { transition_cadence?: unknown })?.transition_cadence ===
-					"medium" ||
-				(shotPatternSource as { transition_cadence?: unknown })?.transition_cadence ===
-					"fast"
-					? (shotPatternSource as {
-							transition_cadence: "slow" | "medium" | "fast";
-					  }).transition_cadence
+				(shotPatternSource as { transition_cadence?: unknown })
+					?.transition_cadence === "slow" ||
+				(shotPatternSource as { transition_cadence?: unknown })
+					?.transition_cadence === "medium" ||
+				(shotPatternSource as { transition_cadence?: unknown })
+					?.transition_cadence === "fast"
+					? (
+							shotPatternSource as {
+								transition_cadence: "slow" | "medium" | "fast";
+							}
+						).transition_cadence
 					: "medium",
 			scene_cut_count:
-				typeof (shotPatternSource as { scene_cut_count?: unknown })?.scene_cut_count ===
-				"number"
+				typeof (shotPatternSource as { scene_cut_count?: unknown })
+					?.scene_cut_count === "number"
 					? (shotPatternSource as { scene_cut_count: number }).scene_cut_count
 					: 0,
 			activity_intensity:
-				(shotPatternSource as { activity_intensity?: unknown })?.activity_intensity ===
-					"low" ||
-				(shotPatternSource as { activity_intensity?: unknown })?.activity_intensity ===
-					"medium" ||
-				(shotPatternSource as { activity_intensity?: unknown })?.activity_intensity ===
-					"high"
-					? (shotPatternSource as {
-							activity_intensity: "low" | "medium" | "high";
-					  }).activity_intensity
+				(shotPatternSource as { activity_intensity?: unknown })
+					?.activity_intensity === "low" ||
+				(shotPatternSource as { activity_intensity?: unknown })
+					?.activity_intensity === "medium" ||
+				(shotPatternSource as { activity_intensity?: unknown })
+					?.activity_intensity === "high"
+					? (
+							shotPatternSource as {
+								activity_intensity: "low" | "medium" | "high";
+							}
+						).activity_intensity
 					: "medium",
 		},
 		captionProfile: {
 			presence:
 				(captionProfileSource as { presence?: unknown })?.presence === "none" ||
-				(captionProfileSource as { presence?: unknown })?.presence === "light" ||
+				(captionProfileSource as { presence?: unknown })?.presence ===
+					"light" ||
 				(captionProfileSource as { presence?: unknown })?.presence === "heavy"
-					? (captionProfileSource as { presence: "none" | "light" | "heavy" }).presence
+					? (captionProfileSource as { presence: "none" | "light" | "heavy" })
+							.presence
 					: "none",
 			reveal_preset_id:
-				typeof (captionProfileSource as { reveal_preset_id?: unknown })?.reveal_preset_id ===
-				"string"
-					? (captionProfileSource as { reveal_preset_id: ReferenceVideoAnalysis["captionProfile"]["reveal_preset_id"] }).reveal_preset_id
+				typeof (captionProfileSource as { reveal_preset_id?: unknown })
+					?.reveal_preset_id === "string"
+					? (
+							captionProfileSource as {
+								reveal_preset_id: ReferenceVideoAnalysis["captionProfile"]["reveal_preset_id"];
+							}
+						).reveal_preset_id
 					: null,
 			tone:
 				(captionProfileSource as { tone?: unknown })?.tone === "soft" ||
 				(captionProfileSource as { tone?: unknown })?.tone === "clean" ||
 				(captionProfileSource as { tone?: unknown })?.tone === "bold" ||
 				(captionProfileSource as { tone?: unknown })?.tone === "luxury"
-					? (captionProfileSource as {
-							tone: "soft" | "clean" | "bold" | "luxury";
-					  }).tone
+					? (
+							captionProfileSource as {
+								tone: "soft" | "clean" | "bold" | "luxury";
+							}
+						).tone
 					: null,
 			average_words_per_segment:
 				typeof (captionProfileSource as { average_words_per_segment?: unknown })
@@ -1224,19 +1368,26 @@ function normalizeReferenceVideoAnalysis(
 		},
 		audioProfile: {
 			music_mood:
-				(audioProfileSource as { music_mood?: unknown })?.music_mood === "clean" ||
-				(audioProfileSource as { music_mood?: unknown })?.music_mood === "luxury" ||
-				(audioProfileSource as { music_mood?: unknown })?.music_mood === "upbeat" ||
-				(audioProfileSource as { music_mood?: unknown })?.music_mood === "energetic" ||
-				(audioProfileSource as { music_mood?: unknown })?.music_mood === "minimal"
-					? (audioProfileSource as {
-							music_mood:
-								| "clean"
-								| "luxury"
-								| "upbeat"
-								| "energetic"
-								| "minimal";
-					  }).music_mood
+				(audioProfileSource as { music_mood?: unknown })?.music_mood ===
+					"clean" ||
+				(audioProfileSource as { music_mood?: unknown })?.music_mood ===
+					"luxury" ||
+				(audioProfileSource as { music_mood?: unknown })?.music_mood ===
+					"upbeat" ||
+				(audioProfileSource as { music_mood?: unknown })?.music_mood ===
+					"energetic" ||
+				(audioProfileSource as { music_mood?: unknown })?.music_mood ===
+					"minimal"
+					? (
+							audioProfileSource as {
+								music_mood:
+									| "clean"
+									| "luxury"
+									| "upbeat"
+									| "energetic"
+									| "minimal";
+							}
+						).music_mood
 					: null,
 			recommended_music_asset_id:
 				typeof (audioProfileSource as { recommended_music_asset_id?: unknown })
@@ -1266,82 +1417,96 @@ function normalizeReferenceVideoAnalysis(
 				(overlayProfileSource as { density?: unknown })?.density === "none" ||
 				(overlayProfileSource as { density?: unknown })?.density === "light" ||
 				(overlayProfileSource as { density?: unknown })?.density === "heavy"
-					? (overlayProfileSource as { density: "none" | "light" | "heavy" }).density
+					? (overlayProfileSource as { density: "none" | "light" | "heavy" })
+							.density
 					: "none",
 			variant_id:
-				typeof (overlayProfileSource as { variant_id?: unknown })?.variant_id === "string"
-					? (overlayProfileSource as {
-							variant_id: ReferenceVideoAnalysis["overlayProfile"]["variant_id"];
-					  }).variant_id
+				typeof (overlayProfileSource as { variant_id?: unknown })
+					?.variant_id === "string"
+					? (
+							overlayProfileSource as {
+								variant_id: ReferenceVideoAnalysis["overlayProfile"]["variant_id"];
+							}
+						).variant_id
 					: null,
 			motion_preset_id:
 				typeof (overlayProfileSource as { motion_preset_id?: unknown })
 					?.motion_preset_id === "string"
-					? (overlayProfileSource as {
-							motion_preset_id: ReferenceVideoAnalysis["overlayProfile"]["motion_preset_id"];
-					  }).motion_preset_id
+					? (
+							overlayProfileSource as {
+								motion_preset_id: ReferenceVideoAnalysis["overlayProfile"]["motion_preset_id"];
+							}
+						).motion_preset_id
 					: null,
 		},
 		finishingProfile: {
 			polish_profile_id:
 				typeof (finishingProfileSource as { polish_profile_id?: unknown })
 					?.polish_profile_id === "string"
-					? (finishingProfileSource as {
-							polish_profile_id: ReferenceVideoAnalysis["finishingProfile"]["polish_profile_id"];
-					  }).polish_profile_id
+					? (
+							finishingProfileSource as {
+								polish_profile_id: ReferenceVideoAnalysis["finishingProfile"]["polish_profile_id"];
+							}
+						).polish_profile_id
 					: null,
 			finishing_look_id:
 				typeof (finishingProfileSource as { finishing_look_id?: unknown })
 					?.finishing_look_id === "string"
-					? (finishingProfileSource as {
-							finishing_look_id: ReferenceVideoAnalysis["finishingProfile"]["finishing_look_id"];
-					  }).finishing_look_id
+					? (
+							finishingProfileSource as {
+								finishing_look_id: ReferenceVideoAnalysis["finishingProfile"]["finishing_look_id"];
+							}
+						).finishing_look_id
 					: null,
 		},
 		publishProfile: {
 			publish_destination:
-				(publishProfileSource as { publish_destination?: unknown })?.publish_destination ===
-					"generic-export" ||
-				(publishProfileSource as { publish_destination?: unknown })?.publish_destination ===
-					"tiktok" ||
-				(publishProfileSource as { publish_destination?: unknown })?.publish_destination ===
-					"instagram" ||
-				(publishProfileSource as { publish_destination?: unknown })?.publish_destination ===
-					"youtube"
-					? (publishProfileSource as {
-							publish_destination:
-								| "generic-export"
-								| "tiktok"
-								| "instagram"
-								| "youtube";
-					  }).publish_destination
+				(publishProfileSource as { publish_destination?: unknown })
+					?.publish_destination === "generic-export" ||
+				(publishProfileSource as { publish_destination?: unknown })
+					?.publish_destination === "tiktok" ||
+				(publishProfileSource as { publish_destination?: unknown })
+					?.publish_destination === "instagram" ||
+				(publishProfileSource as { publish_destination?: unknown })
+					?.publish_destination === "youtube"
+					? (
+							publishProfileSource as {
+								publish_destination:
+									| "generic-export"
+									| "tiktok"
+									| "instagram"
+									| "youtube";
+							}
+						).publish_destination
 					: null,
 			target_version_id:
-				(publishProfileSource as { target_version_id?: unknown })?.target_version_id ===
-					"9:16" ||
-				(publishProfileSource as { target_version_id?: unknown })?.target_version_id ===
-					"1:1" ||
-				(publishProfileSource as { target_version_id?: unknown })?.target_version_id ===
-					"16:9"
-					? (publishProfileSource as {
-							target_version_id: "9:16" | "1:1" | "16:9";
-					  }).target_version_id
+				(publishProfileSource as { target_version_id?: unknown })
+					?.target_version_id === "9:16" ||
+				(publishProfileSource as { target_version_id?: unknown })
+					?.target_version_id === "1:1" ||
+				(publishProfileSource as { target_version_id?: unknown })
+					?.target_version_id === "16:9"
+					? (
+							publishProfileSource as {
+								target_version_id: "9:16" | "1:1" | "16:9";
+							}
+						).target_version_id
 					: null,
 			packaging_hint:
-				typeof (publishProfileSource as { packaging_hint?: unknown })?.packaging_hint ===
-				"string"
+				typeof (publishProfileSource as { packaging_hint?: unknown })
+					?.packaging_hint === "string"
 					? (publishProfileSource as { packaging_hint: string }).packaging_hint
 					: "Reference packaging remains adaptable.",
 			hook_pattern:
-				typeof (publishProfileSource as { hook_pattern?: unknown })?.hook_pattern ===
-				"string"
+				typeof (publishProfileSource as { hook_pattern?: unknown })
+					?.hook_pattern === "string"
 					? (publishProfileSource as { hook_pattern: string }).hook_pattern
 					: "front-loaded hook",
 		},
 		warnings: Array.isArray((value as { warnings?: unknown }).warnings)
 			? ((value as { warnings?: unknown }).warnings as unknown[]).filter(
 					(warning): warning is string => typeof warning === "string",
-			  )
+				)
 			: [],
 	};
 }
@@ -1359,12 +1524,14 @@ export function normalizeClipForgeProjectData({
 		...source,
 		schemaVersion: CLIPFORGE_SCHEMA_VERSION,
 		mediaMetadataById: Object.fromEntries(
-			Object.entries(source.mediaMetadataById ?? {}).map(([mediaId, metadata]) => [
-				mediaId,
-				normalizeClipForgeMediaMetadata({
-					metadata: metadata ?? undefined,
-				}),
-			]),
+			Object.entries(source.mediaMetadataById ?? {}).map(
+				([mediaId, metadata]) => [
+					mediaId,
+					normalizeClipForgeMediaMetadata({
+						metadata: metadata ?? undefined,
+					}),
+				],
+			),
 		),
 		captionStylesById: {
 			...defaults.captionStylesById,
@@ -1407,7 +1574,7 @@ export function normalizeClipForgeProjectData({
 		assemblySourceAssetIds: Array.isArray(source.assemblySourceAssetIds)
 			? source.assemblySourceAssetIds.filter(
 					(assetId): assetId is string => typeof assetId === "string",
-			  )
+				)
 			: [],
 		footageDescriptorsByAssetId: Object.fromEntries(
 			Object.entries(source.footageDescriptorsByAssetId ?? {}).flatMap(
@@ -1454,10 +1621,12 @@ export function normalizeClipForgeProjectData({
 			),
 		),
 		referenceMatchLocks: Object.fromEntries(
-			Object.entries(source.referenceMatchLocks ?? {}).flatMap(([matchId, lock]) => {
-				const normalized = normalizeReferenceMatchLock(lock);
-				return normalized ? [[matchId, normalized]] : [];
-			}),
+			Object.entries(source.referenceMatchLocks ?? {}).flatMap(
+				([matchId, lock]) => {
+					const normalized = normalizeReferenceMatchLock(lock);
+					return normalized ? [[matchId, normalized]] : [];
+				},
+			),
 		),
 		chatMemory: normalizeChatMemory({
 			memory: source.chatMemory,

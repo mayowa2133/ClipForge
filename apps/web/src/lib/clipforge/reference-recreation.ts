@@ -25,8 +25,10 @@ import type {
 	VideoTrack,
 } from "@/types/timeline";
 import { generateUUID } from "@/utils/id";
+import { generateCaptionChunksFromWords } from "./caption-generator";
 import { createCaptionTextElements } from "./caption-studio";
 import { ensureClipForgeProjectData } from "./project-data";
+import { buildWordsFromSegments } from "./transcription";
 
 const DEFAULT_REFERENCE_CUT_MS = 1500;
 const MIN_CUT_MS = 320;
@@ -164,6 +166,9 @@ export function buildReferenceEditAnalysis({
 			ducking_attack_ms: 70,
 			ducking_release_ms: 260,
 			soft_limiter: true,
+			noise_reduction_enabled: true,
+			noise_reduction_strength: 0.72,
+			wind_reduction_enabled: true,
 		},
 		color_profile: "bt709-social",
 		warnings,
@@ -424,6 +429,48 @@ export function buildMusicTrackAnalysis({
 	};
 }
 
+function resolveMusicAsset({
+	mediaAssets,
+	musicAssetId,
+}: {
+	mediaAssets: MediaAsset[];
+	musicAssetId?: string | null;
+}): (MediaAsset & { type: "audio" }) | null {
+	if (musicAssetId) {
+		return (
+			mediaAssets.find(
+				(asset): asset is MediaAsset & { type: "audio" } =>
+					asset.id === musicAssetId && asset.type === "audio",
+			) ?? null
+		);
+	}
+
+	const importedAudio = mediaAssets
+		.filter(
+			(asset): asset is MediaAsset & { type: "audio" } =>
+				asset.type === "audio" && !asset.ephemeral,
+		)
+		.sort((left, right) => {
+			const leftImported = left.musicSourceType === "user-imported" ? 0 : 1;
+			const rightImported = right.musicSourceType === "user-imported" ? 0 : 1;
+			if (leftImported !== rightImported) return leftImported - rightImported;
+			const leftNameScore = /\b(music|song|instrumental|beat|track)\b/i.test(
+				left.name,
+			)
+				? 0
+				: 1;
+			const rightNameScore = /\b(music|song|instrumental|beat|track)\b/i.test(
+				right.name,
+			)
+				? 0
+				: 1;
+			if (leftNameScore !== rightNameScore)
+				return leftNameScore - rightNameScore;
+			return left.name.localeCompare(right.name);
+		});
+	return importedAudio[0] ?? null;
+}
+
 function buildTimelineBoundaries({
 	durationMs,
 	cutPointsMs,
@@ -571,11 +618,7 @@ export function buildReferenceRecreationPlan({
 				}),
 		]),
 	);
-	const musicAsset = musicAssetId
-		? (mediaAssets.find(
-				(asset) => asset.id === musicAssetId && asset.type === "audio",
-			) ?? null)
-		: null;
+	const musicAsset = resolveMusicAsset({ mediaAssets, musicAssetId });
 	const musicAnalysis = musicAsset
 		? (clipforgeProject.clipforge.musicTrackAnalysisByAssetId[musicAsset.id] ??
 			buildMusicTrackAnalysis({ asset: musicAsset }))
@@ -591,6 +634,17 @@ export function buildReferenceRecreationPlan({
 		})),
 		boundaries,
 	});
+	const sourceMetadata = sourceAssets
+		.map(
+			(asset) => clipforgeProject.clipforge.mediaMetadataById[asset.id] ?? null,
+		)
+		.filter((metadata): metadata is ClipMediaMetadata => Boolean(metadata));
+	const usesWordTimings = sourceMetadata.some(
+		(metadata) => metadata.words.length > 0,
+	);
+	const hasCaptionTranscript = sourceMetadata.some(
+		(metadata) => metadata.words.length > 0 || metadata.segments.length > 0,
+	);
 	const warnings = [
 		...referenceEditAnalysis.warnings,
 		...Object.values(sourceAnalyses).flatMap((analysis) => analysis.warnings),
@@ -601,7 +655,7 @@ export function buildReferenceRecreationPlan({
 			"Some reference cut slots could not be filled from source analysis and were omitted from the draft.",
 		);
 	}
-	if (!musicAssetId) {
+	if (!musicAsset) {
 		warnings.push(
 			"No imported music asset was selected, so the draft will keep only camera audio.",
 		);
@@ -617,6 +671,13 @@ export function buildReferenceRecreationPlan({
 		cut_points_ms: referenceEditAnalysis.cut_points_ms,
 		source_ranges: sourceRanges,
 		caption_style: referenceEditAnalysis.caption_style,
+		caption_generation: {
+			source: hasCaptionTranscript ? "compound-audio" : "none",
+			template_id: referenceEditAnalysis.caption_style.style_id,
+			max_words_per_caption: 1,
+			min_display_ms: 160,
+			uses_word_timings: usesWordTimings,
+		},
 		audio_mix: musicAnalysis
 			? {
 					...referenceEditAnalysis.audio_mix,
@@ -719,6 +780,142 @@ function buildMainVideoTrack({
 	};
 }
 
+function normalizeCaptionToken(text: string): string {
+	return text
+		.trim()
+		.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")
+		.replace(/\s+/g, " ");
+}
+
+function buildCompoundCaptionWords({
+	plan,
+	mediaMetadataById,
+}: {
+	plan: ReferenceRecreationPlan;
+	mediaMetadataById: Record<string, ClipMediaMetadata>;
+}): Array<{ text: string; startTime: number; endTime: number }> {
+	const wordCache = new Map<string, ClipMediaMetadata["words"]>();
+	const getWordsForAsset = (assetId: string) => {
+		const cached = wordCache.get(assetId);
+		if (cached) return cached;
+		const metadata = mediaMetadataById[assetId];
+		const words =
+			metadata?.words && metadata.words.length > 0
+				? metadata.words
+				: buildWordsFromSegments({ segments: metadata?.segments ?? [] });
+		wordCache.set(assetId, words);
+		return words;
+	};
+
+	return plan.source_ranges
+		.flatMap((range) => {
+			const words = getWordsForAsset(range.source_asset_id);
+			return words.flatMap((word) => {
+				const sourceStartMs = Math.max(word.start_ms, range.source_start_ms);
+				const sourceEndMs = Math.min(word.end_ms, range.source_end_ms);
+				if (sourceEndMs <= sourceStartMs) return [];
+				const text = normalizeCaptionToken(word.text);
+				if (!text) return [];
+				const timelineStartMs =
+					range.timeline_start_ms + (sourceStartMs - range.source_start_ms);
+				const timelineEndMs =
+					range.timeline_start_ms + (sourceEndMs - range.source_start_ms);
+				if (timelineEndMs - timelineStartMs < 35) return [];
+				return [
+					{
+						text,
+						startTime: timelineStartMs / 1000,
+						endTime: timelineEndMs / 1000,
+					},
+				];
+			});
+		})
+		.sort((left, right) => left.startTime - right.startTime);
+}
+
+function styleReferenceCaptionElement({
+	element,
+	plan,
+}: {
+	element: TextElement;
+	plan: ReferenceRecreationPlan;
+}): TextElement {
+	const content =
+		plan.caption_style.text_transform === "uppercase"
+			? element.content.toUpperCase()
+			: element.content;
+	const words = element.captionTiming?.words.map((word) => ({
+		...word,
+		text:
+			plan.caption_style.text_transform === "uppercase"
+				? word.text.toUpperCase()
+				: word.text,
+	}));
+
+	return {
+		...element,
+		content,
+		captionTiming: words ? { words } : null,
+		fontFamily: plan.caption_style.font,
+		fontSize: plan.caption_style.size,
+		fontWeight: "bold",
+		color: plan.caption_style.fill_color,
+		textAlign: "center",
+		background: {
+			...DEFAULT_TEXT_ELEMENT.background,
+			color: plan.caption_style.outline
+				? plan.caption_style.outline_color
+				: "transparent",
+			paddingX: plan.caption_style.outline ? 24 : 0,
+			paddingY: plan.caption_style.outline ? 10 : 0,
+			cornerRadius: 0,
+		},
+		transform: {
+			...element.transform,
+			position: {
+				...element.transform.position,
+				y:
+					plan.caption_style.safe_zone === "center"
+						? 0
+						: Math.round(plan.crop.canvas_height * 0.34),
+			},
+		},
+	};
+}
+
+function buildCompoundCaptionElements({
+	plan,
+	mediaMetadataById,
+}: {
+	plan: ReferenceRecreationPlan;
+	mediaMetadataById: Record<string, ClipMediaMetadata>;
+}): TextElement[] {
+	const compoundWords = buildCompoundCaptionWords({ plan, mediaMetadataById });
+	if (compoundWords.length === 0) return [];
+
+	return generateCaptionChunksFromWords({
+		words: compoundWords,
+		options: {
+			maxWordsPerChunk: plan.caption_generation.max_words_per_caption,
+			maxCharsPerLine: 16,
+			maxLines: 1,
+			minDisplaySeconds: plan.caption_generation.min_display_ms / 1000,
+		},
+	}).map((chunk, index): TextElement => {
+		const base: TextElement = {
+			...DEFAULT_TEXT_ELEMENT,
+			id: generateUUID(),
+			role: "caption",
+			captionTiming: chunk.words ? { words: chunk.words } : null,
+			name: `Caption ${index + 1}`,
+			content: chunk.text,
+			duration: chunk.duration,
+			startTime: chunk.startTime,
+		};
+		return styleReferenceCaptionElement({ element: base, plan });
+	});
+}
+
 function buildCaptionTrack({
 	project,
 	existingTrack,
@@ -748,46 +945,30 @@ function buildCaptionTrack({
 			},
 		},
 	} as TProject;
-	const generated = createCaptionTextElements({
-		project: styledProject,
-		styleId: plan.caption_style.style_id,
-		options: {
-			maxWordsPerChunk: 1,
-			maxCharsPerLine: 16,
-			maxLines: 1,
-			minDisplaySeconds: 0.16,
-		},
-	}).map((element): TextElement => {
-		const content =
-			plan.caption_style.text_transform === "uppercase"
-				? element.content.toUpperCase()
-				: element.content;
-		return {
-			...element,
-			content,
-			fontWeight: "bold",
-			color: plan.caption_style.fill_color,
-			background: {
-				...DEFAULT_TEXT_ELEMENT.background,
-				color: plan.caption_style.outline
-					? plan.caption_style.outline_color
-					: "transparent",
-				paddingX: plan.caption_style.outline ? 24 : 0,
-				paddingY: plan.caption_style.outline ? 10 : 0,
-				cornerRadius: 0,
-			},
-			transform: {
-				...element.transform,
-				position: {
-					...element.transform.position,
-					y:
-						plan.caption_style.safe_zone === "center"
-							? 0
-							: Math.round(plan.crop.canvas_height * 0.34),
-				},
-			},
-		};
-	});
+	const compoundGenerated =
+		plan.caption_generation.source === "compound-audio"
+			? buildCompoundCaptionElements({
+					plan,
+					mediaMetadataById: ensureClipForgeProjectData({ project }).clipforge
+						.mediaMetadataById,
+				})
+			: [];
+	const generated =
+		compoundGenerated.length > 0
+			? compoundGenerated
+			: createCaptionTextElements({
+					project: styledProject,
+					styleId: plan.caption_style.style_id,
+					options: {
+						maxWordsPerChunk: 1,
+						maxCharsPerLine: 16,
+						maxLines: 1,
+						minDisplaySeconds: 0.16,
+					},
+				}).map(
+					(element): TextElement =>
+						styleReferenceCaptionElement({ element, plan }),
+				);
 
 	return {
 		id: existingTrack?.id ?? generateUUID(),
@@ -968,6 +1149,9 @@ export function buildReferenceRecreationDraft({
 			duckingReleaseMs: plan.audio_mix.ducking_release_ms,
 			audioPolishPresetId: "voice-forward",
 			softLimiterEnabled: plan.audio_mix.soft_limiter,
+			noiseReductionEnabled: plan.audio_mix.noise_reduction_enabled,
+			noiseReductionStrength: plan.audio_mix.noise_reduction_strength,
+			windReductionEnabled: plan.audio_mix.wind_reduction_enabled,
 		},
 		polishProfileId: "talking-head",
 	};

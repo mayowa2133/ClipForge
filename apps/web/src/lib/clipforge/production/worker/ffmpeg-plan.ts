@@ -33,7 +33,6 @@ export const DEFAULT_FFMPEG_FEATURES: Required<FfmpegFeatureFlags> = {
 	keyframeAnimations: false,
 };
 
-
 const TRANSITION_PRESET_TO_XFADE: Record<string, XfadeTransitionKind | null> = {
 	"cross-dissolve": "fade",
 	"fade-black": "fadeblack",
@@ -55,7 +54,12 @@ export interface PlanTextOverlay {
 	canvasOffset: { x: number; y: number };
 	fontSize: number;
 	color: string;
-	background: { color: string; alpha: number; paddingX: number; paddingY: number } | null;
+	background: {
+		color: string;
+		alpha: number;
+		paddingX: number;
+		paddingY: number;
+	} | null;
 	textAlign: "left" | "center" | "right";
 	fontWeight: "normal" | "bold";
 }
@@ -76,7 +80,11 @@ export interface PlanImageOverlay {
 	opacityKeyframes?: PlanKeyframeStep[];
 }
 
-export type XfadeTransitionKind = "fade" | "fadeblack" | "fadewhite" | "slideleft";
+export type XfadeTransitionKind =
+	| "fade"
+	| "fadeblack"
+	| "fadewhite"
+	| "slideleft";
 
 export interface PlanKeyframeStep {
 	timeSeconds: number;
@@ -131,6 +139,11 @@ export interface PlanAudioSettings {
 		amount: number;
 		attackMs: number;
 		releaseMs: number;
+	} | null;
+	noiseReduction?: {
+		enabled: boolean;
+		strength: number;
+		windReductionEnabled: boolean;
 	} | null;
 }
 
@@ -273,7 +286,20 @@ interface AudioCollection {
 function extractAudioSettings({
 	project,
 }: {
-	project: { settings?: { audio?: { masterVolume?: number; duckingEnabled?: boolean; duckingAmount?: number; duckingAttackMs?: number; duckingReleaseMs?: number } } };
+	project: {
+		settings?: {
+			audio?: {
+				masterVolume?: number;
+				duckingEnabled?: boolean;
+				duckingAmount?: number;
+				duckingAttackMs?: number;
+				duckingReleaseMs?: number;
+				noiseReductionEnabled?: boolean;
+				noiseReductionStrength?: number;
+				windReductionEnabled?: boolean;
+			};
+		};
+	};
 }): PlanAudioSettings | null {
 	const audio = project.settings?.audio;
 	if (!audio) return null;
@@ -286,18 +312,33 @@ function extractAudioSettings({
 		? {
 				enabled: true,
 				amount:
-					typeof audio.duckingAmount === "number" ? Math.max(0, Math.min(1, audio.duckingAmount)) : 0.5,
+					typeof audio.duckingAmount === "number"
+						? Math.max(0, Math.min(1, audio.duckingAmount))
+						: 0.5,
 				attackMs:
-					typeof audio.duckingAttackMs === "number" && audio.duckingAttackMs >= 0
+					typeof audio.duckingAttackMs === "number" &&
+					audio.duckingAttackMs >= 0
 						? audio.duckingAttackMs
 						: 50,
 				releaseMs:
-					typeof audio.duckingReleaseMs === "number" && audio.duckingReleaseMs >= 0
+					typeof audio.duckingReleaseMs === "number" &&
+					audio.duckingReleaseMs >= 0
 						? audio.duckingReleaseMs
 						: 250,
 			}
 		: null;
-	return { masterVolume, ducking };
+	const noiseReduction =
+		audio.noiseReductionEnabled === true
+			? {
+					enabled: true,
+					strength:
+						typeof audio.noiseReductionStrength === "number"
+							? Math.max(0, Math.min(1, audio.noiseReductionStrength))
+							: 0.7,
+					windReductionEnabled: audio.windReductionEnabled === true,
+				}
+			: null;
+	return { masterVolume, ducking, noiseReduction };
 }
 
 function collectAudioElements({
@@ -314,11 +355,15 @@ function collectAudioElements({
 			for (const element of track.elements) {
 				const fadeInSeconds = Math.max(
 					0,
-					typeof element.fadeInDuration === "number" ? element.fadeInDuration : 0,
+					typeof element.fadeInDuration === "number"
+						? element.fadeInDuration
+						: 0,
 				);
 				const fadeOutSeconds = Math.max(
 					0,
-					typeof element.fadeOutDuration === "number" ? element.fadeOutDuration : 0,
+					typeof element.fadeOutDuration === "number"
+						? element.fadeOutDuration
+						: 0,
 				);
 				const normalizationGainDb =
 					typeof element.normalizationGainDb === "number"
@@ -382,9 +427,9 @@ function extractEffects(
 	return result;
 }
 
-function extractAdjustments(
-	raw: VisualAdjustments | null | undefined,
-): { adjustments: PlanColorAdjustments | null } {
+function extractAdjustments(raw: VisualAdjustments | null | undefined): {
+	adjustments: PlanColorAdjustments | null;
+} {
 	if (!raw) return { adjustments: null };
 	const exposure = typeof raw.exposure === "number" ? raw.exposure : 0;
 	const contrast = typeof raw.contrast === "number" ? raw.contrast : 0;
@@ -456,10 +501,13 @@ function summarizeUnsupportedFeatures({
 				videoTracksSeen += 1;
 				if (videoTracksSeen > 1) nonMainVideoTrackCount += 1;
 				for (const element of track.elements) {
-					if (element.type === "image" && !features.imageOverlays) imageCountInVideo += 1;
+					if (element.type === "image" && !features.imageOverlays)
+						imageCountInVideo += 1;
 					if (element.type === "video") {
 						if (element.transitionIn) {
-							const xfade = mapTransitionPresetToXfade(element.transitionIn.preset);
+							const xfade = mapTransitionPresetToXfade(
+								element.transitionIn.preset,
+							);
 							if (!features.transitions) {
 								transitionSkippedCount += 1;
 							} else if (!xfade) {
@@ -480,9 +528,7 @@ function summarizeUnsupportedFeatures({
 							effectCount += 1;
 						}
 						if (element.adjustments) {
-							const { adjustments } = extractAdjustments(
-								element.adjustments,
-							);
+							const { adjustments } = extractAdjustments(element.adjustments);
 							if (!features.colorAndEffects && adjustments) {
 								adjustmentCount += 1;
 							}
@@ -490,7 +536,8 @@ function summarizeUnsupportedFeatures({
 					}
 				}
 			}
-			if (track.type === "text" && !features.textOverlays) textCount += track.elements.length;
+			if (track.type === "text" && !features.textOverlays)
+				textCount += track.elements.length;
 			if (track.type === "sticker") stickerCount += track.elements.length;
 			if (track.type === "audio" && !features.audioMixing) {
 				audioCount += track.elements.length;
@@ -499,18 +546,27 @@ function summarizeUnsupportedFeatures({
 	}
 
 	if (imageCountInVideo > 0)
-		reasons.add(`${imageCountInVideo} image element(s) skipped (enable imageOverlays to render)`);
+		reasons.add(
+			`${imageCountInVideo} image element(s) skipped (enable imageOverlays to render)`,
+		);
 	if (textCount > 0)
-		reasons.add(`${textCount} text/caption element(s) skipped (enable textOverlays to render)`);
-	if (stickerCount > 0) reasons.add(`${stickerCount} sticker element(s) skipped`);
+		reasons.add(
+			`${textCount} text/caption element(s) skipped (enable textOverlays to render)`,
+		);
+	if (stickerCount > 0)
+		reasons.add(`${stickerCount} sticker element(s) skipped`);
 	if (audioCount > 0)
 		reasons.add(
 			`${audioCount} dedicated audio track element(s) skipped (enable audioMixing to render)`,
 		);
 	if (nonMainVideoTrackCount > 0)
-		reasons.add(`${nonMainVideoTrackCount} extra video track(s) skipped (only the main track is rendered)`);
+		reasons.add(
+			`${nonMainVideoTrackCount} extra video track(s) skipped (only the main track is rendered)`,
+		);
 	if (transitionSkippedCount > 0)
-		reasons.add(`${transitionSkippedCount} transition(s) skipped (enable transitions to render)`);
+		reasons.add(
+			`${transitionSkippedCount} transition(s) skipped (enable transitions to render)`,
+		);
 	if (unsupportedTransitionPresets.size > 0)
 		reasons.add(
 			`Unsupported transition preset(s) skipped: ${Array.from(unsupportedTransitionPresets).join(", ")}`,
@@ -534,11 +590,7 @@ function summarizeUnsupportedFeatures({
 	return Array.from(reasons);
 }
 
-function collectMainVideoClips({
-	scenes,
-}: {
-	scenes: TScene[];
-}): PlanProgress {
+function collectMainVideoClips({ scenes }: { scenes: TScene[] }): PlanProgress {
 	const progress: PlanProgress = { supportedVideoClips: [], reasons: [] };
 	for (const scene of scenes) {
 		const main = getMainVideoTrack(scene);
@@ -574,7 +626,9 @@ function parseHexAlpha(color: string): { hex: string; alpha: number } {
 	if (trimmed.length === 9 && trimmed.startsWith("#")) {
 		const hex = trimmed.slice(0, 7);
 		const alphaByte = Number.parseInt(trimmed.slice(7), 16);
-		const alpha = Number.isFinite(alphaByte) ? Math.max(0, Math.min(1, alphaByte / 255)) : 1;
+		const alpha = Number.isFinite(alphaByte)
+			? Math.max(0, Math.min(1, alphaByte / 255))
+			: 1;
 		return { hex, alpha };
 	}
 	if (trimmed.length === 7 && trimmed.startsWith("#")) {
@@ -598,15 +652,21 @@ function collectTextOverlays({
 			if (track.type !== "text") continue;
 			for (const element of track.elements as TextElement[]) {
 				if (element.hidden) continue;
-				const { hex: bgHex, alpha: bgAlpha } = parseHexAlpha(element.background.color);
+				const { hex: bgHex, alpha: bgAlpha } = parseHexAlpha(
+					element.background.color,
+				);
 				const baseOverlay: PlanTextOverlay = {
 					id: element.id,
 					content: element.content,
 					startTime: element.startTime,
 					endTime: element.startTime + element.duration,
 					canvasOffset: {
-						x: Math.round(canvasSize.width / 2 + (element.transform.position.x ?? 0)),
-						y: Math.round(canvasSize.height / 2 + (element.transform.position.y ?? 0)),
+						x: Math.round(
+							canvasSize.width / 2 + (element.transform.position.x ?? 0),
+						),
+						y: Math.round(
+							canvasSize.height / 2 + (element.transform.position.y ?? 0),
+						),
 					},
 					fontSize: element.fontSize,
 					color: element.color,
@@ -686,8 +746,12 @@ function collectImageOverlays({
 					startTime: image.startTime,
 					endTime: image.startTime + image.duration,
 					canvasOffset: {
-						x: Math.round(canvasSize.width / 2 + (image.transform.position.x ?? 0)),
-						y: Math.round(canvasSize.height / 2 + (image.transform.position.y ?? 0)),
+						x: Math.round(
+							canvasSize.width / 2 + (image.transform.position.x ?? 0),
+						),
+						y: Math.round(
+							canvasSize.height / 2 + (image.transform.position.y ?? 0),
+						),
 					},
 					scale: image.transform.scale ?? 1,
 					opacity: image.opacity ?? 1,
@@ -712,7 +776,10 @@ export function buildFfmpegPlan({
 		...features,
 	};
 	const scenes = input.project.scenes ?? [];
-	const reasons = summarizeUnsupportedFeatures({ scenes, features: resolvedFeatures });
+	const reasons = summarizeUnsupportedFeatures({
+		scenes,
+		features: resolvedFeatures,
+	});
 	const collected = collectMainVideoClips({ scenes });
 
 	const mediaRefIndex = new Map<string, RenderGraphMediaRef>();
@@ -763,7 +830,8 @@ export function buildFfmpegPlan({
 		};
 	}
 
-	const concatClips: Extract<FfmpegPlan, { kind: "video-concat" }>["clips"] = [];
+	const concatClips: Extract<FfmpegPlan, { kind: "video-concat" }>["clips"] =
+		[];
 	const filterGraphClips: PlanFilterGraphClip[] = [];
 	let anyXfadeTransition = false;
 	let anyTrimmedClip = false;
@@ -789,7 +857,8 @@ export function buildFfmpegPlan({
 
 		// transitionIn applies to this clip relative to the previous one. The
 		// first clip's transitionIn is ignored (nothing to fade from).
-		let transitionInFromPrev: PlanFilterGraphClip["transitionInFromPrev"] = null;
+		let transitionInFromPrev: PlanFilterGraphClip["transitionInFromPrev"] =
+			null;
 		if (
 			resolvedFeatures.transitions &&
 			i > 0 &&
@@ -900,7 +969,8 @@ export function buildFfmpegPlan({
 	const anyAudioElement = audioElements.length > 0;
 	const anyAudioSettings =
 		audioSettings !== null &&
-		(audioSettings.masterVolume !== 1 || audioSettings.ducking?.enabled === true);
+		(audioSettings.masterVolume !== 1 ||
+			audioSettings.ducking?.enabled === true);
 	if (
 		anyXfadeTransition ||
 		anyTrimmedClip ||
@@ -1012,7 +1082,9 @@ export function buildDrawtextFilter({
 	}
 	params.push(`fontsize=${Math.round(overlay.fontSize)}`);
 	params.push(`fontcolor=${overlay.color}`);
-	params.push(`x=${alignToX({ align: overlay.textAlign, canvasOffsetX: overlay.canvasOffset.x })}`);
+	params.push(
+		`x=${alignToX({ align: overlay.textAlign, canvasOffsetX: overlay.canvasOffset.x })}`,
+	);
 	params.push(`y=${overlay.canvasOffset.y}-text_h/2`);
 	if (overlay.background) {
 		const alphaHex = Math.round(overlay.background.alpha * 255)
@@ -1063,9 +1135,7 @@ export function buildOverlayFilterChain({
 				? `[${startInputIndex}:v]format=rgba,colorchannelmixer=aa=${overlay.opacity}[a${i}];`
 				: "";
 		const usesAlphaStream = animatedOpacity !== null || overlay.opacity < 1;
-		const sourceLabel = usesAlphaStream
-			? `[a${i}]`
-			: `[${startInputIndex}:v]`;
+		const sourceLabel = usesAlphaStream ? `[a${i}]` : `[${startInputIndex}:v]`;
 		const xExpr = `${overlay.canvasOffset.x}-overlay_w/2`;
 		const yExpr = `${overlay.canvasOffset.y}-overlay_h/2`;
 		stages.push(
@@ -1142,7 +1212,12 @@ export function buildBlackVideoFfmpegInvocation({
 		"yuv420p",
 	);
 	if (includeAudio) {
-		args.push("-c:a", audioCodecForFormat(format), "-b:a", audioBitrateForQuality(quality));
+		args.push(
+			"-c:a",
+			audioCodecForFormat(format),
+			"-b:a",
+			audioBitrateForQuality(quality),
+		);
 		args.push("-map", `${audioInputIndex}:a?`);
 	}
 	args.push(outputPath);
@@ -1198,10 +1273,7 @@ export function buildVideoConcatFfmpegInvocation({
 		fontFile,
 	});
 	if (overlayFilter) {
-		args.push(
-			"-filter_complex",
-			`[0:v]${baseScale}[base];${overlayFilter}`,
-		);
+		args.push("-filter_complex", `[0:v]${baseScale}[base];${overlayFilter}`);
 		args.push("-map", "[final-or-last]");
 	} else {
 		args.push("-vf", baseScale);
@@ -1215,7 +1287,12 @@ export function buildVideoConcatFfmpegInvocation({
 		"yuv420p",
 	);
 	if (includeAudio) {
-		args.push("-c:a", audioCodecForFormat(format), "-b:a", audioBitrateForQuality(quality));
+		args.push(
+			"-c:a",
+			audioCodecForFormat(format),
+			"-b:a",
+			audioBitrateForQuality(quality),
+		);
 	} else {
 		args.push("-an");
 	}
@@ -1292,7 +1369,11 @@ export function buildAtempoChain({
 }: {
 	playbackRate: number;
 }): string[] {
-	if (!Number.isFinite(playbackRate) || playbackRate <= 0 || playbackRate === 1) {
+	if (
+		!Number.isFinite(playbackRate) ||
+		playbackRate <= 0 ||
+		playbackRate === 1
+	) {
 		return [];
 	}
 	// atempo accepts [0.5, 100]. Chain multiple stages to reach values outside
@@ -1598,7 +1679,9 @@ export function buildAcrossfadeChainFilter({
 	for (let i = 0; i < clips.length; i += 1) {
 		const clip = clips[i]!;
 		const audioPipeline = buildTrimFilters({ clip }).audio;
-		const atempoChain = buildAtempoChain({ playbackRate: clip.playbackRate ?? 1 });
+		const atempoChain = buildAtempoChain({
+			playbackRate: clip.playbackRate ?? 1,
+		});
 		const combined = [...audioPipeline, ...atempoChain];
 		if (combined.length > 0) {
 			stages.push(`[${i}:a]${combined.join(",")}[a${i}]`);
@@ -1637,6 +1720,31 @@ export interface AudioMixChainResult {
 	finalLabel: string;
 }
 
+function buildAudioCleanupFilters({
+	role,
+	noiseReduction,
+}: {
+	role: PlanAudioRole;
+	noiseReduction: PlanAudioSettings["noiseReduction"];
+}): string[] {
+	if (!noiseReduction?.enabled || (role !== "voiceover" && role !== "audio")) {
+		return [];
+	}
+	const strength = clamp(noiseReduction.strength, 0, 1);
+	const filters = [
+		`highpass=f=${noiseReduction.windReductionEnabled ? 130 : 80}`,
+		"lowpass=f=14000",
+	];
+	if (strength > 0) {
+		const reductionDb = 6 + strength * 12;
+		const noiseFloorDb = -28 - strength * 18;
+		filters.push(
+			`afftdn=nr=${reductionDb.toFixed(1)}:nf=${noiseFloorDb.toFixed(1)}:nt=w`,
+		);
+	}
+	return filters;
+}
+
 export function buildAudioMixChain({
 	clipChainLabel,
 	audioElements,
@@ -1650,6 +1758,7 @@ export function buildAudioMixChain({
 }): AudioMixChainResult {
 	const masterVolume = audioSettings?.masterVolume ?? 1;
 	const ducking = audioSettings?.ducking ?? null;
+	const noiseReduction = audioSettings?.noiseReduction ?? null;
 	const noElements = audioElements.length === 0;
 	if (noElements && masterVolume === 1) {
 		return {
@@ -1678,6 +1787,12 @@ export function buildAudioMixChain({
 		];
 		const atempoChain = buildAtempoChain({ playbackRate });
 		for (const step of atempoChain) filters.push(step);
+		filters.push(
+			...buildAudioCleanupFilters({
+				role: audio.role,
+				noiseReduction,
+			}),
+		);
 		if (volume !== 1) filters.push(`volume=${volume.toFixed(3)}`);
 		const normalizationGainDb = audio.normalizationGainDb ?? 0;
 		if (normalizationGainDb !== 0) {
@@ -1690,10 +1805,7 @@ export function buildAudioMixChain({
 		}
 		const fadeOutSeconds = audio.fadeOutSeconds ?? 0;
 		if (fadeOutSeconds > 0) {
-			const fadeOutStart = Math.max(
-				0,
-				audio.durationSeconds - fadeOutSeconds,
-			);
+			const fadeOutStart = Math.max(0, audio.durationSeconds - fadeOutSeconds);
 			filters.push(
 				`afade=t=out:st=${fadeOutStart.toFixed(3)}:d=${fadeOutSeconds.toFixed(3)}`,
 			);
@@ -1729,7 +1841,9 @@ export function buildAudioMixChain({
 		// Build a sidechain (combined voiceover) once, then duck each non-voice
 		// element with it. The voiceover passes through to the mix unchanged.
 		if (voiceoverIndices.length === 1) {
-			stages.push(`${elementLabels[voiceoverIndices[0]!]}asplit=2[voice_main][voice_sc]`);
+			stages.push(
+				`${elementLabels[voiceoverIndices[0]!]}asplit=2[voice_main][voice_sc]`,
+			);
 		} else {
 			const voiceLabels = voiceoverIndices
 				.map((i) => elementLabels[i]!)
@@ -1860,7 +1974,9 @@ export function buildVideoFilterGraphFfmpegInvocation({
 	if (xfadeChain.filter) {
 		// Alias xfade output as [base] only when overlays will chain off it
 		if (overlayFilter && xfadeChain.finalLabel !== "[base]") {
-			filterParts.push(`${xfadeChain.filter};${xfadeChain.finalLabel}null[base]`);
+			filterParts.push(
+				`${xfadeChain.filter};${xfadeChain.finalLabel}null[base]`,
+			);
 		} else {
 			filterParts.push(xfadeChain.filter);
 		}
@@ -1890,7 +2006,12 @@ export function buildVideoFilterGraphFfmpegInvocation({
 	);
 	if (includeAudio) {
 		args.push("-map", audioMixChain.finalLabel || acrossfadeChain.finalLabel);
-		args.push("-c:a", audioCodecForFormat(format), "-b:a", audioBitrateForQuality(quality));
+		args.push(
+			"-c:a",
+			audioCodecForFormat(format),
+			"-b:a",
+			audioBitrateForQuality(quality),
+		);
 	} else {
 		args.push("-an");
 	}

@@ -64,6 +64,20 @@ export const BUILT_IN_CAPTION_STYLES: BuiltInCaptionStyleDefinition[] = [
 		},
 	},
 	{
+		id: "reference-word-pop",
+		label: "Reference Word Pop",
+		template: {
+			style_id: "reference-word-pop",
+			font: "Anton",
+			size: 78,
+			position: "bottom",
+			outline: true,
+			highlight_mode: "word",
+			reveal_preset_id: "pop-line",
+			sound_sync_preset_id: "caption-pop-bright",
+		},
+	},
+	{
 		id: "minimal-bottom",
 		label: "Minimal Bottom",
 		template: {
@@ -104,6 +118,7 @@ export function getBuiltInCaptionStyleLabel({
 	styleId: string;
 }): string {
 	return (
-		BUILT_IN_CAPTION_STYLES.find((style) => style.id === styleId)?.label ?? styleId
+		BUILT_IN_CAPTION_STYLES.find((style) => style.id === styleId)?.label ??
+		styleId
 	);
 }

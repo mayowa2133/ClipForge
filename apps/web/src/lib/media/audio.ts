@@ -30,9 +30,16 @@ export type CollectedAudioElement = Omit<
 	normalizationGainDb: number;
 	ducking: AudioDuckingProfile | null;
 	masterVolume: number;
+	noiseReductionEnabled: boolean;
+	noiseReductionStrength: number;
+	windReductionEnabled: boolean;
 };
 
-export function createAudioContext({ sampleRate }: { sampleRate?: number } = {}): AudioContext {
+export function createAudioContext({
+	sampleRate,
+}: {
+	sampleRate?: number;
+} = {}): AudioContext {
 	const AudioContextConstructor =
 		window.AudioContext ||
 		(window as typeof window & { webkitAudioContext?: typeof AudioContext })
@@ -124,7 +131,7 @@ export async function collectAudioElements({
 
 	for (const track of tracks) {
 		if (canTracktHaveAudio(track) && track.muted) continue;
-		const trackVolume = track.type === "audio" ? track.volume ?? 1 : 1;
+		const trackVolume = track.type === "audio" ? (track.volume ?? 1) : 1;
 
 		for (const element of track.elements) {
 			if (!canElementHaveAudio(element)) continue;
@@ -160,6 +167,11 @@ export async function collectAudioElements({
 							ducking: shouldDuckAudioElement({ element, duckingProfile })
 								? duckingProfile
 								: null,
+							noiseReductionEnabled:
+								mixSettings.noiseReductionEnabled === true &&
+								shouldApplyVoiceNoiseReduction(element.role ?? "audio"),
+							noiseReductionStrength: mixSettings.noiseReductionStrength ?? 0,
+							windReductionEnabled: mixSettings.windReductionEnabled === true,
 						};
 					}),
 				);
@@ -195,6 +207,9 @@ export async function collectAudioElements({
 							fadeInDuration: 0,
 							fadeOutDuration: 0,
 							ducking: null,
+							noiseReductionEnabled: mixSettings.noiseReductionEnabled === true,
+							noiseReductionStrength: mixSettings.noiseReductionStrength ?? 0,
+							windReductionEnabled: mixSettings.windReductionEnabled === true,
 						};
 					}),
 				);
@@ -273,7 +288,10 @@ async function resolveAudioBufferForVideoElement({
 		if (chunks.length === 0) return null;
 
 		const nativeSampleRate = chunks[0].sampleRate;
-		const numChannels = Math.min(MAX_AUDIO_CHANNELS, chunks[0].numberOfChannels);
+		const numChannels = Math.min(
+			MAX_AUDIO_CHANNELS,
+			chunks[0].numberOfChannels,
+		);
 
 		const nativeChannels = Array.from(
 			{ length: numChannels },
@@ -282,17 +300,29 @@ async function resolveAudioBufferForVideoElement({
 		let offset = 0;
 		for (const chunk of chunks) {
 			for (let channel = 0; channel < numChannels; channel++) {
-				const sourceData = chunk.getChannelData(Math.min(channel, chunk.numberOfChannels - 1));
+				const sourceData = chunk.getChannelData(
+					Math.min(channel, chunk.numberOfChannels - 1),
+				);
 				nativeChannels[channel].set(sourceData, offset);
 			}
 			offset += chunk.length;
 		}
 
 		// use OfflineAudioContext for high-quality resampling to target rate
-		const outputSamples = Math.ceil(totalSamples * (targetSampleRate / nativeSampleRate));
-		const offlineContext = new OfflineAudioContext(numChannels, outputSamples, targetSampleRate);
+		const outputSamples = Math.ceil(
+			totalSamples * (targetSampleRate / nativeSampleRate),
+		);
+		const offlineContext = new OfflineAudioContext(
+			numChannels,
+			outputSamples,
+			targetSampleRate,
+		);
 
-		const nativeBuffer = audioContext.createBuffer(numChannels, totalSamples, nativeSampleRate);
+		const nativeBuffer = audioContext.createBuffer(
+			numChannels,
+			totalSamples,
+			nativeSampleRate,
+		);
 		for (let ch = 0; ch < numChannels; ch++) {
 			nativeBuffer.copyToChannel(nativeChannels[ch], ch);
 		}
@@ -390,6 +420,9 @@ export interface ProjectMixSummary {
 	duckingAmount: number;
 	audioPolishPresetId: ProjectAudioSettings["audioPolishPresetId"];
 	softLimiterEnabled: boolean;
+	noiseReductionEnabled: boolean;
+	noiseReductionStrength: number;
+	windReductionEnabled: boolean;
 	dialogueWindowCount: number;
 	musicClipCount: number;
 	voiceoverClipCount: number;
@@ -515,8 +548,10 @@ function collectMediaAudioSource({
 	ducking: AudioDuckingProfile | null;
 }): AudioMixSource {
 	const volume = element.type === "audio" ? element.volume : 1;
-	const fadeInDuration = element.type === "audio" ? element.fadeInDuration ?? 0 : 0;
-	const fadeOutDuration = element.type === "audio" ? element.fadeOutDuration ?? 0 : 0;
+	const fadeInDuration =
+		element.type === "audio" ? (element.fadeInDuration ?? 0) : 0;
+	const fadeOutDuration =
+		element.type === "audio" ? (element.fadeOutDuration ?? 0) : 0;
 	const muted = "muted" in element ? (element.muted ?? false) : false;
 	return {
 		file: mediaAsset.file,
@@ -557,8 +592,10 @@ function collectMediaAudioClip({
 	ducking: AudioDuckingProfile | null;
 }): AudioClipSource {
 	const volume = element.type === "audio" ? element.volume : 1;
-	const fadeInDuration = element.type === "audio" ? element.fadeInDuration ?? 0 : 0;
-	const fadeOutDuration = element.type === "audio" ? element.fadeOutDuration ?? 0 : 0;
+	const fadeInDuration =
+		element.type === "audio" ? (element.fadeInDuration ?? 0) : 0;
+	const fadeOutDuration =
+		element.type === "audio" ? (element.fadeOutDuration ?? 0) : 0;
 	return {
 		id: element.id,
 		sourceKey: mediaAsset.id,
@@ -605,7 +642,7 @@ export async function collectAudioMixSources({
 
 	for (const track of tracks) {
 		if (canTracktHaveAudio(track) && track.muted) continue;
-		const trackVolume = track.type === "audio" ? track.volume ?? 1 : 1;
+		const trackVolume = track.type === "audio" ? (track.volume ?? 1) : 1;
 
 		for (const element of track.elements) {
 			if (!canElementHaveAudio(element)) continue;
@@ -697,7 +734,7 @@ export async function collectAudioClips({
 
 	for (const track of tracks) {
 		const isTrackMuted = canTracktHaveAudio(track) && track.muted;
-		const trackVolume = track.type === "audio" ? track.volume ?? 1 : 1;
+		const trackVolume = track.type === "audio" ? (track.volume ?? 1) : 1;
 
 		for (const element of track.elements) {
 			if (!canElementHaveAudio(element)) continue;
@@ -862,19 +899,48 @@ function mixAudioChannels({
 		const outputData = outputBuffer.getChannelData(channel);
 		const sourceChannel = Math.min(channel, buffer.numberOfChannels - 1);
 		const sourceData = buffer.getChannelData(sourceChannel);
+		const cleanupEnabled =
+			element.noiseReductionEnabled === true &&
+			shouldApplyVoiceNoiseReduction(element.role);
+		const cleanupStrength = Math.max(
+			0,
+			Math.min(1, element.noiseReductionStrength ?? 0),
+		);
+		const highpassCutoff = element.windReductionEnabled ? 130 : 80;
+		const highpassRc = 1 / (2 * Math.PI * highpassCutoff);
+		const highpassDt = 1 / sampleRate;
+		const highpassAlpha = highpassRc / (highpassRc + highpassDt);
+		let previousInput = 0;
+		let previousOutput = 0;
 
 		for (let i = 0; i < outputSampleCount; i++) {
 			const outputIndex = outputStartSample + i;
 			if (outputIndex >= outputLength) break;
 
 			const sourceIndex =
-				sourceStartSample + Math.floor((i * playbackRate * buffer.sampleRate) / sampleRate);
+				sourceStartSample +
+				Math.floor((i * playbackRate * buffer.sampleRate) / sampleRate);
 			if (sourceIndex >= sourceData.length) break;
+
+			let sample = sourceData[sourceIndex] ?? 0;
+			if (cleanupEnabled && cleanupStrength > 0) {
+				if (element.windReductionEnabled) {
+					const filtered =
+						highpassAlpha * (previousOutput + sample - previousInput);
+					previousInput = sample;
+					previousOutput = filtered;
+					sample = filtered;
+				}
+				sample = applyPreviewNoiseReductionGate({
+					sample,
+					strength: cleanupStrength,
+				});
+			}
 
 			const timelineOffset = i / sampleRate;
 			const absoluteTimelineTime = startTime + timelineOffset;
 			outputData[outputIndex] +=
-				sourceData[sourceIndex] *
+				sample *
 				(element.volume ?? 1) *
 				trackVolume *
 				masterVolume *
@@ -930,7 +996,8 @@ function applySoftLimiterToAudioBuffer({
 			if (abs <= threshold) continue;
 			const sign = Math.sign(sample);
 			const over = (abs - threshold) / Math.max(1e-6, 1 - threshold);
-			data[i] = sign * Math.min(1, threshold + (1 - threshold) * Math.tanh(over));
+			data[i] =
+				sign * Math.min(1, threshold + (1 - threshold) * Math.tanh(over));
 		}
 	}
 }
@@ -963,7 +1030,7 @@ export function getAudioEnvelopeGain({
 }
 
 export function dbToGain(db: number): number {
-	return Math.pow(10, db / 20);
+	return 10 ** (db / 20);
 }
 
 function getResolvedProjectAudioSettings({
@@ -978,16 +1045,19 @@ function getResolvedProjectAudioSettings({
 
 	return {
 		...baseSettings,
+		noiseReductionStrength: Number(
+			Math.max(
+				0,
+				Math.min(1, baseSettings.noiseReductionStrength ?? 0),
+			).toFixed(4),
+		),
 		masterVolume: Number(
 			(baseSettings.masterVolume * dbToGain(preset.masterGainDb)).toFixed(4),
 		),
 		duckingAmount: Number(
 			Math.max(
 				0,
-				Math.min(
-					1,
-					preset.duckingAmount ?? baseSettings.duckingAmount,
-				),
+				Math.min(1, preset.duckingAmount ?? baseSettings.duckingAmount),
 			).toFixed(4),
 		),
 		duckingAttackMs: preset.duckingAttackMs ?? baseSettings.duckingAttackMs,
@@ -1046,11 +1116,11 @@ export function buildAudioDuckingProfile({
 	tracks,
 	project,
 	mixSettings,
-	}: {
-		tracks: TimelineTrack[];
-		project?: TProject | null;
-		mixSettings: ProjectAudioSettings;
-	}): AudioDuckingProfile | null {
+}: {
+	tracks: TimelineTrack[];
+	project?: TProject | null;
+	mixSettings: ProjectAudioSettings;
+}): AudioDuckingProfile | null {
 	if (!mixSettings.duckingEnabled) return null;
 	const dialogueWindows = collectDialogueWindows({ tracks, project });
 	if (dialogueWindows.length === 0) return null;
@@ -1081,11 +1151,23 @@ export function getDuckingGainAtTime({
 			gain = Math.min(gain, targetGain);
 			continue;
 		}
-		if (attackSeconds > 0 && time >= window.startTime - attackSeconds && time < window.startTime) {
-			const progress = (time - (window.startTime - attackSeconds)) / attackSeconds;
-			gain = Math.min(gain, 1 - ducking.amount * Math.max(0, Math.min(1, progress)));
+		if (
+			attackSeconds > 0 &&
+			time >= window.startTime - attackSeconds &&
+			time < window.startTime
+		) {
+			const progress =
+				(time - (window.startTime - attackSeconds)) / attackSeconds;
+			gain = Math.min(
+				gain,
+				1 - ducking.amount * Math.max(0, Math.min(1, progress)),
+			);
 		}
-		if (releaseSeconds > 0 && time > window.endTime && time <= window.endTime + releaseSeconds) {
+		if (
+			releaseSeconds > 0 &&
+			time > window.endTime &&
+			time <= window.endTime + releaseSeconds
+		) {
 			const progress = (time - window.endTime) / releaseSeconds;
 			gain = Math.min(
 				gain,
@@ -1125,10 +1207,33 @@ export function buildProjectMixSummary({
 		duckingAmount: mixSettings.duckingAmount,
 		audioPolishPresetId: mixSettings.audioPolishPresetId ?? "none",
 		softLimiterEnabled: mixSettings.softLimiterEnabled ?? false,
+		noiseReductionEnabled: mixSettings.noiseReductionEnabled ?? false,
+		noiseReductionStrength: mixSettings.noiseReductionStrength ?? 0,
+		windReductionEnabled: mixSettings.windReductionEnabled ?? false,
 		dialogueWindowCount: duckingProfile?.dialogueWindows.length ?? 0,
 		musicClipCount,
 		voiceoverClipCount,
 	};
+}
+
+function applyPreviewNoiseReductionGate({
+	sample,
+	strength,
+}: {
+	sample: number;
+	strength: number;
+}): number {
+	const threshold = 0.004 + strength * 0.018;
+	const abs = Math.abs(sample);
+	if (abs >= threshold) return sample;
+	const reduction = 1 - strength * 0.78;
+	return sample * Math.max(0.05, reduction);
+}
+
+function shouldApplyVoiceNoiseReduction(
+	role: CollectedAudioElement["role"],
+): boolean {
+	return role === "voiceover" || role === "audio";
 }
 
 function shouldDuckAudioElement({
@@ -1161,7 +1266,10 @@ function collectDialogueWindows({
 			if (!canElementHaveAudio(element)) continue;
 			if ("muted" in element && element.muted) continue;
 
-			if (element.type === "audio" && (element.role ?? "audio") === "voiceover") {
+			if (
+				element.type === "audio" &&
+				(element.role ?? "audio") === "voiceover"
+			) {
 				windows.push({
 					startTime: element.startTime,
 					endTime: element.startTime + element.duration,
@@ -1182,8 +1290,14 @@ function collectDialogueWindows({
 				if (wordEnd <= element.trimStart || wordStart >= visibleEnd) {
 					continue;
 				}
-				const localStart = Math.max(0, (wordStart - element.trimStart) / playbackRate);
-				const localEnd = Math.max(localStart, (wordEnd - element.trimStart) / playbackRate);
+				const localStart = Math.max(
+					0,
+					(wordStart - element.trimStart) / playbackRate,
+				);
+				const localEnd = Math.max(
+					localStart,
+					(wordEnd - element.trimStart) / playbackRate,
+				);
 				windows.push({
 					startTime: element.startTime + localStart,
 					endTime: element.startTime + Math.min(element.duration, localEnd),

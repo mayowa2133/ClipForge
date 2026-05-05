@@ -29,6 +29,9 @@ export interface ProjectAudioSettings {
 	duckingReleaseMs: number;
 	audioPolishPresetId?: AudioPolishPresetId;
 	softLimiterEnabled?: boolean;
+	noiseReductionEnabled?: boolean;
+	noiseReductionStrength?: number;
+	windReductionEnabled?: boolean;
 }
 
 export interface ProjectBrandKit {

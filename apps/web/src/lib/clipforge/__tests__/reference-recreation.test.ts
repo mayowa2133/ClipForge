@@ -136,8 +136,63 @@ describe("reference recreation", () => {
 		expect(
 			audioTrack?.elements.some((element) => element.role === "music"),
 		).toBe(true);
+		expect(result.project.settings.audio?.noiseReductionEnabled).toBe(true);
+		expect(result.project.settings.audio?.windReductionEnabled).toBe(true);
+		expect(result.project.settings.audio?.noiseReductionStrength).toBe(0.72);
 		expect(result.project.clipforge?.activeReferenceRecreationPlanId).toBe(
 			result.plan.plan_id,
 		);
+	});
+
+	test("auto-selects imported music when the command does not provide a music id", () => {
+		const result = buildReferenceRecreationDraft({
+			project: buildProject(),
+			mediaAssets: buildAssets(),
+			referenceAssetId: "reference",
+			sourceAssetIds: ["source"],
+		});
+
+		expect(result.plan.music_asset_id).toBe("music");
+		const audioTrack = result.project.scenes[0]?.tracks.find(
+			(track) => track.type === "audio",
+		);
+		expect(
+			audioTrack?.elements.some((element) => element.role === "music"),
+		).toBe(true);
+	});
+
+	test("builds word captions from a stitched compound voice transcript when word timings are missing", () => {
+		const project = buildProject();
+		const clipforge = project.clipforge;
+		if (!clipforge) {
+			throw new Error("Expected ClipForge project data.");
+		}
+		clipforge.mediaMetadataById.source = {
+			...clipforge.mediaMetadataById.source,
+			words: [],
+			segments: [
+				{
+					text: "this is your sign to start now because waiting costs you",
+					start_ms: 0,
+					end_ms: 6000,
+				},
+			],
+		};
+
+		const result = buildReferenceRecreationDraft({
+			project,
+			mediaAssets: buildAssets(),
+			referenceAssetId: "reference",
+			sourceAssetIds: ["source"],
+			musicAssetId: "music",
+		});
+
+		const textTrack = result.project.scenes[0]?.tracks.find(
+			(track) => track.type === "text",
+		);
+		expect(result.plan.caption_generation.source).toBe("compound-audio");
+		expect(result.plan.caption_generation.uses_word_timings).toBe(false);
+		expect(textTrack?.elements[0]?.content).toBe("THIS");
+		expect(textTrack?.elements[0]?.captionTiming?.words[0]?.text).toBe("THIS");
 	});
 });

@@ -42,6 +42,9 @@ export const DEFAULT_PROJECT_AUDIO_SETTINGS: ProjectAudioSettings = {
 	duckingReleaseMs: 280,
 	audioPolishPresetId: "none",
 	softLimiterEnabled: false,
+	noiseReductionEnabled: false,
+	noiseReductionStrength: 0,
+	windReductionEnabled: false,
 };
 
 export const DEFAULT_PROJECT_BRAND_KIT: ProjectBrandKit = {
@@ -136,7 +139,10 @@ export function buildDefaultProjectVersionPack({
 			canvasSize:
 				targetId === currentTargetId
 					? canvasSize
-					: getCanvasSizeForVersionTarget({ baseCanvasSize: canvasSize, targetId }),
+					: getCanvasSizeForVersionTarget({
+							baseCanvasSize: canvasSize,
+							targetId,
+						}),
 		})),
 		activeTargetId: currentTargetId,
 	};

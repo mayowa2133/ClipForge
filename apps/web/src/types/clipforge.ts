@@ -457,6 +457,9 @@ export interface ReferenceEditAudioMixTarget {
 	ducking_attack_ms: number;
 	ducking_release_ms: number;
 	soft_limiter: boolean;
+	noise_reduction_enabled: boolean;
+	noise_reduction_strength: number;
+	wind_reduction_enabled: boolean;
 }
 
 export interface ReferenceEditAnalysis {
@@ -517,6 +520,14 @@ export interface ReferenceRecreationSourceRange {
 	reasons: string[];
 }
 
+export interface ReferenceRecreationCaptionGeneration {
+	source: "compound-audio" | "timeline-transcript" | "none";
+	template_id: string;
+	max_words_per_caption: number;
+	min_display_ms: number;
+	uses_word_timings: boolean;
+}
+
 export interface ReferenceRecreationPlan {
 	plan_id: string;
 	createdAt: string;
@@ -527,6 +538,7 @@ export interface ReferenceRecreationPlan {
 	cut_points_ms: number[];
 	source_ranges: ReferenceRecreationSourceRange[];
 	caption_style: ReferenceEditCaptionStyleAnalysis;
+	caption_generation: ReferenceRecreationCaptionGeneration;
 	audio_mix: ReferenceEditAudioMixTarget;
 	crop: {
 		target_aspect_ratio: "9:16";
