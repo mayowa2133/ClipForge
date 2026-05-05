@@ -60,6 +60,7 @@ export function buildProjectSummaryFixture(
 		media_analysis_markers: [],
 		available_music_assets: [],
 		available_sfx_assets: [],
+		imported_audio_assets: [],
 		trend_reference_summary: [],
 		publish_destination: null,
 		export_preflight_snapshot: null,

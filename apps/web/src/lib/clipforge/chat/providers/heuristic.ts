@@ -621,6 +621,7 @@ function planDirectCommandClause({
 		planRepeatCommandClause,
 		planAssemblySourcePoolClause,
 		planReferenceSelectionClause,
+		planReferenceRecreationClause,
 		planReferenceDraftAssemblyClause,
 		planReferenceDraftSwapClause,
 		planReferenceDraftLockClause,
@@ -797,6 +798,57 @@ function planReferenceSelectionClause(args: DirectPlannerArgs): DirectPlanResult
 	}
 
 	return emptyDirectPlan({ state: args.state });
+}
+
+function planReferenceRecreationClause(args: DirectPlannerArgs): DirectPlanResult {
+	const normalized = args.clause.toLowerCase();
+	const asksForRecreation =
+		/\b(recreate|recreation|replicate|make.*from raw|raw.*edited|edited version|match the reference|like the reference|make it like)\b/.test(
+			normalized,
+		) &&
+		(/\b(reference|example|edited|raw|source)\b/.test(normalized) ||
+			Boolean(args.projectSummary.active_reference_video));
+	if (!asksForRecreation) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const referenceTarget = resolveReferenceAssetCommand({
+		projectSummary: args.projectSummary,
+		referenceLabel: "asset:reference-video",
+		overrides: args.overrides,
+	});
+	if (referenceTarget.clarification) {
+		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+	}
+	if (!referenceTarget.assetId) {
+		return emptyDirectPlan({ state: args.state });
+	}
+
+	const sourceAssetIds = resolveAssemblySourceAssetIds({
+		projectSummary: args.projectSummary,
+		referenceAssetId: referenceTarget.assetId,
+	});
+	if (sourceAssetIds.length === 0) {
+		return emptyDirectPlan({ state: args.state });
+	}
+	const musicAsset = chooseImportedMusicAsset({
+		projectSummary: args.projectSummary,
+		text: normalized,
+	});
+
+	return {
+		...emptyDirectPlan({ state: args.state }),
+		commands: [
+			{
+				kind: "build-reference-recreation-draft",
+				reference_asset_id: referenceTarget.assetId,
+				source_asset_ids: sourceAssetIds,
+				music_asset_id: musicAsset?.asset_id ?? null,
+				include_finish_pass: true,
+				scope: "project",
+			},
+		],
+	};
 }
 
 function planReferenceDraftAssemblyClause(args: DirectPlannerArgs): DirectPlanResult {
@@ -2620,6 +2672,30 @@ function chooseMusicAsset({
 		return left.label.localeCompare(right.label);
 	});
 	return ranked[0] ?? null;
+}
+
+function chooseImportedMusicAsset({
+	projectSummary,
+	text,
+}: {
+	projectSummary: ProjectSummary;
+	text: string;
+}) {
+	const normalized = text.toLowerCase();
+	const importedAudioAssets = projectSummary.imported_audio_assets ?? [];
+	const exact = importedAudioAssets.find((asset) =>
+		normalized.includes(asset.name.toLowerCase()),
+	);
+	if (exact) {
+		return exact;
+	}
+	if (importedAudioAssets.length === 1) {
+		return importedAudioAssets[0] ?? null;
+	}
+	const musicNamed = importedAudioAssets.find((asset) =>
+		/\b(music|song|instrumental|beat|audio|track)\b/.test(asset.name.toLowerCase()),
+	);
+	return musicNamed ?? importedAudioAssets[0] ?? null;
 }
 
 function chooseSfxAsset({

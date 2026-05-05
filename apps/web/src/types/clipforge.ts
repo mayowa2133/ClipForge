@@ -1,10 +1,7 @@
 import type {
 	OverlayMotionPresetId,
 	ProjectAudioSettings,
-	ProjectBrandKit,
-	ProjectOverlayDefaults,
 	ProjectVersionTarget,
-	ProjectVersionPack,
 } from "./project";
 import type {
 	ExportFormat,
@@ -324,13 +321,7 @@ export interface ReferenceVideoCaptionProfile {
 }
 
 export interface ReferenceVideoAudioProfile {
-	music_mood:
-		| "clean"
-		| "luxury"
-		| "upbeat"
-		| "energetic"
-		| "minimal"
-		| null;
+	music_mood: "clean" | "luxury" | "upbeat" | "energetic" | "minimal" | null;
 	recommended_music_asset_id: string | null;
 	recommended_sfx_asset_id: string | null;
 	bpm: number | null;
@@ -441,6 +432,109 @@ export interface ReferenceDraftSectionMatch {
 	reasons: string[];
 	candidates: ReferenceDraftMatchCandidate[];
 	locked: boolean;
+}
+
+export interface ReferenceEditCaptionStyleAnalysis {
+	mode: "none" | "phrase" | "word";
+	text_transform: "none" | "uppercase";
+	style_id: string;
+	font: string;
+	size: number;
+	position: CaptionPosition;
+	fill_color: string;
+	outline_color: string;
+	outline: boolean;
+	shadow: boolean;
+	safe_zone: "lower-center" | "center" | "bottom";
+}
+
+export interface ReferenceEditAudioMixTarget {
+	target_lufs: number;
+	true_peak_db: number;
+	voice_gain_db: number;
+	music_volume: number;
+	ducking_amount: number;
+	ducking_attack_ms: number;
+	ducking_release_ms: number;
+	soft_limiter: boolean;
+}
+
+export interface ReferenceEditAnalysis {
+	analyzedAt: string;
+	reference_asset_id: string;
+	duration_ms: number;
+	aspect_ratio: ClipForgeAspectRatioPreset | "unknown";
+	cut_points_ms: number[];
+	cut_count: number;
+	average_cut_ms: number | null;
+	caption_style: ReferenceEditCaptionStyleAnalysis;
+	audio_mix: ReferenceEditAudioMixTarget;
+	color_profile: "bt709-social" | "source-matched" | "unknown";
+	warnings: string[];
+}
+
+export interface SourceRecreationSpeechRange {
+	range_id: string;
+	start_ms: number;
+	end_ms: number;
+	word_count: number;
+	speech_density: number;
+	confidence: number;
+	reasons: string[];
+}
+
+export interface SourceRecreationAnalysis {
+	analyzedAt: string;
+	asset_id: string;
+	duration_ms: number;
+	aspect_ratio: ClipForgeAspectRatioPreset | "unknown";
+	speech_ranges: SourceRecreationSpeechRange[];
+	dead_air_ranges: SilenceRegion[];
+	face_framing: "centered" | "unknown";
+	warnings: string[];
+}
+
+export interface MusicTrackAnalysis {
+	analyzedAt: string;
+	asset_id: string;
+	duration_ms: number;
+	bpm: number | null;
+	recommended_volume: number;
+	loop_to_project_end: boolean;
+	rights_profile: "user-managed" | "universal" | "unknown";
+	warnings: string[];
+}
+
+export interface ReferenceRecreationSourceRange {
+	range_id: string;
+	source_asset_id: string;
+	source_asset_name: string;
+	source_start_ms: number;
+	source_end_ms: number;
+	timeline_start_ms: number;
+	target_duration_ms: number;
+	confidence: number;
+	reasons: string[];
+}
+
+export interface ReferenceRecreationPlan {
+	plan_id: string;
+	createdAt: string;
+	reference_asset_id: string;
+	source_asset_ids: string[];
+	music_asset_id: string | null;
+	target_duration_ms: number;
+	cut_points_ms: number[];
+	source_ranges: ReferenceRecreationSourceRange[];
+	caption_style: ReferenceEditCaptionStyleAnalysis;
+	audio_mix: ReferenceEditAudioMixTarget;
+	crop: {
+		target_aspect_ratio: "9:16";
+		canvas_width: number;
+		canvas_height: number;
+		strategy: "center-face-safe" | "center-crop";
+	};
+	warnings: string[];
 }
 
 export interface ReferenceMatchLock {
@@ -798,6 +892,16 @@ export interface MatchReferencePacingEditorCommand {
 	scope?: ClipForgeCommandScope;
 }
 
+export interface BuildReferenceRecreationDraftEditorCommand {
+	kind: "build-reference-recreation-draft";
+	reference_asset_id?: string | null;
+	source_asset_ids?: string[];
+	music_asset_id?: string | null;
+	plan?: ReferenceRecreationPlan | null;
+	include_finish_pass?: boolean;
+	scope?: ClipForgeCommandScope;
+}
+
 export interface BuildReferenceDraftEditorCommand {
 	kind: "build-reference-draft";
 	reference_asset_id?: string | null;
@@ -858,6 +962,7 @@ export type ClipForgeEditorCommand =
 	| MatchReferenceAudioProfileEditorCommand
 	| MatchReferencePackagingEditorCommand
 	| MatchReferencePacingEditorCommand
+	| BuildReferenceRecreationDraftEditorCommand
 	| BuildReferenceDraftEditorCommand
 	| ReplaceWithSourceMatchEditorCommand
 	| LockReferenceMatchEditorCommand
@@ -908,6 +1013,7 @@ export interface ClipForgeRecentAssetChoice {
 		| "replace-music-track"
 		| "insert-sfx-preset"
 		| "apply-project-kit"
+		| "build-reference-recreation-draft"
 		| "build-reference-draft"
 		| "replace-with-source-match";
 	createdAt: string;
@@ -966,12 +1072,20 @@ export interface ClipForgeProjectData {
 	captionStylesById: Record<string, CaptionStyleTemplate>;
 	activeCaptionStyleId: string | null;
 	captionTrackIdsBySceneId: Record<string, string | null>;
-	sceneFootageIntelligenceBySceneId: Record<string, FootageIntelligenceReport | null>;
+	sceneFootageIntelligenceBySceneId: Record<
+		string,
+		FootageIntelligenceReport | null
+	>;
 	trendSoundReferences: TrendSoundReference[];
 	activeReferenceVideoAssetId: string | null;
 	referenceAnalysisByAssetId: Record<string, ReferenceVideoAnalysis>;
+	referenceEditAnalysisByAssetId: Record<string, ReferenceEditAnalysis>;
 	assemblySourceAssetIds: string[];
 	footageDescriptorsByAssetId: Record<string, FootageDescriptor>;
+	sourceRecreationAnalysisByAssetId: Record<string, SourceRecreationAnalysis>;
+	musicTrackAnalysisByAssetId: Record<string, MusicTrackAnalysis>;
+	referenceRecreationPlansById: Record<string, ReferenceRecreationPlan>;
+	activeReferenceRecreationPlanId: string | null;
 	referenceShotPlanByAssetId: Record<string, ReferenceShotPlan>;
 	referenceMatchLocks: Record<string, ReferenceMatchLock>;
 	chatMemory: ClipForgeChatMemory;

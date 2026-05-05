@@ -158,6 +158,10 @@ export function buildProjectSummary({
 				asset_id: asset.id,
 				name: asset.name,
 				type: asset.type,
+				duration_ms:
+					typeof asset.duration === "number"
+						? Math.round(asset.duration * 1000)
+						: null,
 			}))
 			.sort((left, right) => left.name.localeCompare(right.name)),
 		selection: {
@@ -222,6 +226,21 @@ export function buildProjectSummary({
 			],
 			rights_profile: "universal",
 		})),
+		imported_audio_assets: mediaAssets
+			.filter(
+				(asset): asset is MediaAsset & { type: "audio" } =>
+					asset.type === "audio" && !asset.ephemeral,
+			)
+			.map((asset) => ({
+				asset_id: asset.id,
+				name: asset.name,
+				type: asset.type,
+				duration_ms:
+					typeof asset.duration === "number"
+						? Math.round(asset.duration * 1000)
+						: null,
+			}))
+			.sort((left, right) => left.name.localeCompare(right.name)),
 		trend_reference_summary:
 			project.clipforge?.trendSoundReferences.map((reference) => ({
 				id: reference.id,

@@ -50,6 +50,7 @@ import {
 	getCaptionRevealSoundSyncPreset,
 	getPolishProfileById,
 	buildReferenceGuidedDraft,
+	buildReferenceRecreationDraft,
 } from "@/lib/clipforge";
 import {
 	buildCommandPlanImpactPreview,
@@ -2945,6 +2946,59 @@ export class ClipForgeManager {
 		});
 	}
 
+	private async applyReferenceRecreationDraftCommand({
+		command,
+	}: {
+		command: Extract<
+			Exclude<ClipForgeEditorCommand, { kind: "timeline-op" }>,
+			{ kind: "build-reference-recreation-draft" }
+		>;
+	}): Promise<void> {
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		const referenceAssetId =
+			command.reference_asset_id ?? project.clipforge.activeReferenceVideoAssetId;
+		if (!referenceAssetId) {
+			throw new Error("Choose a reference video before recreating it.");
+		}
+
+		try {
+			await this.analyzeReferenceVideo({ assetId: referenceAssetId });
+		} catch {
+			// The recreation builder still has deterministic fallbacks.
+		}
+
+		const sourceAssetIds =
+			command.source_asset_ids && command.source_asset_ids.length > 0
+				? command.source_asset_ids
+				: this.getEffectiveAssemblySourceAssetIds({ project });
+		if (sourceAssetIds.length === 0) {
+			throw new Error("Choose at least one raw source clip before recreating the reference.");
+		}
+		try {
+			await this.setAssemblySourcePool({ assetIds: sourceAssetIds });
+		} catch {
+			// Source analysis is best-effort; validation has already checked the assets.
+		}
+
+		const refreshedProject = ensureClipForgeProjectData({
+			project: this.editor.project.getActive(),
+		});
+		const result = buildReferenceRecreationDraft({
+			project: refreshedProject,
+			mediaAssets: this.editor.media.getAssets(),
+			referenceAssetId,
+			sourceAssetIds,
+			musicAssetId: command.music_asset_id ?? command.plan?.music_asset_id ?? null,
+		});
+		this.editor.command.execute({
+			command: new BuildReferenceGuidedDraftCommand(result.project),
+		});
+	}
+
 	private persistRecentReferenceAssemblyChoices({
 		project,
 		choices,
@@ -3784,6 +3838,76 @@ export class ClipForgeManager {
 			}
 			case "clear-active-reference-video":
 				return [];
+			case "build-reference-recreation-draft": {
+				const referenceAssetId =
+					command.reference_asset_id ??
+					activeProject.clipforge?.activeReferenceVideoAssetId ??
+					null;
+				if (!referenceAssetId) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "reference_video_required",
+							message: "Choose a reference video before recreating it.",
+						}),
+					];
+				}
+				const referenceAsset = this.editor.media
+					.getAssets()
+					.find((asset) => asset.id === referenceAssetId);
+				if (!referenceAsset || referenceAsset.type !== "video") {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "reference_video_invalid",
+							message: "Reference recreation requires an imported video reference.",
+						}),
+					];
+				}
+				const sourceAssetIds =
+					command.source_asset_ids && command.source_asset_ids.length > 0
+						? command.source_asset_ids
+						: this.getEffectiveAssemblySourceAssetIds({
+								project: ensureClipForgeProjectData({ project: activeProject }),
+						  });
+				if (sourceAssetIds.length === 0) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "assembly_source_pool_empty",
+							message: "Choose at least one raw source clip for reference recreation.",
+						}),
+					];
+				}
+				const invalidSource = sourceAssetIds.find((assetId) => {
+					const asset = this.editor.media.getAssets().find((candidate) => candidate.id === assetId);
+					return !asset || asset.type !== "video" || asset.ephemeral;
+				});
+				if (invalidSource) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "assembly_source_invalid",
+							message: "Reference recreation source entries must be imported video assets.",
+						}),
+					];
+				}
+				if (command.music_asset_id) {
+					const musicAsset = this.editor.media
+						.getAssets()
+						.find((asset) => asset.id === command.music_asset_id);
+					if (!musicAsset || musicAsset.type !== "audio") {
+						return [
+							buildCommandValidationError({
+								commandIndex,
+								code: "imported_music_invalid",
+								message: "Reference recreation music must point to an imported audio asset.",
+							}),
+						];
+					}
+				}
+				return [];
+			}
 			case "build-reference-draft": {
 				const matches =
 					command.matches.length > 0
@@ -4164,6 +4288,11 @@ export class ClipForgeManager {
 				break;
 			case "clear-active-reference-video":
 				this.clearActiveReferenceVideo();
+				break;
+			case "build-reference-recreation-draft":
+				await this.applyReferenceRecreationDraftCommand({
+					command,
+				});
 				break;
 			case "build-reference-draft":
 				await this.applyReferenceGuidedDraftCommand({
@@ -5140,6 +5269,8 @@ function summarizeSingleCommand(command: ClipForgeEditorCommand): string {
 			return "Matched packaging to the active reference.";
 		case "match-reference-pacing":
 			return "Matched pacing to the active reference.";
+		case "build-reference-recreation-draft":
+			return "Built a reference recreation draft with source cuts, captions, voice mix, and imported music.";
 		case "build-reference-draft":
 			return `Built a reference-guided first draft from ${command.matches.length} matched sections.`;
 		case "replace-with-source-match":
@@ -5182,7 +5313,8 @@ function shouldRefreshStyleIntent({
 			command.kind === "apply-caption-reveal" ||
 			command.kind === "apply-project-kit" ||
 			command.kind === "apply-reference-finish-pass" ||
-			command.kind === "match-reference-captions"
+			command.kind === "match-reference-captions" ||
+			command.kind === "build-reference-recreation-draft"
 		);
 	});
 }
@@ -5276,6 +5408,7 @@ function shouldRefreshPublishIntent({
 			command.kind === "apply-reference-finish-pass" ||
 			command.kind === "match-reference-packaging" ||
 			command.kind === "match-reference-pacing" ||
+			command.kind === "build-reference-recreation-draft" ||
 			command.kind === "build-reference-draft",
 	);
 }
@@ -5295,6 +5428,7 @@ function shouldRefreshFinishIntent({
 			command.kind === "apply-reference-finish-pass" ||
 			command.kind === "match-reference-captions" ||
 			command.kind === "match-reference-audio-profile" ||
+			command.kind === "build-reference-recreation-draft" ||
 			command.kind === "build-reference-draft",
 	);
 }
@@ -5309,6 +5443,7 @@ function shouldRefreshDestinationIntent({
 			command.kind === "set-publish-destination" ||
 			command.kind === "apply-reference-finish-pass" ||
 			command.kind === "match-reference-packaging" ||
+			command.kind === "build-reference-recreation-draft" ||
 			command.kind === "build-reference-draft",
 	);
 }
@@ -5326,6 +5461,7 @@ function shouldRefreshReferenceIntent({
 			command.kind === "match-reference-audio-profile" ||
 			command.kind === "match-reference-packaging" ||
 			command.kind === "match-reference-pacing" ||
+			command.kind === "build-reference-recreation-draft" ||
 			command.kind === "build-reference-draft",
 	);
 }
@@ -5338,6 +5474,7 @@ function shouldRefreshAssemblyIntent({
 	return commands.some(
 		(command) =>
 			command.kind === "set-assembly-source-pool" ||
+			command.kind === "build-reference-recreation-draft" ||
 			command.kind === "build-reference-draft" ||
 			command.kind === "replace-with-source-match" ||
 			command.kind === "lock-reference-match" ||
@@ -5361,6 +5498,7 @@ function findLatestReferenceAssetId({
 			command?.kind === "match-reference-audio-profile" ||
 			command?.kind === "match-reference-packaging" ||
 			command?.kind === "match-reference-pacing" ||
+			command?.kind === "build-reference-recreation-draft" ||
 			command?.kind === "build-reference-draft"
 		) {
 			return command.reference_asset_id ?? null;
@@ -5380,6 +5518,12 @@ function findLatestAssemblySourceAssetIds({
 			return command.asset_ids;
 		}
 		if (command?.kind === "build-reference-draft" && command.source_asset_ids?.length) {
+			return command.source_asset_ids;
+		}
+		if (
+			command?.kind === "build-reference-recreation-draft" &&
+			command.source_asset_ids?.length
+		) {
 			return command.source_asset_ids;
 		}
 	}
@@ -5442,6 +5586,23 @@ function buildRecentAssetChoice({
 				commandKind: command.kind,
 				createdAt: new Date().toISOString(),
 			};
+		case "build-reference-recreation-draft": {
+			const sourceAssetId =
+				command.source_asset_ids?.[0] ?? command.plan?.source_asset_ids[0] ?? null;
+			const sourceAssetName =
+				command.plan?.source_ranges.find(
+					(range) => range.source_asset_id === sourceAssetId,
+				)?.source_asset_name ?? sourceAssetId;
+			return sourceAssetId
+				? {
+						assetId: sourceAssetId,
+						assetKind: "source-video",
+						label: sourceAssetName ?? sourceAssetId,
+						commandKind: command.kind,
+						createdAt: new Date().toISOString(),
+				  }
+				: null;
+		}
 		case "build-reference-draft":
 			return command.matches[0]
 				? {
@@ -5481,6 +5642,8 @@ function buildRecentReferenceComparison({
 			return ["matched packaging to active reference"];
 		case "match-reference-pacing":
 			return ["matched pacing to active reference"];
+		case "build-reference-recreation-draft":
+			return ["built a full source-to-reference recreation draft"];
 		case "build-reference-draft":
 			return ["built a first draft from reference-guided source matches"];
 		case "replace-with-source-match":

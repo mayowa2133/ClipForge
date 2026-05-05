@@ -41,7 +41,8 @@ export interface ProjectSegmentSummary {
 export interface ProjectMediaAssetSummary {
 	asset_id: string;
 	name: string;
-	type: "video" | "image";
+	type: "video" | "image" | "audio";
+	duration_ms?: number | null;
 }
 
 export interface ProjectSceneSummary {
@@ -208,6 +209,7 @@ export interface ProjectSummary {
 	media_analysis_markers: ProjectMediaAnalysisMarkerSummary[];
 	available_music_assets: ProjectAudioLibraryAssetSummary[];
 	available_sfx_assets: ProjectAudioLibraryAssetSummary[];
+	imported_audio_assets?: ProjectMediaAssetSummary[];
 	trend_reference_summary: ProjectTrendReferenceSummary[];
 	publish_destination: PublishDestination | null;
 	export_preflight_snapshot: ProjectExportPreflightSnapshotSummary | null;
@@ -352,6 +354,7 @@ export type ChatPlanImpactKind =
 	| "export-preflight-fixes"
 	| "reference-video"
 	| "reference-assembly-pool"
+	| "reference-recreation"
 	| "reference-draft"
 	| "reference-draft-swap"
 	| "reference-draft-lock"

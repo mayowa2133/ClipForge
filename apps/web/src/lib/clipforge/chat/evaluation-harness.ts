@@ -513,6 +513,7 @@ function extractCommandTargetIds({
 			case "match-reference-audio-profile":
 			case "match-reference-packaging":
 			case "match-reference-pacing":
+			case "build-reference-recreation-draft":
 			case "replace-with-source-match":
 			case "lock-reference-match":
 			case "clear-reference-match-locks":
@@ -520,6 +521,7 @@ function extractCommandTargetIds({
 			case "build-reference-draft":
 				return command.matches.map((match) => match.match_id);
 		}
+		return [];
 	});
 }
 
@@ -880,6 +882,8 @@ function summarizeCommandForEval({
 			return "Matched packaging to the reference.";
 		case "match-reference-pacing":
 			return "Matched pacing to the reference.";
+		case "build-reference-recreation-draft":
+			return "Built a reference recreation draft.";
 		case "build-reference-draft":
 			return `Built a reference draft from ${command.matches.length} matched sections.`;
 		case "replace-with-source-match":
@@ -930,6 +934,7 @@ function extractSummarySegmentTargets({
 			case "match-reference-audio-profile":
 			case "match-reference-packaging":
 			case "match-reference-pacing":
+			case "build-reference-recreation-draft":
 			case "replace-with-source-match":
 			case "lock-reference-match":
 			case "clear-reference-match-locks":
@@ -977,6 +982,7 @@ function extractSummaryElementTargets({
 			case "match-reference-audio-profile":
 			case "match-reference-packaging":
 			case "match-reference-pacing":
+			case "build-reference-recreation-draft":
 			case "build-reference-draft":
 			case "replace-with-source-match":
 			case "lock-reference-match":

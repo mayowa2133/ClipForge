@@ -769,6 +769,23 @@ function buildDirectCommandImpactCard({
 				detail: "Remove the active creative reference",
 				jump: null,
 			};
+		case "build-reference-recreation-draft":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "reference-recreation",
+				title: "Recreate edit from reference",
+				detail: command.plan
+					? `${(command.plan.target_duration_ms / 1000).toFixed(1)}s · ${
+							command.plan.source_ranges.length
+					  } cuts · ${
+							command.plan.music_asset_id ? "imported music" : "camera audio only"
+					  }`
+					: `${command.source_asset_ids?.length ?? 0} source clip${
+							(command.source_asset_ids?.length ?? 0) === 1 ? "" : "s"
+					  } · ${command.music_asset_id ? "imported music" : "no music selected"}`,
+				jump: null,
+			};
 		case "apply-reference-finish-pass":
 			return {
 				opIndex: commandIndex,

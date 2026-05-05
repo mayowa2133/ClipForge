@@ -750,6 +750,11 @@ export function ChatContent() {
 			sceneRecipeTemplates: editor.project.getSceneRecipeTemplates(),
 		});
 	}, [activeProject, editor, playheadMs, selectedCount]);
+	const activeRecreationPlan = activeProject?.clipforge?.activeReferenceRecreationPlanId
+		? activeProject.clipforge.referenceRecreationPlansById[
+				activeProject.clipforge.activeReferenceRecreationPlanId
+		  ] ?? null
+		: null;
 	const captionStyleOptions = activeProject?.clipforge
 		? Object.values(activeProject.clipforge.captionStylesById)
 		: [];
@@ -818,6 +823,14 @@ export function ChatContent() {
 							Assembly pool: {referenceSummary.assembly_source_pool.length} clips ·{" "}
 							{referenceSummary.footage_match_readiness.reason}
 						</p>
+						{activeRecreationPlan && (
+							<p className="text-muted-foreground mt-1 text-xs">
+								Recreation blueprint:{" "}
+								{(activeRecreationPlan.target_duration_ms / 1000).toFixed(1)}s ·{" "}
+								{activeRecreationPlan.source_ranges.length} cuts ·{" "}
+								{activeRecreationPlan.music_asset_id ? "music on" : "no music"}
+							</p>
+						)}
 					</div>
 				)}
 				{!hasCompletedFirstAssistantAction ? (
@@ -1361,6 +1374,43 @@ export function ChatContent() {
 										</div>
 									);
 								})}
+							</div>
+						</div>
+					)}
+					{proposedCommands.some(
+						(command) => command.kind === "build-reference-recreation-draft",
+					) && (
+						<div className="rounded-md border p-3">
+							<p className="text-sm font-medium">Reference recreation</p>
+							<p className="text-muted-foreground mb-2 text-xs">
+								This will rebuild the active scene from raw source cuts, word captions,
+								detached voice audio, ducked music, and a 9:16 reference-safe canvas.
+							</p>
+							<div className="text-muted-foreground space-y-1 text-xs">
+								{proposedCommands.flatMap((command) =>
+									command.kind === "build-reference-recreation-draft"
+										? [
+												<p key="reference">
+													Reference:{" "}
+													{referenceSummary?.active_reference_video?.name ??
+														command.reference_asset_id ??
+														"selected reference"}
+												</p>,
+												<p key="sources">
+													Sources: {command.source_asset_ids?.length ?? 0} raw clip
+													{(command.source_asset_ids?.length ?? 0) === 1 ? "" : "s"}
+												</p>,
+												<p key="music">
+													Music:{" "}
+													{command.music_asset_id
+														? referenceSummary?.imported_audio_assets?.find(
+																(asset) => asset.asset_id === command.music_asset_id,
+														  )?.name ?? command.music_asset_id
+														: "not selected"}
+												</p>,
+										  ]
+										: [],
+								)}
 							</div>
 						</div>
 					)}

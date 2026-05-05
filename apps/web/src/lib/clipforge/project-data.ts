@@ -1,5 +1,4 @@
 import type {
-	CaptionStyleTemplate,
 	ClipForgeAppliedCommandSummary,
 	ClipForgeRecentAssetChoice,
 	ClipForgeRecentReferenceAssemblyChoice,
@@ -8,15 +7,19 @@ import type {
 	ClipForgeProjectData,
 	ClipMediaMetadata,
 	FootageDescriptor,
+	MusicTrackAnalysis,
+	ReferenceEditAnalysis,
 	ReferenceVideoAnalysis,
 	ReferenceMatchLock,
+	ReferenceRecreationPlan,
 	ReferenceShotPlan,
+	SourceRecreationAnalysis,
 } from "@/types/clipforge";
 import type { TProject } from "@/types/project";
 import { adoptLegacyCaptionTracks } from "./caption-studio";
 import { BUILT_IN_CAPTION_STYLE_MAP } from "./caption-style-library";
 
-export const CLIPFORGE_SCHEMA_VERSION = 8;
+export const CLIPFORGE_SCHEMA_VERSION = 9;
 
 const MAX_CHAT_MEMORY_TURNS = 12;
 const MAX_CHAT_MEMORY_APPLIED_COMMANDS = 20;
@@ -35,8 +38,13 @@ export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 		trendSoundReferences: [],
 		activeReferenceVideoAssetId: null,
 		referenceAnalysisByAssetId: {},
+		referenceEditAnalysisByAssetId: {},
 		assemblySourceAssetIds: [],
 		footageDescriptorsByAssetId: {},
+		sourceRecreationAnalysisByAssetId: {},
+		musicTrackAnalysisByAssetId: {},
+		referenceRecreationPlansById: {},
+		activeReferenceRecreationPlanId: null,
 		referenceShotPlanByAssetId: {},
 		referenceMatchLocks: {},
 		chatMemory: {
@@ -787,6 +795,306 @@ function normalizeReferenceMatchLock(value: unknown): ReferenceMatchLock | null 
 	};
 }
 
+function normalizeReferenceEditAnalysis(value: unknown): ReferenceEditAnalysis | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as { analyzedAt?: unknown }).analyzedAt !== "string" ||
+		typeof (value as { reference_asset_id?: unknown }).reference_asset_id !== "string" ||
+		typeof (value as { duration_ms?: unknown }).duration_ms !== "number"
+	) {
+		return null;
+	}
+
+	const source = value as Partial<ReferenceEditAnalysis>;
+	const aspectRatio = source.aspect_ratio;
+	const captionStyle = source.caption_style;
+	const audioMix = source.audio_mix;
+	const safeCaptionStyle: ReferenceEditAnalysis["caption_style"] = {
+		mode:
+			captionStyle?.mode === "none" ||
+			captionStyle?.mode === "phrase" ||
+			captionStyle?.mode === "word"
+				? captionStyle.mode
+				: "word",
+		text_transform:
+			captionStyle?.text_transform === "uppercase" ? "uppercase" : "none",
+		style_id:
+			typeof captionStyle?.style_id === "string"
+				? captionStyle.style_id
+				: "reference-word-pop",
+		font: typeof captionStyle?.font === "string" ? captionStyle.font : "Anton",
+		size: typeof captionStyle?.size === "number" ? captionStyle.size : 74,
+		position:
+			captionStyle?.position === "center" || captionStyle?.position === "bottom"
+				? captionStyle.position
+				: "bottom",
+		fill_color:
+			typeof captionStyle?.fill_color === "string"
+				? captionStyle.fill_color
+				: "#FFFFFF",
+		outline_color:
+			typeof captionStyle?.outline_color === "string"
+				? captionStyle.outline_color
+				: "#000000",
+		outline:
+			typeof captionStyle?.outline === "boolean" ? captionStyle.outline : true,
+		shadow:
+			typeof captionStyle?.shadow === "boolean" ? captionStyle.shadow : true,
+		safe_zone:
+			captionStyle?.safe_zone === "center" || captionStyle?.safe_zone === "bottom"
+				? captionStyle.safe_zone
+				: "lower-center",
+	};
+	const safeAudioMix: ReferenceEditAnalysis["audio_mix"] = {
+		target_lufs:
+			typeof audioMix?.target_lufs === "number" ? audioMix.target_lufs : -11.5,
+		true_peak_db:
+			typeof audioMix?.true_peak_db === "number" ? audioMix.true_peak_db : -1,
+		voice_gain_db:
+			typeof audioMix?.voice_gain_db === "number" ? audioMix.voice_gain_db : 10,
+		music_volume:
+			typeof audioMix?.music_volume === "number" ? audioMix.music_volume : 0.28,
+		ducking_amount:
+			typeof audioMix?.ducking_amount === "number" ? audioMix.ducking_amount : 0.62,
+		ducking_attack_ms:
+			typeof audioMix?.ducking_attack_ms === "number"
+				? audioMix.ducking_attack_ms
+				: 70,
+		ducking_release_ms:
+			typeof audioMix?.ducking_release_ms === "number"
+				? audioMix.ducking_release_ms
+				: 260,
+		soft_limiter:
+			typeof audioMix?.soft_limiter === "boolean" ? audioMix.soft_limiter : true,
+	};
+
+	return {
+		analyzedAt: (value as { analyzedAt: string }).analyzedAt,
+		reference_asset_id: (value as { reference_asset_id: string }).reference_asset_id,
+		duration_ms: (value as { duration_ms: number }).duration_ms,
+		aspect_ratio:
+			aspectRatio === "9:16" ||
+			aspectRatio === "1:1" ||
+			aspectRatio === "16:9" ||
+			aspectRatio === "unknown"
+				? aspectRatio
+				: "unknown",
+		cut_points_ms: Array.isArray(source.cut_points_ms)
+			? source.cut_points_ms.filter((point): point is number => typeof point === "number")
+			: [],
+		cut_count:
+			typeof source.cut_count === "number"
+				? source.cut_count
+				: Array.isArray(source.cut_points_ms)
+					? source.cut_points_ms.length
+					: 0,
+		average_cut_ms:
+			typeof source.average_cut_ms === "number" ? source.average_cut_ms : null,
+		caption_style: safeCaptionStyle,
+		audio_mix: safeAudioMix,
+		color_profile:
+			source.color_profile === "bt709-social" ||
+			source.color_profile === "source-matched" ||
+			source.color_profile === "unknown"
+				? source.color_profile
+				: "unknown",
+		warnings: Array.isArray(source.warnings)
+			? source.warnings.filter((warning): warning is string => typeof warning === "string")
+			: [],
+	};
+}
+
+function normalizeSourceRecreationAnalysis(value: unknown): SourceRecreationAnalysis | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as { analyzedAt?: unknown }).analyzedAt !== "string" ||
+		typeof (value as { asset_id?: unknown }).asset_id !== "string" ||
+		typeof (value as { duration_ms?: unknown }).duration_ms !== "number"
+	) {
+		return null;
+	}
+	const source = value as Partial<SourceRecreationAnalysis>;
+	const aspectRatio = source.aspect_ratio;
+	return {
+		analyzedAt: (value as { analyzedAt: string }).analyzedAt,
+		asset_id: (value as { asset_id: string }).asset_id,
+		duration_ms: (value as { duration_ms: number }).duration_ms,
+		aspect_ratio:
+			aspectRatio === "9:16" ||
+			aspectRatio === "1:1" ||
+			aspectRatio === "16:9" ||
+			aspectRatio === "unknown"
+				? aspectRatio
+				: "unknown",
+		speech_ranges: Array.isArray(source.speech_ranges)
+			? source.speech_ranges.flatMap((range) => {
+					if (
+						typeof range?.range_id !== "string" ||
+						typeof range?.start_ms !== "number" ||
+						typeof range?.end_ms !== "number"
+					) {
+						return [];
+					}
+					return [
+						{
+							range_id: range.range_id,
+							start_ms: range.start_ms,
+							end_ms: range.end_ms,
+							word_count:
+								typeof range.word_count === "number" ? range.word_count : 0,
+							speech_density:
+								typeof range.speech_density === "number"
+									? range.speech_density
+									: 0,
+							confidence:
+								typeof range.confidence === "number" ? range.confidence : 0.35,
+							reasons: Array.isArray(range.reasons)
+								? range.reasons.filter(
+										(reason): reason is string => typeof reason === "string",
+								  )
+								: [],
+						},
+					];
+			  })
+			: [],
+		dead_air_ranges: Array.isArray(source.dead_air_ranges)
+			? source.dead_air_ranges.filter(
+					(range): range is SourceRecreationAnalysis["dead_air_ranges"][number] =>
+						typeof range?.start_ms === "number" && typeof range?.end_ms === "number",
+			  )
+			: [],
+		face_framing: source.face_framing === "centered" ? "centered" : "unknown",
+		warnings: Array.isArray(source.warnings)
+			? source.warnings.filter((warning): warning is string => typeof warning === "string")
+			: [],
+	};
+}
+
+function normalizeMusicTrackAnalysis(value: unknown): MusicTrackAnalysis | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as { analyzedAt?: unknown }).analyzedAt !== "string" ||
+		typeof (value as { asset_id?: unknown }).asset_id !== "string" ||
+		typeof (value as { duration_ms?: unknown }).duration_ms !== "number"
+	) {
+		return null;
+	}
+	const source = value as Partial<MusicTrackAnalysis>;
+	return {
+		analyzedAt: (value as { analyzedAt: string }).analyzedAt,
+		asset_id: (value as { asset_id: string }).asset_id,
+		duration_ms: (value as { duration_ms: number }).duration_ms,
+		bpm: typeof source.bpm === "number" ? source.bpm : null,
+		recommended_volume:
+			typeof source.recommended_volume === "number" ? source.recommended_volume : 0.28,
+		loop_to_project_end:
+			typeof source.loop_to_project_end === "boolean"
+				? source.loop_to_project_end
+				: true,
+		rights_profile:
+			source.rights_profile === "user-managed" ||
+			source.rights_profile === "universal" ||
+			source.rights_profile === "unknown"
+				? source.rights_profile
+				: "unknown",
+		warnings: Array.isArray(source.warnings)
+			? source.warnings.filter((warning): warning is string => typeof warning === "string")
+			: [],
+	};
+}
+
+function normalizeReferenceRecreationPlan(value: unknown): ReferenceRecreationPlan | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		typeof (value as { plan_id?: unknown }).plan_id !== "string" ||
+		typeof (value as { createdAt?: unknown }).createdAt !== "string" ||
+		typeof (value as { reference_asset_id?: unknown }).reference_asset_id !== "string" ||
+		typeof (value as { target_duration_ms?: unknown }).target_duration_ms !== "number"
+	) {
+		return null;
+	}
+	const source = value as Partial<ReferenceRecreationPlan>;
+	const referenceAnalysis = normalizeReferenceEditAnalysis({
+		analyzedAt: source.createdAt,
+		reference_asset_id: source.reference_asset_id,
+		duration_ms: source.target_duration_ms,
+		aspect_ratio: "9:16",
+		cut_points_ms: source.cut_points_ms ?? [],
+		caption_style: source.caption_style,
+		audio_mix: source.audio_mix,
+		color_profile: "bt709-social",
+		warnings: source.warnings ?? [],
+	});
+	if (!referenceAnalysis) {
+		return null;
+	}
+	return {
+		plan_id: (value as { plan_id: string }).plan_id,
+		createdAt: (value as { createdAt: string }).createdAt,
+		reference_asset_id: (value as { reference_asset_id: string }).reference_asset_id,
+		source_asset_ids: Array.isArray(source.source_asset_ids)
+			? source.source_asset_ids.filter((assetId): assetId is string => typeof assetId === "string")
+			: [],
+		music_asset_id:
+			typeof source.music_asset_id === "string" ? source.music_asset_id : null,
+		target_duration_ms: (value as { target_duration_ms: number }).target_duration_ms,
+		cut_points_ms: Array.isArray(source.cut_points_ms)
+			? source.cut_points_ms.filter((point): point is number => typeof point === "number")
+			: [],
+		source_ranges: Array.isArray(source.source_ranges)
+			? source.source_ranges.flatMap((range) => {
+					if (
+						typeof range?.range_id !== "string" ||
+						typeof range?.source_asset_id !== "string" ||
+						typeof range?.source_asset_name !== "string" ||
+						typeof range?.source_start_ms !== "number" ||
+						typeof range?.source_end_ms !== "number" ||
+						typeof range?.timeline_start_ms !== "number" ||
+						typeof range?.target_duration_ms !== "number"
+					) {
+						return [];
+					}
+					return [
+						{
+							range_id: range.range_id,
+							source_asset_id: range.source_asset_id,
+							source_asset_name: range.source_asset_name,
+							source_start_ms: range.source_start_ms,
+							source_end_ms: range.source_end_ms,
+							timeline_start_ms: range.timeline_start_ms,
+							target_duration_ms: range.target_duration_ms,
+							confidence:
+								typeof range.confidence === "number" ? range.confidence : 0.35,
+							reasons: Array.isArray(range.reasons)
+								? range.reasons.filter(
+										(reason): reason is string => typeof reason === "string",
+								  )
+								: [],
+						},
+					];
+			  })
+			: [],
+		caption_style: referenceAnalysis.caption_style,
+		audio_mix: referenceAnalysis.audio_mix,
+		crop: {
+			target_aspect_ratio: "9:16",
+			canvas_width:
+				typeof source.crop?.canvas_width === "number" ? source.crop.canvas_width : 1080,
+			canvas_height:
+				typeof source.crop?.canvas_height === "number" ? source.crop.canvas_height : 1920,
+			strategy:
+				source.crop?.strategy === "center-face-safe" ? "center-face-safe" : "center-crop",
+		},
+		warnings: Array.isArray(source.warnings)
+			? source.warnings.filter((warning): warning is string => typeof warning === "string")
+			: [],
+	};
+}
+
 function normalizeReferenceVideoAnalysis(
 	value: unknown,
 ): ReferenceVideoAnalysis | null {
@@ -1088,6 +1396,14 @@ export function normalizeClipForgeProjectData({
 				},
 			),
 		),
+		referenceEditAnalysisByAssetId: Object.fromEntries(
+			Object.entries(source.referenceEditAnalysisByAssetId ?? {}).flatMap(
+				([assetId, analysis]) => {
+					const normalized = normalizeReferenceEditAnalysis(analysis);
+					return normalized ? [[assetId, normalized]] : [];
+				},
+			),
+		),
 		assemblySourceAssetIds: Array.isArray(source.assemblySourceAssetIds)
 			? source.assemblySourceAssetIds.filter(
 					(assetId): assetId is string => typeof assetId === "string",
@@ -1101,6 +1417,34 @@ export function normalizeClipForgeProjectData({
 				},
 			),
 		),
+		sourceRecreationAnalysisByAssetId: Object.fromEntries(
+			Object.entries(source.sourceRecreationAnalysisByAssetId ?? {}).flatMap(
+				([assetId, analysis]) => {
+					const normalized = normalizeSourceRecreationAnalysis(analysis);
+					return normalized ? [[assetId, normalized]] : [];
+				},
+			),
+		),
+		musicTrackAnalysisByAssetId: Object.fromEntries(
+			Object.entries(source.musicTrackAnalysisByAssetId ?? {}).flatMap(
+				([assetId, analysis]) => {
+					const normalized = normalizeMusicTrackAnalysis(analysis);
+					return normalized ? [[assetId, normalized]] : [];
+				},
+			),
+		),
+		referenceRecreationPlansById: Object.fromEntries(
+			Object.entries(source.referenceRecreationPlansById ?? {}).flatMap(
+				([planId, plan]) => {
+					const normalized = normalizeReferenceRecreationPlan(plan);
+					return normalized ? [[planId, normalized]] : [];
+				},
+			),
+		),
+		activeReferenceRecreationPlanId:
+			typeof source.activeReferenceRecreationPlanId === "string"
+				? source.activeReferenceRecreationPlanId
+				: null,
 		referenceShotPlanByAssetId: Object.fromEntries(
 			Object.entries(source.referenceShotPlanByAssetId ?? {}).flatMap(
 				([assetId, plan]) => {
