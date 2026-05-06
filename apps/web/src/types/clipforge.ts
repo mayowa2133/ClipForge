@@ -911,6 +911,7 @@ export interface BuildReferenceRecreationDraftEditorCommand {
 	music_asset_id?: string | null;
 	plan?: ReferenceRecreationPlan | null;
 	include_finish_pass?: boolean;
+	require_transcript?: boolean;
 	scope?: ClipForgeCommandScope;
 }
 

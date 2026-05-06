@@ -7,9 +7,7 @@ import type {
 import type { MediaAsset } from "@/types/assets";
 
 export interface Transcriber {
-	transcribe(
-		input: ClipTranscriptionInput,
-	): Promise<ClipTranscriptionResult>;
+	transcribe(input: ClipTranscriptionInput): Promise<ClipTranscriptionResult>;
 }
 
 export interface ClipTranscriptionInput {
@@ -110,6 +108,26 @@ export function normalizeSegmentsFromSeconds({
 		);
 }
 
+export function normalizeWordsFromSeconds({
+	words,
+}: {
+	words: Array<{ text: string; start: number; end: number }>;
+}): TranscriptWord[] {
+	return words
+		.map((word) => ({
+			text: word.text.trim(),
+			start_ms: Math.round(word.start * 1000),
+			end_ms: Math.round(word.end * 1000),
+		}))
+		.filter(
+			(word) =>
+				word.text.length > 0 &&
+				Number.isFinite(word.start_ms) &&
+				Number.isFinite(word.end_ms) &&
+				word.end_ms > word.start_ms,
+		);
+}
+
 export function parseSrtSegments({
 	srtText,
 }: {
@@ -160,5 +178,5 @@ function parseSrtTimestamp({ value }: { value: string }): number | null {
 	const seconds = Number(match[3]);
 	const milliseconds = Number(match[4]);
 
-	return ((hours * 60 * 60 + minutes * 60 + seconds) * 1000) + milliseconds;
+	return (hours * 60 * 60 + minutes * 60 + seconds) * 1000 + milliseconds;
 }

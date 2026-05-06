@@ -66,7 +66,9 @@ export class HeuristicChatOpsProvider implements ChatOpsProvider {
 		overrides,
 	}: {
 		userText: string;
-		projectSummary: Parameters<ChatOpsProvider["proposeEdits"]>[0]["projectSummary"];
+		projectSummary: Parameters<
+			ChatOpsProvider["proposeEdits"]
+		>[0]["projectSummary"];
 		context: Parameters<ChatOpsProvider["proposeEdits"]>[0]["context"];
 		overrides?: Parameters<ChatOpsProvider["proposeEdits"]>[0]["overrides"];
 	}): Promise<ChatProposalResult> {
@@ -161,7 +163,11 @@ function planClause({
 		state,
 		deletedSegmentIds,
 	});
-	if (directPlan.clarification || directPlan.commands.length > 0 || directPlan.ops.length > 0) {
+	if (
+		directPlan.clarification ||
+		directPlan.commands.length > 0 ||
+		directPlan.ops.length > 0
+	) {
 		return directPlan;
 	}
 
@@ -176,7 +182,9 @@ function planClause({
 			allowedKinds: ["caption"],
 			deletedSegmentIds,
 			fromText:
-				fixCaptionRequest.from.trim().length > 0 ? fixCaptionRequest.from : undefined,
+				fixCaptionRequest.from.trim().length > 0
+					? fixCaptionRequest.from
+					: undefined,
 		});
 		if (target.segment) {
 			return {
@@ -197,7 +205,12 @@ function planClause({
 			};
 		}
 		if (target.clarification) {
-			return { ops: [], commands: [], state, clarification: target.clarification };
+			return {
+				ops: [],
+				commands: [],
+				state,
+				clarification: target.clarification,
+			};
 		}
 		return warnUnsupportedClause({ clause, warnings, state });
 	}
@@ -214,19 +227,31 @@ function planClause({
 			deletedSegmentIds,
 		});
 		if (left.clarification) {
-			return { ops: [], commands: [], state, clarification: left.clarification };
+			return {
+				ops: [],
+				commands: [],
+				state,
+				clarification: left.clarification,
+			};
 		}
 		const right = resolveReference({
 			projectSummary,
 			context,
 			overrides,
-			state: left.segment ? updateResolutionStateFromSegment(state, left.segment) : state,
+			state: left.segment
+				? updateResolutionStateFromSegment(state, left.segment)
+				: state,
 			reference: swapRequest.bReference,
 			allowedKinds: ["video"],
 			deletedSegmentIds,
 		});
 		if (right.clarification) {
-			return { ops: [], commands: [], state, clarification: right.clarification };
+			return {
+				ops: [],
+				commands: [],
+				state,
+				clarification: right.clarification,
+			};
 		}
 		if (
 			left.segment &&
@@ -268,7 +293,7 @@ function planClause({
 					target.segment.start_ms +
 						(moveRequest.direction === "earlier"
 							? -(moveRequest.relative_delta_ms ?? 0)
-							: moveRequest.relative_delta_ms ?? 0),
+							: (moveRequest.relative_delta_ms ?? 0)),
 				);
 			return {
 				ops: [
@@ -284,7 +309,12 @@ function planClause({
 			};
 		}
 		if (target.clarification) {
-			return { ops: [], commands: [], state, clarification: target.clarification };
+			return {
+				ops: [],
+				commands: [],
+				state,
+				clarification: target.clarification,
+			};
 		}
 		return warnUnsupportedClause({ clause, warnings, state });
 	}
@@ -316,7 +346,12 @@ function planClause({
 			};
 		}
 		if (target.clarification) {
-			return { ops: [], commands: [], state, clarification: target.clarification };
+			return {
+				ops: [],
+				commands: [],
+				state,
+				clarification: target.clarification,
+			};
 		}
 		return warnUnsupportedClause({ clause, warnings, state });
 	}
@@ -347,7 +382,12 @@ function planClause({
 			};
 		}
 		if (target.clarification) {
-			return { ops: [], commands: [], state, clarification: target.clarification };
+			return {
+				ops: [],
+				commands: [],
+				state,
+				clarification: target.clarification,
+			};
 		}
 		return warnUnsupportedClause({ clause, warnings, state });
 	}
@@ -371,7 +411,7 @@ function planClause({
 						segment_id: target.segment.segment_id,
 						to_ms: duplicateRequest.after_itself
 							? target.segment.end_ms
-							: duplicateRequest.to_ms ?? target.segment.end_ms,
+							: (duplicateRequest.to_ms ?? target.segment.end_ms),
 					},
 				],
 				commands: [],
@@ -380,7 +420,12 @@ function planClause({
 			};
 		}
 		if (target.clarification) {
-			return { ops: [], commands: [], state, clarification: target.clarification };
+			return {
+				ops: [],
+				commands: [],
+				state,
+				clarification: target.clarification,
+			};
 		}
 		return warnUnsupportedClause({ clause, warnings, state });
 	}
@@ -439,8 +484,8 @@ function planLegacyClause({
 	const durationMatch =
 		timedBrollMatch || phraseBrollRequest
 			? null
-			: text.match(/\b(\d+)\s?s(?:ec|econd)?s?\s+version\b/) ??
-				text.match(/\bmake\s+(?:it\s+)?(\d+)\s?s(?:ec|econd)?s?\b/);
+			: (text.match(/\b(\d+)\s?s(?:ec|econd)?s?\s+version\b/) ??
+				text.match(/\bmake\s+(?:it\s+)?(\d+)\s?s(?:ec|econd)?s?\b/));
 	if (durationMatch) {
 		const targetDuration = Number(durationMatch[1]);
 		if (targetDuration > 0) {
@@ -501,7 +546,9 @@ function planLegacyClause({
 			type: "ADD_TEXT_OVERLAY",
 			text: textOverlayRequest.text,
 			start_ms: startMs,
-			end_ms: startMs + Math.max(250, textOverlayRequest.end_ms - textOverlayRequest.start_ms),
+			end_ms:
+				startMs +
+				Math.max(250, textOverlayRequest.end_ms - textOverlayRequest.start_ms),
 			position: textOverlayRequest.position,
 			style_id: preset.style_id,
 			font: preset.font,
@@ -663,7 +710,11 @@ function planDirectCommandClause({
 			state,
 			deletedSegmentIds,
 		});
-		if (result.clarification || result.commands.length > 0 || result.ops.length > 0) {
+		if (
+			result.clarification ||
+			result.commands.length > 0 ||
+			result.ops.length > 0
+		) {
 			return result;
 		}
 	}
@@ -690,13 +741,16 @@ function planRepeatCommandClause(args: DirectPlannerArgs): DirectPlanResult {
 		context: args.context,
 		state: args.state,
 		count: nextCount,
-			recentAction: lastAction,
-		});
+		recentAction: lastAction,
+	});
 	if (nextTargets.length === 0) {
 		return emptyDirectPlan({ state: args.state });
 	}
 
-	if (lastAction?.kind === "set-transition-in" || /\btransition\b/.test(lastTurn)) {
+	if (
+		lastAction?.kind === "set-transition-in" ||
+		/\btransition\b/.test(lastTurn)
+	) {
 		return {
 			ops: [],
 			commands: [
@@ -716,7 +770,10 @@ function planRepeatCommandClause(args: DirectPlannerArgs): DirectPlanResult {
 		};
 	}
 
-	if (lastAction?.kind === "set-clip-speed" || /\b(speed up|slow down|faster|slower)\b/.test(lastTurn)) {
+	if (
+		lastAction?.kind === "set-clip-speed" ||
+		/\b(speed up|slow down|faster|slower)\b/.test(lastTurn)
+	) {
 		const playbackRate = inferPlaybackRateFromText({ text: lastTurn }) ?? 1.15;
 		return {
 			ops: [],
@@ -740,9 +797,15 @@ function planRepeatCommandClause(args: DirectPlannerArgs): DirectPlanResult {
 	return emptyDirectPlan({ state: args.state });
 }
 
-function planAssemblySourcePoolClause(args: DirectPlannerArgs): DirectPlanResult {
+function planAssemblySourcePoolClause(
+	args: DirectPlannerArgs,
+): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
-	if (!/\b(source footage|source pool|assembly source|source clips)\b/.test(normalized)) {
+	if (
+		!/\b(source footage|source pool|assembly source|source clips)\b/.test(
+			normalized,
+		)
+	) {
 		return emptyDirectPlan({ state: args.state });
 	}
 
@@ -750,7 +813,8 @@ function planAssemblySourcePoolClause(args: DirectPlannerArgs): DirectPlanResult
 		.filter(
 			(asset) =>
 				asset.type === "video" &&
-				asset.asset_id !== args.projectSummary.active_reference_video?.asset_id &&
+				asset.asset_id !==
+					args.projectSummary.active_reference_video?.asset_id &&
 				normalized.includes(asset.name.toLowerCase()),
 		)
 		.map((asset) => asset.asset_id);
@@ -770,9 +834,14 @@ function planAssemblySourcePoolClause(args: DirectPlannerArgs): DirectPlanResult
 	};
 }
 
-function planReferenceSelectionClause(args: DirectPlannerArgs): DirectPlanResult {
+function planReferenceSelectionClause(
+	args: DirectPlannerArgs,
+): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
-	if (!/\b(reference|example)\b/.test(normalized) || !/\buse\b|\bset\b|\bmake\b/.test(normalized)) {
+	if (
+		!/\b(reference|example)\b/.test(normalized) ||
+		!/\buse\b|\bset\b|\bmake\b/.test(normalized)
+	) {
 		return emptyDirectPlan({ state: args.state });
 	}
 
@@ -800,7 +869,9 @@ function planReferenceSelectionClause(args: DirectPlannerArgs): DirectPlanResult
 	return emptyDirectPlan({ state: args.state });
 }
 
-function planReferenceRecreationClause(args: DirectPlannerArgs): DirectPlanResult {
+function planReferenceRecreationClause(
+	args: DirectPlannerArgs,
+): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
 	const asksForRecreation =
 		/\b(recreate|recreation|replicate|make.*from raw|raw.*edited|edited version|match the reference|like the reference|make it like)\b/.test(
@@ -818,7 +889,10 @@ function planReferenceRecreationClause(args: DirectPlannerArgs): DirectPlanResul
 		overrides: args.overrides,
 	});
 	if (referenceTarget.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: referenceTarget.clarification,
+		};
 	}
 	if (!referenceTarget.assetId) {
 		return emptyDirectPlan({ state: args.state });
@@ -845,13 +919,16 @@ function planReferenceRecreationClause(args: DirectPlannerArgs): DirectPlanResul
 				source_asset_ids: sourceAssetIds,
 				music_asset_id: musicAsset?.asset_id ?? null,
 				include_finish_pass: true,
+				require_transcript: true,
 				scope: "project",
 			},
 		],
 	};
 }
 
-function planReferenceDraftAssemblyClause(args: DirectPlannerArgs): DirectPlanResult {
+function planReferenceDraftAssemblyClause(
+	args: DirectPlannerArgs,
+): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
 	const asksForDraft =
 		/\b(build|make|create|rebuild)\b/.test(normalized) &&
@@ -859,7 +936,8 @@ function planReferenceDraftAssemblyClause(args: DirectPlannerArgs): DirectPlanRe
 	const asksToGetCloser =
 		/\bcloser to the reference\b|\bcloser to the example\b/.test(normalized);
 	if (
-		(!/\b(reference|example)\b/.test(normalized) && !args.projectSummary.active_reference_video) ||
+		(!/\b(reference|example)\b/.test(normalized) &&
+			!args.projectSummary.active_reference_video) ||
 		(!asksForDraft && !asksToGetCloser)
 	) {
 		return emptyDirectPlan({ state: args.state });
@@ -871,7 +949,10 @@ function planReferenceDraftAssemblyClause(args: DirectPlannerArgs): DirectPlanRe
 		overrides: args.overrides,
 	});
 	if (referenceTarget.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: referenceTarget.clarification,
+		};
 	}
 	if (!referenceTarget.assetId) {
 		return emptyDirectPlan({ state: args.state });
@@ -901,7 +982,9 @@ function planReferenceDraftAssemblyClause(args: DirectPlannerArgs): DirectPlanRe
 				}),
 				matches,
 				focus_match_ids: focusMatchIds,
-				include_finish_pass: /\bfinish\b|\bpolish\b|\bready to post\b/.test(normalized),
+				include_finish_pass: /\bfinish\b|\bpolish\b|\bready to post\b/.test(
+					normalized,
+				),
 				scope: "project",
 			},
 			...(/\bfinish\b|\bpolish\b|\bready to post\b/.test(normalized)
@@ -911,13 +994,15 @@ function planReferenceDraftAssemblyClause(args: DirectPlannerArgs): DirectPlanRe
 							reference_asset_id: referenceTarget.assetId,
 							scope: "project" as const,
 						},
-				  ]
+					]
 				: []),
 		],
 	};
 }
 
-function planReferenceDraftSwapClause(args: DirectPlannerArgs): DirectPlanResult {
+function planReferenceDraftSwapClause(
+	args: DirectPlannerArgs,
+): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
 	if (
 		args.projectSummary.candidate_source_matches.length === 0 ||
@@ -955,7 +1040,9 @@ function planReferenceDraftSwapClause(args: DirectPlannerArgs): DirectPlanResult
 	};
 }
 
-function planReferenceDraftLockClause(args: DirectPlannerArgs): DirectPlanResult {
+function planReferenceDraftLockClause(
+	args: DirectPlannerArgs,
+): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
 	if (
 		args.projectSummary.candidate_source_matches.length === 0 ||
@@ -985,7 +1072,9 @@ function planReferenceDraftLockClause(args: DirectPlannerArgs): DirectPlanResult
 	};
 }
 
-function planReferenceDraftUnlockClause(args: DirectPlannerArgs): DirectPlanResult {
+function planReferenceDraftUnlockClause(
+	args: DirectPlannerArgs,
+): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
 	if (
 		args.projectSummary.candidate_source_matches.length === 0 ||
@@ -1006,11 +1095,15 @@ function planReferenceDraftUnlockClause(args: DirectPlannerArgs): DirectPlanResu
 	};
 }
 
-function planReferenceFinishPassClause(args: DirectPlannerArgs): DirectPlanResult {
+function planReferenceFinishPassClause(
+	args: DirectPlannerArgs,
+): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
 	if (
 		!/\b(reference|example)\b/.test(normalized) ||
-		!/\bfinish\b|\bpolish\b|\bready to post\b|\bcloser\b|\blike the reference\b/.test(normalized)
+		!/\bfinish\b|\bpolish\b|\bready to post\b|\bcloser\b|\blike the reference\b/.test(
+			normalized,
+		)
 	) {
 		return emptyDirectPlan({ state: args.state });
 	}
@@ -1021,7 +1114,10 @@ function planReferenceFinishPassClause(args: DirectPlannerArgs): DirectPlanResul
 		overrides: args.overrides,
 	});
 	if (referenceTarget.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: referenceTarget.clarification,
+		};
 	}
 	if (!referenceTarget.assetId) {
 		return emptyDirectPlan({ state: args.state });
@@ -1043,7 +1139,10 @@ function planReferenceCaptionClause(args: DirectPlannerArgs): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
 	if (
 		(!/\b(reference|example)\b/.test(normalized) &&
-			!(args.projectSummary.active_reference_video && /\b(match|only)\b/.test(normalized))) ||
+			!(
+				args.projectSummary.active_reference_video &&
+				/\b(match|only)\b/.test(normalized)
+			)) ||
 		!/\bcaption/.test(normalized)
 	) {
 		return emptyDirectPlan({ state: args.state });
@@ -1055,7 +1154,10 @@ function planReferenceCaptionClause(args: DirectPlannerArgs): DirectPlanResult {
 		overrides: args.overrides,
 	});
 	if (referenceTarget.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: referenceTarget.clarification,
+		};
 	}
 	if (!referenceTarget.assetId) {
 		return emptyDirectPlan({ state: args.state });
@@ -1077,7 +1179,10 @@ function planReferenceAudioClause(args: DirectPlannerArgs): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
 	if (
 		(!/\b(reference|example)\b/.test(normalized) &&
-			!(args.projectSummary.active_reference_video && /\bmatch\b/.test(normalized))) ||
+			!(
+				args.projectSummary.active_reference_video &&
+				/\bmatch\b/.test(normalized)
+			)) ||
 		!/\baudio\b|\bmusic\b|\btrack\b|\bsound\b/.test(normalized)
 	) {
 		return emptyDirectPlan({ state: args.state });
@@ -1089,7 +1194,10 @@ function planReferenceAudioClause(args: DirectPlannerArgs): DirectPlanResult {
 		overrides: args.overrides,
 	});
 	if (referenceTarget.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: referenceTarget.clarification,
+		};
 	}
 	if (!referenceTarget.assetId) {
 		return emptyDirectPlan({ state: args.state });
@@ -1107,11 +1215,16 @@ function planReferenceAudioClause(args: DirectPlannerArgs): DirectPlanResult {
 	};
 }
 
-function planReferencePackagingClause(args: DirectPlannerArgs): DirectPlanResult {
+function planReferencePackagingClause(
+	args: DirectPlannerArgs,
+): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
 	if (
 		(!/\b(reference|example)\b/.test(normalized) &&
-			!(args.projectSummary.active_reference_video && /\bmatch\b/.test(normalized))) ||
+			!(
+				args.projectSummary.active_reference_video &&
+				/\bmatch\b/.test(normalized)
+			)) ||
 		!/\bpackage\b|\bpackaging\b|\bdestination\b|\bformat\b/.test(normalized)
 	) {
 		return emptyDirectPlan({ state: args.state });
@@ -1123,7 +1236,10 @@ function planReferencePackagingClause(args: DirectPlannerArgs): DirectPlanResult
 		overrides: args.overrides,
 	});
 	if (referenceTarget.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: referenceTarget.clarification,
+		};
 	}
 	if (!referenceTarget.assetId) {
 		return emptyDirectPlan({ state: args.state });
@@ -1145,7 +1261,10 @@ function planReferencePacingClause(args: DirectPlannerArgs): DirectPlanResult {
 	const normalized = args.clause.toLowerCase();
 	if (
 		(!/\b(reference|example)\b/.test(normalized) &&
-			!(args.projectSummary.active_reference_video && /\bpace\b|\bpacing\b|\bcloser\b/.test(normalized))) ||
+			!(
+				args.projectSummary.active_reference_video &&
+				/\bpace\b|\bpacing\b|\bcloser\b/.test(normalized)
+			)) ||
 		!/\bpacing\b|\bpace\b|\bcloser\b|\bmatch\b/.test(normalized)
 	) {
 		return emptyDirectPlan({ state: args.state });
@@ -1157,7 +1276,10 @@ function planReferencePacingClause(args: DirectPlannerArgs): DirectPlanResult {
 		overrides: args.overrides,
 	});
 	if (referenceTarget.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: referenceTarget.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: referenceTarget.clarification,
+		};
 	}
 	if (!referenceTarget.assetId) {
 		return emptyDirectPlan({ state: args.state });
@@ -1182,7 +1304,9 @@ function resolveAssemblySourceAssetIds({
 	projectSummary: ProjectSummary;
 	referenceAssetId: string;
 }) {
-	const explicitPool = projectSummary.assembly_source_pool.map((asset) => asset.asset_id);
+	const explicitPool = projectSummary.assembly_source_pool.map(
+		(asset) => asset.asset_id,
+	);
 	if (explicitPool.length > 0) {
 		return explicitPool;
 	}
@@ -1207,7 +1331,10 @@ function inferAssemblyFocusMatchIds({
 	}
 	if (/\bending\b|\boutro\b|\bpayoff\b|\bcta\b/.test(text)) {
 		return projectSummary.candidate_source_matches
-			.filter((match) => match.section_role === "payoff" || match.section_role === "cta")
+			.filter(
+				(match) =>
+					match.section_role === "payoff" || match.section_role === "cta",
+			)
 			.map((match) => match.match_id);
 	}
 	return [];
@@ -1241,8 +1368,9 @@ function selectReferenceDraftMatches({
 		candidates: match.candidate_asset_ids.map((assetId, index) => ({
 			asset_id: assetId,
 			asset_name:
-				projectSummary.assembly_source_pool.find((asset) => asset.asset_id === assetId)?.name ??
-				assetId,
+				projectSummary.assembly_source_pool.find(
+					(asset) => asset.asset_id === assetId,
+				)?.name ?? assetId,
 			range_id: `${assetId}:${match.match_id}:${index + 1}`,
 			start_ms: 0,
 			end_ms:
@@ -1270,16 +1398,20 @@ function resolveReferenceAssemblyMatchTarget({
 	projectSummary: ProjectSummary;
 	text: string;
 }) {
-	const byRole =
-		/\bhook\b|\bopener\b/.test(text)
-			? projectSummary.candidate_source_matches.find((match) => match.section_role === "hook")
-			: /\bending\b|\boutro\b|\bpayoff\b|\bcta\b/.test(text)
+	const byRole = /\bhook\b|\bopener\b/.test(text)
+		? projectSummary.candidate_source_matches.find(
+				(match) => match.section_role === "hook",
+			)
+		: /\bending\b|\boutro\b|\bpayoff\b|\bcta\b/.test(text)
+			? projectSummary.candidate_source_matches.find(
+					(match) =>
+						match.section_role === "payoff" || match.section_role === "cta",
+				)
+			: /\bbody\b|\bmiddle\b/.test(text)
 				? projectSummary.candidate_source_matches.find(
-						(match) => match.section_role === "payoff" || match.section_role === "cta",
-				  )
-				: /\bbody\b|\bmiddle\b/.test(text)
-					? projectSummary.candidate_source_matches.find((match) => match.section_role === "body")
-					: null;
+						(match) => match.section_role === "body",
+					)
+				: null;
 	return byRole ?? projectSummary.candidate_source_matches[0] ?? null;
 }
 
@@ -1297,7 +1429,9 @@ function resolveAssemblySourceAssetFromPrompt({
 			: /\blast\b/.test(text)
 				? -1
 				: 0;
-	const keywordMatch = text.match(/\b(?:first|second|third|last)?\s*([a-z0-9_-]+)\s+clip\b/);
+	const keywordMatch = text.match(
+		/\b(?:first|second|third|last)?\s*([a-z0-9_-]+)\s+clip\b/,
+	);
 	const keyword = keywordMatch?.[1] ?? null;
 	const poolSource =
 		projectSummary.assembly_source_pool.length > 0
@@ -1306,7 +1440,8 @@ function resolveAssemblySourceAssetFromPrompt({
 					.filter(
 						(asset) =>
 							asset.type === "video" &&
-							asset.asset_id !== projectSummary.active_reference_video?.asset_id,
+							asset.asset_id !==
+								projectSummary.active_reference_video?.asset_id,
 					)
 					.map((asset) => ({
 						asset_id: asset.asset_id,
@@ -1334,7 +1469,8 @@ function planFinishPassClause(args: DirectPlannerArgs): DirectPlanResult {
 		return emptyDirectPlan({ state: args.state });
 	}
 
-	const publishDestination = inferPublishDestination({ text: normalized }) ?? "tiktok";
+	const publishDestination =
+		inferPublishDestination({ text: normalized }) ?? "tiktok";
 	const versionTarget = inferPrimaryVersionTargetForDestination({
 		publishDestination,
 		projectSummary: args.projectSummary,
@@ -1391,8 +1527,9 @@ function planFinishPassClause(args: DirectPlannerArgs): DirectPlanResult {
 
 	if (musicChoice) {
 		commands.push({
-			kind:
-				hasRecentMusicTrack(args.projectSummary) ? "replace-music-track" : "apply-music-track",
+			kind: hasRecentMusicTrack(args.projectSummary)
+				? "replace-music-track"
+				: "apply-music-track",
 			music_asset_id: musicChoice.asset_id,
 			start_ms: 0,
 			loop_to_project_end: true,
@@ -1409,7 +1546,8 @@ function planFinishPassClause(args: DirectPlannerArgs): DirectPlanResult {
 		});
 	}
 
-	const preflightActions = args.projectSummary.export_preflight_snapshot?.actionable_actions ?? [];
+	const preflightActions =
+		args.projectSummary.export_preflight_snapshot?.actionable_actions ?? [];
 	if (preflightActions.length > 0) {
 		commands.push({
 			kind: "run-export-preflight-fixes",
@@ -1439,7 +1577,9 @@ function planFinishPassClause(args: DirectPlannerArgs): DirectPlanResult {
 	};
 }
 
-function planPublishDestinationClause(args: DirectPlannerArgs): DirectPlanResult {
+function planPublishDestinationClause(
+	args: DirectPlannerArgs,
+): DirectPlanResult {
 	const publishDestination = inferPublishDestination({ text: args.clause });
 	if (!publishDestination) {
 		return emptyDirectPlan({ state: args.state });
@@ -1483,7 +1623,8 @@ function planMusicTrackClause(args: DirectPlannerArgs): DirectPlanResult {
 				? "energetic"
 				: normalized.includes("clean") || normalized.includes("soft")
 					? "clean"
-					: args.projectSummary.audio_mix?.audioPolishPresetId === "music-forward"
+					: args.projectSummary.audio_mix?.audioPolishPresetId ===
+							"music-forward"
 						? "energetic"
 						: null),
 	});
@@ -1496,7 +1637,8 @@ function planMusicTrackClause(args: DirectPlannerArgs): DirectPlanResult {
 		commands: [
 			{
 				kind:
-					hasRecentMusicTrack(args.projectSummary) || /\breplace\b|\bswap\b|\buse\b/.test(normalized)
+					hasRecentMusicTrack(args.projectSummary) ||
+					/\breplace\b|\bswap\b|\buse\b/.test(normalized)
 						? "replace-music-track"
 						: "apply-music-track",
 				music_asset_id: musicChoice.asset_id,
@@ -1534,7 +1676,9 @@ function planSfxClause(args: DirectPlannerArgs): DirectPlanResult {
 			{
 				kind: "insert-sfx-preset",
 				sfx_asset_id: sfxChoice.asset_id,
-				start_ms: inferSfxInsertStartMs({ projectSummary: args.projectSummary }),
+				start_ms: inferSfxInsertStartMs({
+					projectSummary: args.projectSummary,
+				}),
 				scope: "scene",
 			},
 		],
@@ -1616,7 +1760,10 @@ function planClipSpeedClause(args: DirectPlannerArgs): DirectPlanResult {
 		deletedSegmentIds: args.deletedSegmentIds,
 	});
 	if (target.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: target.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: target.clarification,
+		};
 	}
 	if (!target.segment) {
 		return emptyDirectPlan({ state: args.state });
@@ -1631,7 +1778,9 @@ function planClipSpeedClause(args: DirectPlannerArgs): DirectPlanResult {
 				kind: "set-clip-speed",
 				target_segment_ids: [target.segment.segment_id],
 				playback_rate: Number(
-					Math.max(0.25, isSlow ? 1 - amount / 100 : 1 + amount / 100).toFixed(3),
+					Math.max(0.25, isSlow ? 1 - amount / 100 : 1 + amount / 100).toFixed(
+						3,
+					),
 				),
 				ripple: true,
 				scope: "selection",
@@ -1649,8 +1798,10 @@ function planTransitionClause(args: DirectPlannerArgs): DirectPlanResult {
 	}
 
 	const referenceLabel = "preset:transition";
-	const forcedPreset = args.overrides?.forced_choice_values_by_reference?.[referenceLabel] ?? null;
-	const inferredPreset = inferTransitionPreset({ text: normalized }) ?? forcedPreset;
+	const forcedPreset =
+		args.overrides?.forced_choice_values_by_reference?.[referenceLabel] ?? null;
+	const inferredPreset =
+		inferTransitionPreset({ text: normalized }) ?? forcedPreset;
 	if (!inferredPreset) {
 		return {
 			ops: [],
@@ -1696,9 +1847,7 @@ function planTransitionClause(args: DirectPlannerArgs): DirectPlanResult {
 			recentAction: args.projectSummary.recent_ai_actions?.[0] ?? null,
 		});
 	} else {
-		const explicitTargetMatch = args.clause.match(
-			/\b(?:into|on|to)\s+(.+)$/i,
-		);
+		const explicitTargetMatch = args.clause.match(/\b(?:into|on|to)\s+(.+)$/i);
 		const target = resolveVideoReferenceFromText({
 			rawReference: explicitTargetMatch?.[1] ?? "this clip",
 			projectSummary: args.projectSummary,
@@ -1708,7 +1857,10 @@ function planTransitionClause(args: DirectPlannerArgs): DirectPlanResult {
 			deletedSegmentIds: args.deletedSegmentIds,
 		});
 		if (target.clarification) {
-			return { ...emptyDirectPlan({ state: args.state }), clarification: target.clarification };
+			return {
+				...emptyDirectPlan({ state: args.state }),
+				clarification: target.clarification,
+			};
 		}
 		targets = target.segment ? [target.segment] : [];
 	}
@@ -1720,15 +1872,22 @@ function planTransitionClause(args: DirectPlannerArgs): DirectPlanResult {
 	return {
 		ops: [],
 		commands: [
-				{
-					kind: "set-transition-in",
-					target_segment_ids: targets.map((segment) => segment.segment_id),
-					preset: inferredPreset as "cross-dissolve" | "fade-black" | "fade-white" | "slide",
-					duration_ms: inferTransitionDurationMs({ text: normalized }),
-					scope: "scene",
-				},
+			{
+				kind: "set-transition-in",
+				target_segment_ids: targets.map((segment) => segment.segment_id),
+				preset: inferredPreset as
+					| "cross-dissolve"
+					| "fade-black"
+					| "fade-white"
+					| "slide",
+				duration_ms: inferTransitionDurationMs({ text: normalized }),
+				scope: "scene",
+			},
 		],
-		state: updateResolutionStateFromSegment(args.state, targets.at(-1) ?? targets[0]),
+		state: updateResolutionStateFromSegment(
+			args.state,
+			targets.at(-1) ?? targets[0],
+		),
 		clarification: null,
 	};
 }
@@ -1770,13 +1929,16 @@ function planCaptionToneClause(args: DirectPlannerArgs): DirectPlanResult {
 		return emptyDirectPlan({ state: args.state });
 	}
 
-	const styleId = normalized.includes("soft") ||
-			normalized.includes("clean") ||
-			normalized.includes("minimal")
-		? "clean-bottom"
-		: normalized.includes("bold") || normalized.includes("punch") || normalized.includes("loud")
-			? "bold-center"
-			: null;
+	const styleId =
+		normalized.includes("soft") ||
+		normalized.includes("clean") ||
+		normalized.includes("minimal")
+			? "clean-bottom"
+			: normalized.includes("bold") ||
+					normalized.includes("punch") ||
+					normalized.includes("loud")
+				? "bold-center"
+				: null;
 	if (!styleId) {
 		return emptyDirectPlan({ state: args.state });
 	}
@@ -1821,7 +1983,10 @@ function planSeparateAudioClause(args: DirectPlannerArgs): DirectPlanResult {
 		deletedSegmentIds: args.deletedSegmentIds,
 	});
 	if (target.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: target.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: target.clarification,
+		};
 	}
 	if (!target.segment) {
 		return emptyDirectPlan({ state: args.state });
@@ -1858,7 +2023,10 @@ function planFreezeFrameClause(args: DirectPlannerArgs): DirectPlanResult {
 		deletedSegmentIds: args.deletedSegmentIds,
 	});
 	if (target.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: target.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: target.clarification,
+		};
 	}
 	if (!target.segment) {
 		return emptyDirectPlan({ state: args.state });
@@ -1894,7 +2062,8 @@ function planFinishingLookClause(args: DirectPlannerArgs): DirectPlanResult {
 	}
 
 	const target = resolveVideoReferenceFromText({
-		rawReference: extractReferenceSuffix({ clause: args.clause }) ?? "this clip",
+		rawReference:
+			extractReferenceSuffix({ clause: args.clause }) ?? "this clip",
 		projectSummary: args.projectSummary,
 		context: args.context,
 		overrides: args.overrides,
@@ -1902,7 +2071,10 @@ function planFinishingLookClause(args: DirectPlannerArgs): DirectPlanResult {
 		deletedSegmentIds: args.deletedSegmentIds,
 	});
 	if (target.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: target.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: target.clarification,
+		};
 	}
 	if (!target.segment) {
 		return emptyDirectPlan({ state: args.state });
@@ -1930,7 +2102,8 @@ function planEffectClause(args: DirectPlannerArgs): DirectPlanResult {
 	}
 
 	const target = resolveVideoReferenceFromText({
-		rawReference: extractReferenceSuffix({ clause: args.clause }) ?? "this clip",
+		rawReference:
+			extractReferenceSuffix({ clause: args.clause }) ?? "this clip",
 		projectSummary: args.projectSummary,
 		context: args.context,
 		overrides: args.overrides,
@@ -1938,7 +2111,10 @@ function planEffectClause(args: DirectPlannerArgs): DirectPlanResult {
 		deletedSegmentIds: args.deletedSegmentIds,
 	});
 	if (target.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: target.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: target.clarification,
+		};
 	}
 	if (!target.segment) {
 		return emptyDirectPlan({ state: args.state });
@@ -1986,14 +2162,21 @@ function planOverlayPresetClause(args: DirectPlannerArgs): DirectPlanResult {
 
 function planOverlayStyleClause(args: DirectPlannerArgs): DirectPlanResult {
 	const variantId = inferOverlayStyleVariant({ text: args.clause });
-	if (!variantId || !/\boverlays?\b|\bgraphics?\b/.test(args.clause.toLowerCase())) {
+	if (
+		!variantId ||
+		!/\boverlays?\b|\bgraphics?\b/.test(args.clause.toLowerCase())
+	) {
 		return emptyDirectPlan({ state: args.state });
 	}
 
-	const selectedOverlayIds = (args.projectSummary.selection?.selected_segments ?? [])
+	const selectedOverlayIds = (
+		args.projectSummary.selection?.selected_segments ?? []
+	)
 		.filter((segment) => segment.segment_kind === "text-overlay")
 		.map((segment) => segment.segment_id);
-	const sceneOverlayIds = (args.projectSummary.current_scene_segments ?? args.projectSummary.segments)
+	const sceneOverlayIds = (
+		args.projectSummary.current_scene_segments ?? args.projectSummary.segments
+	)
 		.filter((segment) => segment.segment_kind === "text-overlay")
 		.map((segment) => segment.segment_id);
 	const scope = resolveRequestedScope({
@@ -2004,7 +2187,10 @@ function planOverlayStyleClause(args: DirectPlannerArgs): DirectPlanResult {
 		sceneIds: sceneOverlayIds,
 	});
 	if (scope.clarification) {
-		return { ...emptyDirectPlan({ state: args.state }), clarification: scope.clarification };
+		return {
+			...emptyDirectPlan({ state: args.state }),
+			clarification: scope.clarification,
+		};
 	}
 
 	const targetIds =
@@ -2018,13 +2204,13 @@ function planOverlayStyleClause(args: DirectPlannerArgs): DirectPlanResult {
 	return {
 		ops: [],
 		commands: [
-				{
-					kind: "apply-overlay-style",
-					target_element_ids: targetIds,
-					variant_id: variantId,
-					scope: (scope.value ?? "scene") as "selection" | "scene" | "project",
-				},
-			],
+			{
+				kind: "apply-overlay-style",
+				target_element_ids: targetIds,
+				variant_id: variantId,
+				scope: (scope.value ?? "scene") as "selection" | "scene" | "project",
+			},
+		],
 		state: args.state,
 		clarification: null,
 	};
@@ -2032,17 +2218,25 @@ function planOverlayStyleClause(args: DirectPlannerArgs): DirectPlanResult {
 
 function planMotionPresetClause(args: DirectPlannerArgs): DirectPlanResult {
 	const motionPreset = inferMotionPreset({ text: args.clause });
-	if (!motionPreset || !/\boverlays?\b|\bgraphics?\b/.test(args.clause.toLowerCase())) {
+	if (
+		!motionPreset ||
+		!/\boverlays?\b|\bgraphics?\b/.test(args.clause.toLowerCase())
+	) {
 		return emptyDirectPlan({ state: args.state });
 	}
 
-	const selectedOverlayIds = (args.projectSummary.selection?.selected_segments ?? [])
+	const selectedOverlayIds = (
+		args.projectSummary.selection?.selected_segments ?? []
+	)
 		.filter((segment) => segment.segment_kind === "text-overlay")
 		.map((segment) => segment.segment_id);
-	const sceneOverlayIds = (args.projectSummary.current_scene_segments ?? args.projectSummary.segments)
+	const sceneOverlayIds = (
+		args.projectSummary.current_scene_segments ?? args.projectSummary.segments
+	)
 		.filter((segment) => segment.segment_kind === "text-overlay")
 		.map((segment) => segment.segment_id);
-	const targetIds = selectedOverlayIds.length > 0 ? selectedOverlayIds : sceneOverlayIds;
+	const targetIds =
+		selectedOverlayIds.length > 0 ? selectedOverlayIds : sceneOverlayIds;
 	if (targetIds.length === 0) {
 		return emptyDirectPlan({ state: args.state });
 	}
@@ -2068,8 +2262,12 @@ function planSoundSyncClause(args: DirectPlannerArgs): DirectPlanResult {
 		return emptyDirectPlan({ state: args.state });
 	}
 
-	const targetKind = /\bcaptions?\b/.test(args.clause.toLowerCase()) ? "caption" : "text-overlay";
-	const targetIds = (args.projectSummary.current_scene_segments ?? args.projectSummary.segments)
+	const targetKind = /\bcaptions?\b/.test(args.clause.toLowerCase())
+		? "caption"
+		: "text-overlay";
+	const targetIds = (
+		args.projectSummary.current_scene_segments ?? args.projectSummary.segments
+	)
 		.filter((segment) => segment.segment_kind === targetKind)
 		.map((segment) => segment.segment_id);
 	if (targetIds.length === 0) {
@@ -2092,7 +2290,9 @@ function planSoundSyncClause(args: DirectPlannerArgs): DirectPlanResult {
 }
 
 function planProjectKitClause(args: DirectPlannerArgs): DirectPlanResult {
-	const match = args.clause.match(/^(?:apply|use)\s+(.+?)\s+(?:project\s+)?kit$/i);
+	const match = args.clause.match(
+		/^(?:apply|use)\s+(.+?)\s+(?:project\s+)?kit$/i,
+	);
 	if (!match) {
 		return emptyDirectPlan({ state: args.state });
 	}
@@ -2116,8 +2316,8 @@ function planProjectKitClause(args: DirectPlannerArgs): DirectPlanResult {
 		};
 	}
 
-	const candidates = (args.projectSummary.available_project_kits ?? []).filter((template) =>
-		template.name.toLowerCase().includes(query),
+	const candidates = (args.projectSummary.available_project_kits ?? []).filter(
+		(template) => template.name.toLowerCase().includes(query),
 	);
 	if (candidates.length === 0) {
 		return emptyDirectPlan({ state: args.state });
@@ -2163,7 +2363,9 @@ function planVersionPackClause(args: DirectPlannerArgs): DirectPlanResult {
 	const targets = extractVersionTargets({ text: args.clause });
 	if (
 		targets.length === 0 ||
-		!/\bversion\b|\bversions\b|\btargets?\b|\bformats?\b/.test(args.clause.toLowerCase())
+		!/\bversion\b|\bversions\b|\btargets?\b|\bformats?\b/.test(
+			args.clause.toLowerCase(),
+		)
 	) {
 		return emptyDirectPlan({ state: args.state });
 	}
@@ -2192,13 +2394,14 @@ function planAutoReframeClause(args: DirectPlannerArgs): DirectPlanResult {
 	const targets = extractVersionTargets({ text: normalized });
 	const chosenTarget =
 		targets[0] ??
-		args.overrides?.forced_choice_values_by_reference?.["version-target:auto-reframe"] ??
+		args.overrides?.forced_choice_values_by_reference?.[
+			"version-target:auto-reframe"
+		] ??
 		null;
 	if (!chosenTarget) {
-		const versionTargets =
-			args.projectSummary.version_pack?.targets
-				.filter((target) => target.enabled)
-				.map((target) => target.id) ?? ["9:16", "1:1", "16:9"];
+		const versionTargets = args.projectSummary.version_pack?.targets
+			.filter((target) => target.enabled)
+			.map((target) => target.id) ?? ["9:16", "1:1", "16:9"];
 		return {
 			ops: [],
 			commands: [],
@@ -2385,9 +2588,7 @@ function resolveNextVideoTargets({
 	context: ChatPlannerContext;
 	state: ChatResolutionState;
 	count: number;
-	recentAction:
-		| ProjectSummary["recent_ai_actions"][number]
-		| null;
+	recentAction: ProjectSummary["recent_ai_actions"][number] | null;
 }) {
 	const videos = getCurrentSceneVideos({ projectSummary });
 	if (videos.length === 0) {
@@ -2432,11 +2633,7 @@ function inferPlaybackRateFromText({ text }: { text: string }) {
 	return Number((isSlow ? 1 - amount / 100 : 1 + amount / 100).toFixed(3));
 }
 
-function inferTransitionPreset({
-	text,
-}: {
-	text: string;
-}) {
+function inferTransitionPreset({ text }: { text: string }) {
 	const normalized = text.toLowerCase();
 	if (normalized.includes("fade black") || normalized.includes("to black")) {
 		return "fade-black" as const;
@@ -2447,7 +2644,11 @@ function inferTransitionPreset({
 	if (normalized.includes("slide")) {
 		return "slide" as const;
 	}
-	if (normalized.includes("subtle") || normalized.includes("smooth") || normalized.includes("soft")) {
+	if (
+		normalized.includes("subtle") ||
+		normalized.includes("smooth") ||
+		normalized.includes("soft")
+	) {
 		return "cross-dissolve" as const;
 	}
 	return null;
@@ -2476,7 +2677,8 @@ function inferFinishingLook({ text }: { text: string }) {
 	if (normalized.includes("warm")) return "warm" as const;
 	if (normalized.includes("cool")) return "cool" as const;
 	if (normalized.includes("dramatic")) return "dramatic" as const;
-	if (normalized.includes("mono") || normalized.includes("black and white")) return "mono" as const;
+	if (normalized.includes("mono") || normalized.includes("black and white"))
+		return "mono" as const;
 	if (normalized.includes("vintage")) return "vintage" as const;
 	if (normalized.includes("clean")) return "clean" as const;
 	return null;
@@ -2506,8 +2708,10 @@ function inferOverlayPresetId({ text }: { text: string }) {
 
 function inferOverlayStyleVariant({ text }: { text: string }) {
 	const normalized = text.toLowerCase();
-	if (normalized.includes("clean vlog") || normalized.includes("clean")) return "clean-vlog" as const;
-	if (normalized.includes("bold social") || normalized.includes("bold")) return "bold-social" as const;
+	if (normalized.includes("clean vlog") || normalized.includes("clean"))
+		return "clean-vlog" as const;
+	if (normalized.includes("bold social") || normalized.includes("bold"))
+		return "bold-social" as const;
 	if (normalized.includes("luxury")) return "luxury" as const;
 	if (normalized.includes("minimal")) return "minimal" as const;
 	return null;
@@ -2528,19 +2732,17 @@ function inferSoundSyncPreset({ text }: { text: string }) {
 	if (normalized.includes("typing clean")) return "typing-clean" as const;
 	if (normalized.includes("typing soft")) return "typing-soft" as const;
 	if (normalized.includes("cursor blink")) return "cursor-blink" as const;
-	if (normalized.includes("caption pop clean")) return "caption-pop-clean" as const;
-	if (normalized.includes("caption pop bright")) return "caption-pop-bright" as const;
+	if (normalized.includes("caption pop clean"))
+		return "caption-pop-clean" as const;
+	if (normalized.includes("caption pop bright"))
+		return "caption-pop-bright" as const;
 	if (normalized.includes("air fahhh soft")) return "air-fahhh-soft" as const;
 	if (normalized.includes("air fahhh bold")) return "air-fahhh-bold" as const;
 	if (normalized.includes("whoosh pop")) return "whoosh-pop" as const;
 	return null;
 }
 
-function inferPublishDestination({
-	text,
-}: {
-	text: string;
-}) {
+function inferPublishDestination({ text }: { text: string }) {
 	const normalized = text.toLowerCase();
 	if (normalized.includes("tiktok")) return "tiktok" as const;
 	if (normalized.includes("reels") || normalized.includes("instagram")) {
@@ -2664,13 +2866,15 @@ function chooseMusicAsset({
 	const moodFiltered = preferMood
 		? compatible.filter((asset) => asset.mood === preferMood)
 		: compatible;
-	const ranked = (moodFiltered.length > 0 ? moodFiltered : compatible).sort((left, right) => {
-		const bpmDelta = (right.bpm ?? 0) - (left.bpm ?? 0);
-		if (bpmDelta !== 0) {
-			return bpmDelta;
-		}
-		return left.label.localeCompare(right.label);
-	});
+	const ranked = (moodFiltered.length > 0 ? moodFiltered : compatible).sort(
+		(left, right) => {
+			const bpmDelta = (right.bpm ?? 0) - (left.bpm ?? 0);
+			if (bpmDelta !== 0) {
+				return bpmDelta;
+			}
+			return left.label.localeCompare(right.label);
+		},
+	);
 	return ranked[0] ?? null;
 }
 
@@ -2693,7 +2897,9 @@ function chooseImportedMusicAsset({
 		return importedAudioAssets[0] ?? null;
 	}
 	const musicNamed = importedAudioAssets.find((asset) =>
-		/\b(music|song|instrumental|beat|audio|track)\b/.test(asset.name.toLowerCase()),
+		/\b(music|song|instrumental|beat|audio|track)\b/.test(
+			asset.name.toLowerCase(),
+		),
 	);
 	return musicNamed ?? importedAudioAssets[0] ?? null;
 }
@@ -2715,7 +2921,8 @@ function chooseSfxAsset({
 	if (normalized.includes("subtle")) {
 		return (
 			projectSummary.available_sfx_assets.find(
-				(asset) => asset.asset_id === "subtle-hit" || asset.asset_id === "whoosh-soft",
+				(asset) =>
+					asset.asset_id === "subtle-hit" || asset.asset_id === "whoosh-soft",
 			) ?? null
 		);
 	}
@@ -2742,14 +2949,17 @@ function inferSfxInsertStartMs({
 	projectSummary: ProjectSummary;
 }) {
 	const videos = getCurrentSceneVideos({ projectSummary });
-	return videos[1]?.start_ms ?? projectSummary.playhead_neighborhood.playhead_ms ?? 0;
+	return (
+		videos[1]?.start_ms ?? projectSummary.playhead_neighborhood.playhead_ms ?? 0
+	);
 }
 
 function hasRecentMusicTrack(projectSummary: ProjectSummary) {
 	return (
 		projectSummary.recent_ai_actions.some(
 			(action) =>
-				action.kind === "apply-music-track" || action.kind === "replace-music-track",
+				action.kind === "apply-music-track" ||
+				action.kind === "replace-music-track",
 		) ||
 		projectSummary.current_scene_segments.some(
 			(segment) => segment.segment_kind === "audio",
@@ -2757,11 +2967,7 @@ function hasRecentMusicTrack(projectSummary: ProjectSummary) {
 	);
 }
 
-function resolveCaptionScope({
-	clause,
-}: {
-	clause: string;
-}) {
+function resolveCaptionScope({ clause }: { clause: string }) {
 	if (clause.includes("project") || clause.includes("all captions")) {
 		return "project" as const;
 	}
@@ -2807,7 +3013,8 @@ function resolveReferenceAssetCommand({
 	assetId: string | null;
 	clarification: ChatClarificationRequest | null;
 } {
-	const forcedChoice = overrides?.forced_choice_values_by_reference?.[referenceLabel];
+	const forcedChoice =
+		overrides?.forced_choice_values_by_reference?.[referenceLabel];
 	if (forcedChoice) {
 		return {
 			assetId: forcedChoice,
@@ -2822,7 +3029,9 @@ function resolveReferenceAssetCommand({
 		};
 	}
 
-	const videoAssets = projectSummary.media_assets.filter((asset) => asset.type === "video");
+	const videoAssets = projectSummary.media_assets.filter(
+		(asset) => asset.type === "video",
+	);
 	if (videoAssets.length === 1) {
 		return {
 			assetId: videoAssets[0]?.asset_id ?? null,
@@ -2866,7 +3075,8 @@ function resolveRequestedScope({
 	sceneIds: string[];
 }) {
 	const normalized = clause.toLowerCase();
-	const forced = overrides?.forced_choice_values_by_reference?.[referenceLabel] ?? null;
+	const forced =
+		overrides?.forced_choice_values_by_reference?.[referenceLabel] ?? null;
 	const explicitScope =
 		forced ??
 		(normalized.includes("selected") || normalized.includes("selection")
@@ -2877,14 +3087,18 @@ function resolveRequestedScope({
 					? "project"
 					: null);
 	if (explicitScope) {
-		return { value: explicitScope as "selection" | "scene" | "project", clarification: null };
+		return {
+			value: explicitScope as "selection" | "scene" | "project",
+			clarification: null,
+		};
 	}
 	if (selectedIds.length > 0 && sceneIds.length > selectedIds.length) {
 		return {
 			value: null,
 			clarification: buildChoiceClarificationRequest({
 				kind: "scope",
-				prompt: "Apply this change to the current selection or all matching elements in the scene?",
+				prompt:
+					"Apply this change to the current selection or all matching elements in the scene?",
 				referenceLabel,
 				options: [
 					{
@@ -2901,7 +3115,10 @@ function resolveRequestedScope({
 			}),
 		};
 	}
-	return { value: selectedIds.length > 0 ? "selection" : "scene", clarification: null };
+	return {
+		value: selectedIds.length > 0 ? "selection" : "scene",
+		clarification: null,
+	};
 }
 
 function resolveReference({

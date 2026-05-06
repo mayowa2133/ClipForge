@@ -340,6 +340,56 @@ export class ClipForgeManager {
 		return { completed, failed };
 	}
 
+	private hasUsableMediaTranscript({
+		metadata,
+	}: {
+		metadata?: ClipMediaMetadata | null;
+	}): boolean {
+		return Boolean(
+			metadata && (metadata.words.length > 0 || metadata.segments.length > 0),
+		);
+	}
+
+	private async ensureReferenceRecreationSourceTranscripts({
+		sourceAssetIds,
+		requireTranscript,
+	}: {
+		sourceAssetIds: string[];
+		requireTranscript: boolean;
+	}): Promise<void> {
+		const failures: string[] = [];
+		for (const assetId of sourceAssetIds) {
+			const existing = this.getMediaMetadata({ mediaId: assetId });
+			if (this.hasUsableMediaTranscript({ metadata: existing })) {
+				continue;
+			}
+
+			const indexed = await this.indexMediaAsset({ mediaId: assetId });
+			if (this.hasUsableMediaTranscript({ metadata: indexed })) {
+				continue;
+			}
+
+			const asset = this.editor.media
+				.getAssets()
+				.find((candidate) => candidate.id === assetId);
+			const label = asset?.name ?? assetId;
+			const reason =
+				indexed.transcriptionError ??
+				(indexed.transcriptionStatus === "ready"
+					? "transcription completed without usable words or segments"
+					: `transcription status is ${indexed.transcriptionStatus}`);
+			failures.push(`${label}: ${reason}`);
+		}
+
+		if (failures.length === 0 || !requireTranscript) {
+			return;
+		}
+
+		throw new Error(
+			`Reference recreation needs a working transcript for the raw source audio before it can generate CapCut-style auto captions. ${failures.join(" | ")}. Configure browser Whisper/managed transcription or import an SRT for the raw source, then run the recreation again.`,
+		);
+	}
+
 	async importSrtForMedia({
 		mediaId,
 		srtText,
@@ -3119,11 +3169,10 @@ export class ClipForgeManager {
 		} catch {
 			// Source analysis is best-effort; validation has already checked the assets.
 		}
-		try {
-			await this.indexMediaAssets({ mediaIds: sourceAssetIds });
-		} catch {
-			// Auto-caption transcription is best-effort; the recreation builder still falls back to silence analysis.
-		}
+		await this.ensureReferenceRecreationSourceTranscripts({
+			sourceAssetIds,
+			requireTranscript: command.require_transcript ?? true,
+		});
 
 		const refreshedProject = ensureClipForgeProjectData({
 			project: this.editor.project.getActive(),

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	buildEmptyMediaMetadata,
 	type ClipTranscriptionInput,
+	normalizeWordsFromSeconds,
 	SrtImportTranscriber,
 	WhisperCliTranscriber,
 } from "@/lib/clipforge";
@@ -67,6 +68,21 @@ this is clipforge
 			transcriptionError: null,
 			indexedAt: null,
 		});
+	});
+
+	test("normalizes browser word timestamps into media metadata words", () => {
+		expect(
+			normalizeWordsFromSeconds({
+				words: [
+					{ text: " hello ", start: 0, end: 0.42 },
+					{ text: "", start: 0.42, end: 0.5 },
+					{ text: "world", start: 0.5, end: 1.12 },
+				],
+			}),
+		).toEqual([
+			{ text: "hello", start_ms: 0, end_ms: 420 },
+			{ text: "world", start_ms: 500, end_ms: 1120 },
+		]);
 	});
 
 	test("whisper cli transcriber rejects unavailable local endpoint", async () => {

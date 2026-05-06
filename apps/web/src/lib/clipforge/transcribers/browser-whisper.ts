@@ -3,6 +3,7 @@ import type { Transcriber } from "@/lib/clipforge/transcription";
 import {
 	buildWordsFromSegments,
 	normalizeSegmentsFromSeconds,
+	normalizeWordsFromSeconds,
 } from "@/lib/clipforge/transcription";
 import type { TranscriptionLanguage } from "@/types/transcription";
 
@@ -19,9 +20,13 @@ export class BrowserWhisperTranscriber implements Transcriber {
 		const segments = normalizeSegmentsFromSeconds({
 			segments: result.segments,
 		});
+		const words =
+			result.words && result.words.length > 0
+				? normalizeWordsFromSeconds({ words: result.words })
+				: buildWordsFromSegments({ segments });
 
 		return {
-			words: buildWordsFromSegments({ segments }),
+			words,
 			segments,
 			language: result.language,
 			provider: "browser-whisper" as const,
