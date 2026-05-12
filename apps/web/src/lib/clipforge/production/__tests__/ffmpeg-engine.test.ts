@@ -104,7 +104,9 @@ function makeVideoElement(overrides: Partial<VideoElement>): VideoElement {
 describe("buildFfmpegPlan", () => {
 	test("empty project returns black-video plan with project duration", () => {
 		const input = buildRenderGraphInput({
-			project: makeProject({ metadata: { ...makeProject().metadata, duration: 10 } }),
+			project: makeProject({
+				metadata: { ...makeProject().metadata, duration: 10 },
+			}),
 			format: "mp4",
 			quality: "high",
 			includeAudio: true,
@@ -148,7 +150,11 @@ describe("buildFfmpegPlan", () => {
 					makeMainScene({
 						elements: [
 							makeVideoElement({ mediaId: "asset_1" }),
-							makeVideoElement({ id: "el_2", mediaId: "asset_2", startTime: 4 }),
+							makeVideoElement({
+								id: "el_2",
+								mediaId: "asset_2",
+								startTime: 4,
+							}),
 						],
 					}),
 				],
@@ -257,7 +263,9 @@ describe("FfmpegRenderEngine", () => {
 			fs,
 		});
 		const input = buildRenderGraphInput({
-			project: makeProject({ metadata: { ...makeProject().metadata, duration: 6 } }),
+			project: makeProject({
+				metadata: { ...makeProject().metadata, duration: 6 },
+			}),
 			format: "mp4",
 			quality: "high",
 			includeAudio: true,
@@ -294,7 +302,12 @@ describe("FfmpegRenderEngine", () => {
 					makeMainScene({
 						elements: [
 							makeVideoElement({ id: "a", mediaId: "m_a", duration: 3 }),
-							makeVideoElement({ id: "b", mediaId: "m_b", startTime: 3, duration: 5 }),
+							makeVideoElement({
+								id: "b",
+								mediaId: "m_b",
+								startTime: 3,
+								duration: 5,
+							}),
 						],
 					}),
 				],
@@ -336,7 +349,9 @@ describe("FfmpegRenderEngine", () => {
 		const input = buildRenderGraphInput({
 			project: makeProject({
 				scenes: [
-					makeMainScene({ elements: [makeVideoElement({ mediaId: "missing" })] }),
+					makeMainScene({
+						elements: [makeVideoElement({ mediaId: "missing" })],
+					}),
 				],
 			}),
 			format: "mp4",
@@ -456,7 +471,9 @@ describe("buildFfmpegPlan with text overlays feature flag", () => {
 			project: makeProject({
 				scenes: [
 					makeTextScene({
-						elements: [makeTextElement({ content: "Hi", startTime: 1, duration: 2 })],
+						elements: [
+							makeTextElement({ content: "Hi", startTime: 1, duration: 2 }),
+						],
 					}),
 				],
 			}),
@@ -662,7 +679,8 @@ describe("filter graph wiring in invocation builders", () => {
 			publishDestination: "generic-export",
 		});
 		const plan = buildFfmpegPlan({ input, features: { textOverlays: true } });
-		if (plan.kind !== "black-video") throw new Error("expected black-video plan");
+		if (plan.kind !== "black-video")
+			throw new Error("expected black-video plan");
 
 		const invocation = buildBlackVideoFfmpegInvocation({
 			plan,
@@ -696,7 +714,11 @@ describe("filter graph wiring in invocation builders", () => {
 								hidden: false,
 								elements: [
 									makeVideoElement({ mediaId: "v1" }),
-									makeImageElement({ mediaId: "logo1", startTime: 1, duration: 2 }),
+									makeImageElement({
+										mediaId: "logo1",
+										startTime: 1,
+										duration: 2,
+									}),
 								],
 							},
 							{
@@ -730,7 +752,8 @@ describe("filter graph wiring in invocation builders", () => {
 			input,
 			features: { textOverlays: true, imageOverlays: true },
 		});
-		if (plan.kind !== "video-concat") throw new Error("expected video-concat plan");
+		if (plan.kind !== "video-concat")
+			throw new Error("expected video-concat plan");
 
 		const invocation = buildVideoConcatFfmpegInvocation({
 			plan,
@@ -794,7 +817,8 @@ describe("buildFfmpegPlan with caption word reveals feature flag", () => {
 			publishDestination: "generic-export",
 		});
 		const plan = buildFfmpegPlan({ input, features: { textOverlays: true } });
-		if (plan.kind !== "black-video") throw new Error("expected black-video plan");
+		if (plan.kind !== "black-video")
+			throw new Error("expected black-video plan");
 		expect(plan.textOverlays).toHaveLength(1);
 		expect(plan.textOverlays[0]!.content).toBe("Hello world");
 	});
@@ -825,7 +849,8 @@ describe("buildFfmpegPlan with caption word reveals feature flag", () => {
 			input,
 			features: { textOverlays: true, captionWordReveals: true },
 		});
-		if (plan.kind !== "black-video") throw new Error("expected black-video plan");
+		if (plan.kind !== "black-video")
+			throw new Error("expected black-video plan");
 		expect(plan.textOverlays).toHaveLength(3);
 		expect(plan.textOverlays.map((o) => o.content)).toEqual([
 			"Hello",
@@ -864,7 +889,8 @@ describe("buildFfmpegPlan with caption word reveals feature flag", () => {
 			input,
 			features: { textOverlays: true, captionWordReveals: true },
 		});
-		if (plan.kind !== "black-video") throw new Error("expected black-video plan");
+		if (plan.kind !== "black-video")
+			throw new Error("expected black-video plan");
 		// 1 title + 2 caption words
 		expect(plan.textOverlays).toHaveLength(3);
 		const titleOverlay = plan.textOverlays.find((o) => o.id === "title");
@@ -896,7 +922,8 @@ describe("buildFfmpegPlan with caption word reveals feature flag", () => {
 			input,
 			features: { textOverlays: true, captionWordReveals: true },
 		});
-		if (plan.kind !== "black-video") throw new Error("expected black-video plan");
+		if (plan.kind !== "black-video")
+			throw new Error("expected black-video plan");
 		expect(plan.textOverlays).toHaveLength(1);
 		expect(plan.textOverlays[0]!.content).toBe("Fallback");
 	});
@@ -1091,6 +1118,27 @@ describe("buildXfadeChainFilter", () => {
 		expect(result.filter).toContain("format=yuv420p[v0]");
 	});
 
+	test("cover fit fills the vertical canvas with crop instead of padding", () => {
+		const result = buildXfadeChainFilter({
+			canvasSize: { width: 1080, height: 1920 },
+			clips: [
+				{
+					mediaId: "a",
+					storageKey: "k_a",
+					durationSeconds: 3,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					fit: "cover",
+					transitionInFromPrev: null,
+				},
+			],
+		});
+		expect(result.filter).toContain(
+			"force_original_aspect_ratio=increase,crop=1080:1920",
+		);
+		expect(result.filter).not.toContain("pad=1080:1920");
+	});
+
 	test("two clips with cross-dissolve emits xfade with correct offset", () => {
 		const result = buildXfadeChainFilter({
 			canvasSize: { width: 1080, height: 1920 },
@@ -1113,7 +1161,9 @@ describe("buildXfadeChainFilter", () => {
 				},
 			],
 		});
-		expect(result.filter).toContain("xfade=transition=fade:duration=1:offset=2.000");
+		expect(result.filter).toContain(
+			"xfade=transition=fade:duration=1:offset=2.000",
+		);
 		// total = 3 + 4 - 1 = 6
 		expect(result.totalDurationSeconds).toBe(6);
 	});
@@ -1194,10 +1244,16 @@ describe("buildVideoFilterGraphFfmpegInvocation", () => {
 		expect(inputCount).toBe(2);
 		const filterIndex = invocation.args.indexOf("-filter_complex");
 		expect(filterIndex).toBeGreaterThan(-1);
-		expect(invocation.args[filterIndex + 1]!).toContain("xfade=transition=fade");
+		expect(invocation.args[filterIndex + 1]!).toContain(
+			"xfade=transition=fade",
+		);
 		// Final -t arg matches expected total duration (3 + 4 - 1 = 6)
 		const tIndex = invocation.args.lastIndexOf("-t");
 		expect(invocation.args[tIndex + 1]!).toBe("6.000");
+		expect(invocation.args).toContain("-colorspace");
+		expect(invocation.args).toContain("bt709");
+		expect(invocation.args).toContain("-color_trc");
+		expect(invocation.args).toContain("-color_primaries");
 		// -an because includeAudio=false
 		expect(invocation.args).toContain("-an");
 	});
@@ -1290,7 +1346,12 @@ describe("buildFfmpegPlan with per-clip trims", () => {
 					makeMainScene({
 						elements: [
 							makeVideoElement({ id: "a", mediaId: "v_a", duration: 4 }),
-							makeVideoElement({ id: "b", mediaId: "v_b", startTime: 4, duration: 4 }),
+							makeVideoElement({
+								id: "b",
+								mediaId: "v_b",
+								startTime: 4,
+								duration: 4,
+							}),
 						],
 					}),
 				],
@@ -1547,9 +1608,9 @@ describe("buildEffectFilter", () => {
 	});
 
 	test("blur clamps a 0-radius to 0.1 (ffmpeg requires sigma > 0)", () => {
-		expect(buildEffectFilter({ effect: { kind: "blur", radius: 0 } })).toContain(
-			"sigma=0.100",
-		);
+		expect(
+			buildEffectFilter({ effect: { kind: "blur", radius: 0 } }),
+		).toContain("sigma=0.100");
 	});
 
 	test("sharpen maps to unsharp with luma amount", () => {
@@ -1579,9 +1640,7 @@ describe("buildFfmpegPlan with colorAndEffects feature flag", () => {
 								id: "a",
 								mediaId: "v_a",
 								duration: 4,
-								effects: [
-									{ id: "e1", kind: "blur", enabled: true, radius: 5 },
-								],
+								effects: [{ id: "e1", kind: "blur", enabled: true, radius: 5 }],
 							}),
 						],
 					}),
@@ -1607,9 +1666,7 @@ describe("buildFfmpegPlan with colorAndEffects feature flag", () => {
 								id: "a",
 								mediaId: "v_a",
 								duration: 4,
-								effects: [
-									{ id: "e1", kind: "blur", enabled: true, radius: 4 },
-								],
+								effects: [{ id: "e1", kind: "blur", enabled: true, radius: 4 }],
 							}),
 						],
 					}),
@@ -1621,7 +1678,10 @@ describe("buildFfmpegPlan with colorAndEffects feature flag", () => {
 			publishDestination: "generic-export",
 			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
 		});
-		const plan = buildFfmpegPlan({ input, features: { colorAndEffects: true } });
+		const plan = buildFfmpegPlan({
+			input,
+			features: { colorAndEffects: true },
+		});
 		expect(plan.kind).toBe("video-filter-graph");
 		if (plan.kind !== "video-filter-graph") return;
 		expect(plan.clips[0]!.effects).toEqual([{ kind: "blur", radius: 4 }]);
@@ -1651,7 +1711,10 @@ describe("buildFfmpegPlan with colorAndEffects feature flag", () => {
 			publishDestination: "generic-export",
 			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
 		});
-		const plan = buildFfmpegPlan({ input, features: { colorAndEffects: true } });
+		const plan = buildFfmpegPlan({
+			input,
+			features: { colorAndEffects: true },
+		});
 		// No effects to apply, no other reason to switch to filter-graph
 		expect(plan.kind).toBe("video-concat");
 	});
@@ -1686,7 +1749,10 @@ describe("buildFfmpegPlan with colorAndEffects feature flag", () => {
 			publishDestination: "generic-export",
 			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
 		});
-		const plan = buildFfmpegPlan({ input, features: { colorAndEffects: true } });
+		const plan = buildFfmpegPlan({
+			input,
+			features: { colorAndEffects: true },
+		});
 		expect(plan.kind).toBe("video-filter-graph");
 		if (plan.kind !== "video-filter-graph") return;
 		expect(plan.clips[0]!.adjustments).toEqual({
@@ -1730,7 +1796,10 @@ describe("buildFfmpegPlan with colorAndEffects feature flag", () => {
 			publishDestination: "generic-export",
 			mediaRefs: [{ mediaId: "v_a", cloudStorageKey: "k_a" }],
 		});
-		const plan = buildFfmpegPlan({ input, features: { colorAndEffects: true } });
+		const plan = buildFfmpegPlan({
+			input,
+			features: { colorAndEffects: true },
+		});
 		expect(plan.kind).toBe("video-filter-graph");
 		if (plan.kind !== "video-filter-graph") return;
 		expect(plan.clips[0]!.adjustments?.temperature).toBe(0.3);
@@ -2034,7 +2103,9 @@ describe("buildAudioMixChain", () => {
 			],
 			firstAudioInputIndex: 4,
 		});
-		expect(result.filter).toContain("amix=inputs=2:duration=longest:dropout_transition=0[finala]");
+		expect(result.filter).toContain(
+			"amix=inputs=2:duration=longest:dropout_transition=0[finala]",
+		);
 		expect(result.finalLabel).toBe("[finala]");
 		// The mix order should put [outa] first, then [ae0]
 		expect(result.filter).toMatch(/\[outa\]\[ae0\]amix=/);
@@ -2322,6 +2393,35 @@ describe("buildAudioMixChain master volume", () => {
 		expect(result.filter).not.toContain("[premix]");
 		expect(result.finalLabel).toBe("[finala]");
 	});
+
+	test("soft limiter appends a final alimiter stage", () => {
+		const result = buildAudioMixChain({
+			clipChainLabel: "[outa]",
+			audioElements: [
+				{
+					mediaId: "a",
+					storageKey: "k",
+					startTimeSeconds: 0,
+					durationSeconds: 4,
+					trimStartSeconds: 0,
+					trimEndSeconds: 0,
+					volume: 1,
+					role: "music",
+				},
+			],
+			firstAudioInputIndex: 4,
+			audioSettings: {
+				masterVolume: 1,
+				softLimiterEnabled: true,
+				ducking: null,
+			},
+		});
+		expect(result.filter).toContain("amix=inputs=2");
+		expect(result.filter).toContain(
+			"[premix]alimiter=limit=0.891:level=false[finala]",
+		);
+		expect(result.finalLabel).toBe("[finala]");
+	});
 });
 
 describe("buildAudioMixChain ducking", () => {
@@ -2405,7 +2505,9 @@ describe("buildAudioMixChain ducking", () => {
 			},
 		});
 		expect(result.filter).toContain("asplit=2[voice_main][voice_sc]");
-		expect(result.filter).toContain("sidechaincompress=threshold=0.05:ratio=4.50:attack=60:release=220");
+		expect(result.filter).toContain(
+			"sidechaincompress=threshold=0.05:ratio=4.50:attack=60:release=220",
+		);
 		// Final mix combines voice_main + duck0
 		expect(result.filter).toMatch(/\[voice_main\]\[duck0\]amix=/);
 	});
@@ -2541,9 +2643,7 @@ describe("buildAtempoChain", () => {
 	});
 
 	test("single stage for in-range rate (0.5 ≤ N ≤ 100)", () => {
-		expect(buildAtempoChain({ playbackRate: 2 })).toEqual([
-			"atempo=2.000000",
-		]);
+		expect(buildAtempoChain({ playbackRate: 2 })).toEqual(["atempo=2.000000"]);
 		expect(buildAtempoChain({ playbackRate: 0.75 })).toEqual([
 			"atempo=0.750000",
 		]);
@@ -2771,7 +2871,7 @@ describe("buildFfmpegPlan with playbackRate", () => {
 		const plan = buildFfmpegPlan({ input, features: { audioMixing: true } });
 		expect(plan.kind).toBe("video-filter-graph");
 		if (plan.kind !== "video-filter-graph") return;
-		expect(plan.audioElements?.[0]!.playbackRate).toBe(0.5);
+		expect(plan.audioElements?.[0]?.playbackRate).toBe(0.5);
 	});
 
 	test("invalid playbackRate (zero or negative) falls back to 1 and stays video-concat", () => {
@@ -2904,7 +3004,8 @@ describe("buildFfmpegPlan with library audio elements", () => {
 		expect(plan.kind).toBe("video-filter-graph");
 		if (plan.kind !== "video-filter-graph") return;
 		expect(plan.audioElements).toHaveLength(1);
-		const audio = plan.audioElements?.[0]!;
+		const audio = plan.audioElements?.[0];
+		if (!audio) throw new Error("expected audio element");
 		expect(audio.sourceUrl).toBe("/library/sfx/typing.wav");
 		expect(audio.storageKey ?? null).toBeNull();
 		expect(audio.role).toBe("sfx");
@@ -2917,9 +3018,7 @@ describe("buildFfmpegPlan with library audio elements", () => {
 				scenes: [
 					makeSceneWithLibraryAudio({
 						video: [makeVideoElement({ mediaId: "v_a" })],
-						library: [
-							makeLibraryAudioElement({ id: "lae_off", muted: true }),
-						],
+						library: [makeLibraryAudioElement({ id: "lae_off", muted: true })],
 					}),
 				],
 			}),
@@ -3200,15 +3299,13 @@ describe("xfade chain wires colorbalance after eq", () => {
 
 describe("buildKeyframeExpression", () => {
 	test("returns the fallback when keyframes are empty / missing", () => {
-		expect(
-			buildKeyframeExpression({ keyframes: [], fallback: "0" }),
-		).toBe("0");
+		expect(buildKeyframeExpression({ keyframes: [], fallback: "0" })).toBe("0");
 		expect(
 			buildKeyframeExpression({ keyframes: undefined, fallback: "1" }),
 		).toBe("1");
-		expect(
-			buildKeyframeExpression({ keyframes: null, fallback: "2.5" }),
-		).toBe("2.5");
+		expect(buildKeyframeExpression({ keyframes: null, fallback: "2.5" })).toBe(
+			"2.5",
+		);
 	});
 
 	test("single keyframe collapses to a constant", () => {

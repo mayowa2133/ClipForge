@@ -14,6 +14,7 @@ type ResolvedVideoLayer = {
 		mediaId: string;
 		playbackRate: number;
 		file?: File;
+		fit?: "contain" | "cover";
 		transform: {
 			scale: number;
 			position: { x: number; y: number };
@@ -66,8 +67,7 @@ export async function renderVideoLayer({
 		return;
 	}
 
-	const sourceTime =
-		sampleTimeOverride ?? getVideoSampleTime({ layer, time });
+	const sourceTime = sampleTimeOverride ?? getVideoSampleTime({ layer, time });
 	const source = await videoFrameProvider.getFrameAt({
 		mediaId: layer.payload.mediaId,
 		file: layer.payload.file,
@@ -100,6 +100,7 @@ export async function renderVideoLayer({
 		sourceWidth,
 		sourceHeight,
 		transform: transformOverride ?? layer.payload.transform,
+		fit: layer.payload.fit,
 		opacity: opacityOverride ?? layer.payload.opacity,
 		blendMode: (layer.payload.blendMode as never) ?? undefined,
 		adjustments: layer.payload.adjustments ?? null,

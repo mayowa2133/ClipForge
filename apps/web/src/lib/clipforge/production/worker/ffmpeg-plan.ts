@@ -60,6 +60,10 @@ export interface PlanTextOverlay {
 		paddingX: number;
 		paddingY: number;
 	} | null;
+	stroke?: {
+		color: string;
+		width: number;
+	} | null;
 	textAlign: "left" | "center" | "right";
 	fontWeight: "normal" | "bold";
 }
@@ -134,6 +138,7 @@ export interface PlanFilterGraphAudioElement {
 
 export interface PlanAudioSettings {
 	masterVolume: number;
+	softLimiterEnabled?: boolean;
 	ducking: {
 		enabled: boolean;
 		amount: number;
@@ -153,6 +158,7 @@ export interface PlanFilterGraphClip {
 	durationSeconds: number;
 	trimStartSeconds: number;
 	trimEndSeconds: number;
+	fit?: "contain" | "cover";
 	transitionInFromPrev: {
 		kind: XfadeTransitionKind;
 		durationSeconds: number;
@@ -215,6 +221,7 @@ interface PlanProgress {
 		trimEndSeconds: number;
 		transitionInPreset: string | null;
 		transitionInDuration: number | null;
+		fit?: "contain" | "cover";
 		effects: PlanVisualEffect[];
 		adjustments: PlanColorAdjustments | null;
 		playbackRate: number;
@@ -294,6 +301,7 @@ function extractAudioSettings({
 				duckingAmount?: number;
 				duckingAttackMs?: number;
 				duckingReleaseMs?: number;
+				softLimiterEnabled?: boolean;
 				noiseReductionEnabled?: boolean;
 				noiseReductionStrength?: number;
 				windReductionEnabled?: boolean;
@@ -308,6 +316,7 @@ function extractAudioSettings({
 			? audio.masterVolume
 			: 1;
 	const duckingEnabled = audio.duckingEnabled === true;
+	const softLimiterEnabled = audio.softLimiterEnabled === true;
 	const ducking = duckingEnabled
 		? {
 				enabled: true,
@@ -338,7 +347,7 @@ function extractAudioSettings({
 					windReductionEnabled: audio.windReductionEnabled === true,
 				}
 			: null;
-	return { masterVolume, ducking, noiseReduction };
+	return { masterVolume, softLimiterEnabled, ducking, noiseReduction };
 }
 
 function collectAudioElements({
@@ -609,6 +618,7 @@ function collectMainVideoClips({ scenes }: { scenes: TScene[] }): PlanProgress {
 				durationSeconds: element.duration,
 				trimStartSeconds: element.trimStart,
 				trimEndSeconds: element.trimEnd,
+				fit: element.fit,
 				transitionInPreset: element.transitionIn?.preset ?? null,
 				transitionInDuration: element.transitionIn?.duration ?? null,
 				effects: extractEffects(element.effects),
@@ -677,6 +687,13 @@ function collectTextOverlays({
 									alpha: bgAlpha,
 									paddingX: element.background.paddingX ?? 12,
 									paddingY: element.background.paddingY ?? 6,
+								}
+							: null,
+					stroke:
+						element.stroke && element.stroke.width > 0
+							? {
+									color: element.stroke.color,
+									width: element.stroke.width,
 								}
 							: null,
 					textAlign: element.textAlign,
@@ -837,6 +854,7 @@ export function buildFfmpegPlan({
 	let anyTrimmedClip = false;
 	let anyColorOrEffect = false;
 	let anyPlaybackRate = false;
+	let anyCoverFit = false;
 	for (let i = 0; i < collected.supportedVideoClips.length; i += 1) {
 		const clip = collected.supportedVideoClips[i]!;
 		const ref = mediaRefIndex.get(clip.mediaId);
@@ -886,6 +904,7 @@ export function buildFfmpegPlan({
 			: null;
 		if (planEffects.length > 0 || planAdjustments) anyColorOrEffect = true;
 		if (clip.playbackRate !== 1) anyPlaybackRate = true;
+		if (clip.fit === "cover") anyCoverFit = true;
 		const planRotateKeyframes =
 			resolvedFeatures.keyframeAnimations && clip.rotateKeyframes.length > 0
 				? clip.rotateKeyframes
@@ -897,6 +916,7 @@ export function buildFfmpegPlan({
 			durationSeconds: clip.durationSeconds,
 			trimStartSeconds: clip.trimStartSeconds,
 			trimEndSeconds: clip.trimEndSeconds,
+			fit: clip.fit,
 			transitionInFromPrev,
 			effects: planEffects,
 			adjustments: planAdjustments,
@@ -970,6 +990,8 @@ export function buildFfmpegPlan({
 	const anyAudioSettings =
 		audioSettings !== null &&
 		(audioSettings.masterVolume !== 1 ||
+			audioSettings.softLimiterEnabled === true ||
+			audioSettings.noiseReduction?.enabled === true ||
 			audioSettings.ducking?.enabled === true);
 	if (
 		anyXfadeTransition ||
@@ -978,6 +1000,7 @@ export function buildFfmpegPlan({
 		anyAudioElement ||
 		anyAudioSettings ||
 		anyPlaybackRate ||
+		anyCoverFit ||
 		anyKeyframeAnimation
 	) {
 		return {
@@ -1095,6 +1118,10 @@ export function buildDrawtextFilter({
 		params.push(`boxcolor=${colorWithAlpha}`);
 		params.push(`boxborderw=${overlay.background.paddingX}`);
 	}
+	if (overlay.stroke && overlay.stroke.width > 0) {
+		params.push(`borderw=${Math.round(overlay.stroke.width)}`);
+		params.push(`bordercolor=${overlay.stroke.color}`);
+	}
 	const enableExpr = `between(t\\,${overlay.startTime}\\,${overlay.endTime})`;
 	params.push(`enable='${enableExpr}'`);
 	return `drawtext=${params.join(":")}`;
@@ -1210,6 +1237,12 @@ export function buildBlackVideoFfmpegInvocation({
 		videoBitrateForQuality(quality),
 		"-pix_fmt",
 		"yuv420p",
+		"-colorspace",
+		"bt709",
+		"-color_trc",
+		"bt709",
+		"-color_primaries",
+		"bt709",
 	);
 	if (includeAudio) {
 		args.push(
@@ -1285,6 +1318,12 @@ export function buildVideoConcatFfmpegInvocation({
 		videoBitrateForQuality(quality),
 		"-pix_fmt",
 		"yuv420p",
+		"-colorspace",
+		"bt709",
+		"-color_trc",
+		"bt709",
+		"-color_primaries",
+		"bt709",
 	);
 	if (includeAudio) {
 		args.push(
@@ -1599,7 +1638,10 @@ export function buildXfadeChainFilter({
 	}
 
 	const stages: string[] = [];
-	const baseScale = `scale=${canvasSize.width}:${canvasSize.height}:force_original_aspect_ratio=decrease,pad=${canvasSize.width}:${canvasSize.height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+	const buildBaseScale = (clip: PlanFilterGraphClip) =>
+		clip.fit === "cover"
+			? `scale=${canvasSize.width}:${canvasSize.height}:force_original_aspect_ratio=increase,crop=${canvasSize.width}:${canvasSize.height}:(iw-ow)/2:(ih-oh)/2,setsar=1`
+			: `scale=${canvasSize.width}:${canvasSize.height}:force_original_aspect_ratio=decrease,pad=${canvasSize.width}:${canvasSize.height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
 
 	for (let i = 0; i < clips.length; i += 1) {
 		const clip = clips[i]!;
@@ -1622,7 +1664,7 @@ export function buildXfadeChainFilter({
 		if (playbackRate !== 1) {
 			pipelineParts.push(`setpts=PTS/${playbackRate.toFixed(6)}`);
 		}
-		pipelineParts.push(baseScale);
+		pipelineParts.push(buildBaseScale(clip));
 		if (eqFilter) pipelineParts.push(eqFilter);
 		if (colorBalanceFilter) pipelineParts.push(colorBalanceFilter);
 		for (const filter of effectFilters) pipelineParts.push(filter);
@@ -1757,10 +1799,11 @@ export function buildAudioMixChain({
 	audioSettings?: PlanAudioSettings | null;
 }): AudioMixChainResult {
 	const masterVolume = audioSettings?.masterVolume ?? 1;
+	const softLimiterEnabled = audioSettings?.softLimiterEnabled === true;
 	const ducking = audioSettings?.ducking ?? null;
 	const noiseReduction = audioSettings?.noiseReduction ?? null;
 	const noElements = audioElements.length === 0;
-	if (noElements && masterVolume === 1) {
+	if (noElements && masterVolume === 1 && !softLimiterEnabled) {
 		return {
 			filter: "",
 			finalLabel: clipChainLabel ?? "[finala]",
@@ -1888,20 +1931,27 @@ export function buildAudioMixChain({
 		// Use [premix] only when we still need to apply masterVolume on top;
 		// otherwise label the mix output [finala] directly so callers downstream
 		// keep matching against the stable label.
-		const mixOutputLabel = masterVolume !== 1 ? "[premix]" : "[finala]";
+		const mixOutputLabel =
+			masterVolume !== 1 || softLimiterEnabled ? "[premix]" : "[finala]";
 		stages.push(
 			`${mixInputs.join("")}amix=inputs=${mixInputs.length}:duration=longest:dropout_transition=0${mixOutputLabel}`,
 		);
 		mixedLabel = mixOutputLabel;
 	}
 
+	let finalLabel = mixedLabel;
 	if (masterVolume !== 1) {
+		const volumeLabel = softLimiterEnabled ? "[mastera]" : "[finala]";
 		stages.push(
-			`${mixedLabel}volume=${clamp(masterVolume, 0, 4).toFixed(3)}[finala]`,
+			`${mixedLabel}volume=${clamp(masterVolume, 0, 4).toFixed(3)}${volumeLabel}`,
 		);
+		finalLabel = volumeLabel;
+	}
+	if (softLimiterEnabled) {
+		stages.push(`${finalLabel}alimiter=limit=0.891:level=false[finala]`);
 		return { filter: stages.join(";"), finalLabel: "[finala]" };
 	}
-	return { filter: stages.join(";"), finalLabel: mixedLabel };
+	return { filter: stages.join(";"), finalLabel };
 }
 
 export function buildVideoFilterGraphFfmpegInvocation({
@@ -2003,6 +2053,12 @@ export function buildVideoFilterGraphFfmpegInvocation({
 		videoBitrateForQuality(quality),
 		"-pix_fmt",
 		"yuv420p",
+		"-colorspace",
+		"bt709",
+		"-color_trc",
+		"bt709",
+		"-color_primaries",
+		"bt709",
 	);
 	if (includeAudio) {
 		args.push("-map", audioMixChain.finalLabel || acrossfadeChain.finalLabel);

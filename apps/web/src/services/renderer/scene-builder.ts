@@ -63,7 +63,7 @@ export function buildScene(params: BuildSceneParams) {
 					continue;
 				}
 
-				if (mediaAsset.type === "video") {
+				if (element.type === "video" && mediaAsset.type === "video") {
 					contentNodes.push(
 						new VideoNode({
 							mediaId: mediaAsset.id,
@@ -73,6 +73,7 @@ export function buildScene(params: BuildSceneParams) {
 							timeOffset: element.startTime,
 							trimStart: element.trimStart,
 							trimEnd: element.trimEnd,
+							fit: element.fit,
 							transform: element.transform,
 							opacity: element.opacity,
 							blendMode: element.blendMode,

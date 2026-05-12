@@ -129,7 +129,20 @@ describe("reference recreation", () => {
 			height: 1920,
 		});
 		expect(videoTrack?.elements.length).toBeGreaterThan(1);
-		expect(textTrack?.elements[0]?.content).toBe("THIS IS YOUR SIGN");
+		expect(
+			videoTrack?.elements.find((element) => element.type === "video")?.fit,
+		).toBe("cover");
+		expect(result.plan.source_ranges[0]?.agent_score).toBeGreaterThan(0);
+		expect(
+			result.plan.source_ranges[0]?.score_breakdown.speech,
+		).toBeGreaterThan(0);
+		expect(result.plan.caption_generation.max_words_per_caption).toBe(1);
+		expect(result.plan.caption_generation.min_display_ms).toBe(160);
+		expect(result.plan.audio_mix.target_lufs).toBe(-11);
+		expect(result.plan.audio_mix.voice_gain_db).toBe(11);
+		expect(textTrack?.elements[0]?.content).toBe("THIS");
+		expect(textTrack?.elements[0]?.stroke?.color).toBe("#000000");
+		expect(textTrack?.elements[0]?.background.color).toBe("transparent");
 		expect(
 			audioTrack?.elements.some((element) => element.role === "voiceover"),
 		).toBe(true);
@@ -192,7 +205,86 @@ describe("reference recreation", () => {
 		);
 		expect(result.plan.caption_generation.source).toBe("compound-audio");
 		expect(result.plan.caption_generation.uses_word_timings).toBe(false);
-		expect(textTrack?.elements[0]?.content).toBe("THIS IS YOUR SIGN");
+		expect(textTrack?.elements[0]?.content).toBe("THIS");
 		expect(textTrack?.elements[0]?.captionTiming?.words[0]?.text).toBe("THIS");
+	});
+
+	test("uses reference caption OCR words and aligns source cuts to matching transcript text", () => {
+		const project = buildProject();
+		const clipforge = project.clipforge;
+		if (!clipforge) {
+			throw new Error("Expected ClipForge project data.");
+		}
+		clipforge.mediaMetadataById.reference = {
+			words: [
+				{ text: "start", start_ms: 0, end_ms: 260 },
+				{ text: "now", start_ms: 300, end_ms: 620 },
+			],
+			segments: [{ text: "start now", start_ms: 0, end_ms: 620 }],
+			silenceRegions: [],
+			transcriptionStatus: "ready",
+			transcriptionProvider: "managed-cloud",
+			transcriptionLanguage: "en",
+			transcriptionError: null,
+			indexedAt: new Date().toISOString(),
+		};
+		clipforge.mediaMetadataById.source = {
+			...clipforge.mediaMetadataById.source,
+			words: [
+				{ text: "okay", start_ms: 0, end_ms: 200 },
+				{ text: "um", start_ms: 260, end_ms: 420 },
+				{ text: "start", start_ms: 1260, end_ms: 1500 },
+				{ text: "now", start_ms: 1540, end_ms: 1800 },
+			],
+			segments: [{ text: "okay um start now", start_ms: 0, end_ms: 1800 }],
+			silenceRegions: [{ start_ms: 480, end_ms: 1200 }],
+		};
+
+		const result = buildReferenceRecreationDraft({
+			project,
+			mediaAssets: buildAssets(),
+			referenceAssetId: "reference",
+			sourceAssetIds: ["source"],
+			musicAssetId: "music",
+		});
+		const textTrack = result.project.scenes[0]?.tracks.find(
+			(track) => track.type === "text",
+		);
+
+		expect(result.plan.caption_generation.source).toBe("reference-ocr");
+		expect(result.plan.caption_generation.reference_words.length).toBe(2);
+		expect(result.plan.source_ranges[0]?.source_start_ms).toBe(1260);
+		expect(result.plan.source_ranges[0]?.score_breakdown.semantic).toBe(1);
+		expect(result.plan.source_ranges[0]?.reasons.join(" ")).toContain(
+			"Edit-selection agent score",
+		);
+		expect(textTrack?.elements[0]?.content).toBe("START");
+		expect(textTrack?.elements[1]?.content).toBe("NOW");
+	});
+
+	test("flags suspicious source transcript terms for manual caption correction", () => {
+		const project = buildProject();
+		const clipforge = project.clipforge;
+		if (!clipforge) {
+			throw new Error("Expected ClipForge project data.");
+		}
+		clipforge.mediaMetadataById.source = {
+			...clipforge.mediaMetadataById.source,
+			words: [{ text: "fuck", start_ms: 0, end_ms: 260 }],
+			segments: [{ text: "fuck", start_ms: 0, end_ms: 260 }],
+		};
+
+		const result = buildReferenceRecreationDraft({
+			project,
+			mediaAssets: buildAssets(),
+			referenceAssetId: "reference",
+			sourceAssetIds: ["source"],
+			musicAssetId: "music",
+		});
+
+		expect(result.plan.caption_generation.needs_review_terms).toContain("fuck");
+		expect(
+			result.plan.caption_generation.correction_warnings.join(" "),
+		).toContain("manually reviewed");
 	});
 });

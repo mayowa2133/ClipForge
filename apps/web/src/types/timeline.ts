@@ -206,9 +206,12 @@ interface BaseTimelineElement {
 export interface VideoElement extends BaseTimelineElement {
 	type: "video";
 	mediaId: string;
+	fit?: "contain" | "cover";
 	muted?: boolean;
 	hidden?: boolean;
-	versionOverrides?: Partial<Record<ProjectVersionTarget, VisualVersionOverride>> | null;
+	versionOverrides?: Partial<
+		Record<ProjectVersionTarget, VisualVersionOverride>
+	> | null;
 	playbackRate?: number;
 	linkedGroupId?: string | null;
 	transitionIn?: ElementTransitionIn | null;
@@ -225,7 +228,9 @@ export interface ImageElement extends BaseTimelineElement {
 	mediaId: string;
 	overlayMeta?: OverlayMeta | null;
 	hidden?: boolean;
-	versionOverrides?: Partial<Record<ProjectVersionTarget, VisualVersionOverride>> | null;
+	versionOverrides?: Partial<
+		Record<ProjectVersionTarget, VisualVersionOverride>
+	> | null;
 	linkedGroupId?: string | null;
 	transitionIn?: ElementTransitionIn | null;
 	keyframes?: VisualKeyframeMap | null;
@@ -241,11 +246,17 @@ export interface TextElement extends BaseTimelineElement {
 	role?: "text" | "caption";
 	captionTiming?: { words: CaptionWordTiming[] } | null;
 	overlayMeta?: OverlayMeta | null;
-	versionOverrides?: Partial<Record<ProjectVersionTarget, VisualVersionOverride>> | null;
+	versionOverrides?: Partial<
+		Record<ProjectVersionTarget, VisualVersionOverride>
+	> | null;
 	content: string;
 	fontSize: number;
 	fontFamily: string;
 	color: string;
+	stroke?: {
+		color: string;
+		width: number;
+	} | null;
 	background: {
 		color: string;
 		cornerRadius?: number;
@@ -273,7 +284,9 @@ export interface StickerElement extends BaseTimelineElement {
 	type: "sticker";
 	stickerId: string;
 	hidden?: boolean;
-	versionOverrides?: Partial<Record<ProjectVersionTarget, VisualVersionOverride>> | null;
+	versionOverrides?: Partial<
+		Record<ProjectVersionTarget, VisualVersionOverride>
+	> | null;
 	linkedGroupId?: string | null;
 	transitionIn?: ElementTransitionIn | null;
 	keyframes?: VisualKeyframeMap | null;

@@ -138,12 +138,26 @@ async function handleTranscribe({
 	cancelled = false;
 
 	try {
-		const rawResult = await transcriber(audio, {
+		const options = {
 			chunk_length_s: DEFAULT_CHUNK_LENGTH_SECONDS,
 			stride_length_s: DEFAULT_STRIDE_SECONDS,
 			language: language === "auto" ? undefined : language,
-			return_timestamps: "word",
-		});
+		};
+		let rawResult: Awaited<ReturnType<AutomaticSpeechRecognitionPipeline>>;
+		try {
+			rawResult = await transcriber(audio, {
+				...options,
+				return_timestamps: "word",
+			});
+		} catch (error) {
+			if (!isWordTimestampUnsupportedError({ error })) {
+				throw error;
+			}
+			rawResult = await transcriber(audio, {
+				...options,
+				return_timestamps: true,
+			});
+		}
 
 		if (cancelled) return;
 
@@ -290,4 +304,13 @@ function tokenizeCaptionText({ text }: { text: string }): string[] {
 		.split(/\s+/)
 		.map((token) => token.trim())
 		.filter(Boolean);
+}
+
+function isWordTimestampUnsupportedError({
+	error,
+}: {
+	error: unknown;
+}): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /cross attentions|output_attentions|word timestamps/i.test(message);
 }

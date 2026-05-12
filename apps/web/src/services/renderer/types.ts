@@ -24,6 +24,7 @@ interface BaseRenderLayer {
 export interface RenderVideoPayload {
 	mediaId: string;
 	playbackRate: number;
+	fit?: "contain" | "cover";
 	keyframes?: VisualKeyframeMap | null;
 	transitionIn?: ElementTransitionIn | null;
 	adjustments?: VisualAdjustments | null;

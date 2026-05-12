@@ -857,6 +857,7 @@ function normalizeReferenceEditAnalysis(
 	const source = value as Partial<ReferenceEditAnalysis>;
 	const aspectRatio = source.aspect_ratio;
 	const captionStyle = source.caption_style;
+	const captionOcr = source.caption_ocr;
 	const audioMix = source.audio_mix;
 	const safeCaptionStyle: ReferenceEditAnalysis["caption_style"] = {
 		mode:
@@ -897,11 +898,11 @@ function normalizeReferenceEditAnalysis(
 	};
 	const safeAudioMix: ReferenceEditAnalysis["audio_mix"] = {
 		target_lufs:
-			typeof audioMix?.target_lufs === "number" ? audioMix.target_lufs : -11.5,
+			typeof audioMix?.target_lufs === "number" ? audioMix.target_lufs : -11,
 		true_peak_db:
-			typeof audioMix?.true_peak_db === "number" ? audioMix.true_peak_db : -1,
+			typeof audioMix?.true_peak_db === "number" ? audioMix.true_peak_db : -0.7,
 		voice_gain_db:
-			typeof audioMix?.voice_gain_db === "number" ? audioMix.voice_gain_db : 10,
+			typeof audioMix?.voice_gain_db === "number" ? audioMix.voice_gain_db : 11,
 		music_volume:
 			typeof audioMix?.music_volume === "number" ? audioMix.music_volume : 0.28,
 		ducking_amount:
@@ -933,6 +934,54 @@ function normalizeReferenceEditAnalysis(
 				? audioMix.wind_reduction_enabled
 				: true,
 	};
+	const safeCaptionOcrWords = Array.isArray(captionOcr?.words)
+		? captionOcr.words.flatMap((word) => {
+				if (
+					typeof word?.text !== "string" ||
+					typeof word?.start_ms !== "number" ||
+					typeof word?.end_ms !== "number"
+				) {
+					return [];
+				}
+				return [
+					{
+						text: word.text,
+						start_ms: word.start_ms,
+						end_ms: word.end_ms,
+						confidence:
+							typeof word.confidence === "number" ? word.confidence : 0.5,
+						source:
+							word.source === "ocr" ||
+							word.source === "metadata" ||
+							word.source === "manual"
+								? word.source
+								: "metadata",
+					},
+				];
+			})
+		: [];
+	const safeCaptionOcr: ReferenceEditAnalysis["caption_ocr"] = {
+		source:
+			captionOcr?.source === "ocr" ||
+			captionOcr?.source === "metadata" ||
+			captionOcr?.source === "none"
+				? captionOcr.source
+				: safeCaptionOcrWords.length > 0
+					? "metadata"
+					: "none",
+		words: safeCaptionOcrWords,
+		confidence:
+			typeof captionOcr?.confidence === "number"
+				? captionOcr.confidence
+				: safeCaptionOcrWords.length > 0
+					? 0.5
+					: 0,
+		warnings: Array.isArray(captionOcr?.warnings)
+			? captionOcr.warnings.filter(
+					(warning): warning is string => typeof warning === "string",
+				)
+			: [],
+	};
 
 	return {
 		analyzedAt: (value as { analyzedAt: string }).analyzedAt,
@@ -960,6 +1009,7 @@ function normalizeReferenceEditAnalysis(
 		average_cut_ms:
 			typeof source.average_cut_ms === "number" ? source.average_cut_ms : null,
 		caption_style: safeCaptionStyle,
+		caption_ocr: safeCaptionOcr,
 		audio_mix: safeAudioMix,
 		color_profile:
 			source.color_profile === "bt709-social" ||
@@ -1162,6 +1212,36 @@ function normalizeReferenceRecreationPlan(
 							target_duration_ms: range.target_duration_ms,
 							confidence:
 								typeof range.confidence === "number" ? range.confidence : 0.35,
+							agent_score:
+								typeof range.agent_score === "number"
+									? range.agent_score
+									: typeof range.confidence === "number"
+										? range.confidence
+										: 0.35,
+							score_breakdown: {
+								speech:
+									typeof range.score_breakdown?.speech === "number"
+										? range.score_breakdown.speech
+										: typeof range.confidence === "number"
+											? range.confidence
+											: 0.35,
+								pause:
+									typeof range.score_breakdown?.pause === "number"
+										? range.score_breakdown.pause
+										: 0.5,
+								semantic:
+									typeof range.score_breakdown?.semantic === "number"
+										? range.score_breakdown.semantic
+										: 0,
+								activity:
+									typeof range.score_breakdown?.activity === "number"
+										? range.score_breakdown.activity
+										: 0.45,
+								cadence:
+									typeof range.score_breakdown?.cadence === "number"
+										? range.score_breakdown.cadence
+										: 0.5,
+							},
 							reasons: Array.isArray(range.reasons)
 								? range.reasons.filter(
 										(reason): reason is string => typeof reason === "string",
@@ -1174,11 +1254,14 @@ function normalizeReferenceRecreationPlan(
 		caption_style: referenceAnalysis.caption_style,
 		caption_generation: {
 			source:
+				source.caption_generation?.source === "reference-ocr" ||
 				source.caption_generation?.source === "compound-audio" ||
 				source.caption_generation?.source === "timeline-transcript" ||
 				source.caption_generation?.source === "none"
 					? source.caption_generation.source
-					: "compound-audio",
+					: referenceAnalysis.caption_ocr.words.length > 0
+						? "reference-ocr"
+						: "compound-audio",
 			template_id:
 				typeof source.caption_generation?.template_id === "string"
 					? source.caption_generation.template_id
@@ -1186,15 +1269,59 @@ function normalizeReferenceRecreationPlan(
 			max_words_per_caption:
 				typeof source.caption_generation?.max_words_per_caption === "number"
 					? source.caption_generation.max_words_per_caption
-					: 4,
+					: 1,
 			min_display_ms:
 				typeof source.caption_generation?.min_display_ms === "number"
 					? source.caption_generation.min_display_ms
-					: 520,
+					: 160,
 			uses_word_timings:
 				typeof source.caption_generation?.uses_word_timings === "boolean"
 					? source.caption_generation.uses_word_timings
 					: false,
+			reference_words: Array.isArray(source.caption_generation?.reference_words)
+				? source.caption_generation.reference_words.flatMap((word) => {
+						if (
+							typeof word?.text !== "string" ||
+							typeof word?.start_ms !== "number" ||
+							typeof word?.end_ms !== "number"
+						) {
+							return [];
+						}
+						return [
+							{
+								text: word.text,
+								start_ms: word.start_ms,
+								end_ms: word.end_ms,
+								confidence:
+									typeof word.confidence === "number" ? word.confidence : 0.5,
+								source:
+									word.source === "ocr" ||
+									word.source === "metadata" ||
+									word.source === "manual"
+										? word.source
+										: "metadata",
+							},
+						];
+					})
+				: referenceAnalysis.caption_ocr.words,
+			needs_review_terms: Array.isArray(
+				source.caption_generation?.needs_review_terms,
+			)
+				? source.caption_generation.needs_review_terms.filter(
+						(term): term is string => typeof term === "string",
+					)
+				: [],
+			correction_warnings: Array.isArray(
+				source.caption_generation?.correction_warnings,
+			)
+				? source.caption_generation.correction_warnings.filter(
+						(warning): warning is string => typeof warning === "string",
+					)
+				: [],
+			alignment_confidence:
+				typeof source.caption_generation?.alignment_confidence === "number"
+					? source.caption_generation.alignment_confidence
+					: 0,
 		},
 		audio_mix: referenceAnalysis.audio_mix,
 		crop: {

@@ -16,6 +16,7 @@ export function renderFinishedVisualLayer({
 	sourceWidth,
 	sourceHeight,
 	transform,
+	fit = "cover",
 	opacity,
 	blendMode,
 	adjustments,
@@ -28,6 +29,7 @@ export function renderFinishedVisualLayer({
 	sourceWidth: number;
 	sourceHeight: number;
 	transform: Transform;
+	fit?: "contain" | "cover";
 	opacity: number;
 	blendMode?: BlendMode;
 	adjustments?: VisualAdjustments | null;
@@ -36,7 +38,9 @@ export function renderFinishedVisualLayer({
 	if (opacity <= 0) return;
 	const normalizedEffects = normalizeVisualEffects({ effects });
 	const effectiveAdjustments = adjustments ?? DEFAULT_VISUAL_ADJUSTMENTS;
-	const hasAdjustments = !adjustmentsAreDefault({ adjustments: effectiveAdjustments });
+	const hasAdjustments = !adjustmentsAreDefault({
+		adjustments: effectiveAdjustments,
+	});
 	const hasEffects = Boolean(normalizedEffects?.length);
 
 	if (!hasAdjustments && !hasEffects) {
@@ -48,13 +52,17 @@ export function renderFinishedVisualLayer({
 			sourceWidth,
 			sourceHeight,
 			transform,
+			fit,
 			opacity,
 			blendMode,
 		});
 		return;
 	}
 
-	const layerCanvas = createScratchCanvas({ width: canvasWidth, height: canvasHeight });
+	const layerCanvas = createScratchCanvas({
+		width: canvasWidth,
+		height: canvasHeight,
+	});
 	const layerCtx = getScratchContext({ canvas: layerCanvas });
 	drawVisualToContext({
 		ctx: layerCtx,
@@ -64,6 +72,7 @@ export function renderFinishedVisualLayer({
 		sourceWidth,
 		sourceHeight,
 		transform,
+		fit,
 		opacity: 1,
 	});
 
@@ -74,9 +83,9 @@ export function renderFinishedVisualLayer({
 	});
 
 	ctx.save();
-	ctx.globalCompositeOperation = ((blendMode && blendMode !== "normal"
-		? blendMode
-		: "source-over") as GlobalCompositeOperation);
+	ctx.globalCompositeOperation = (
+		blendMode && blendMode !== "normal" ? blendMode : "source-over"
+	) as GlobalCompositeOperation;
 	ctx.globalAlpha = opacity;
 	ctx.drawImage(finishedCanvas, 0, 0);
 	ctx.restore();
@@ -93,7 +102,9 @@ export function applyVisualFinishing({
 }): OffscreenCanvas | HTMLCanvasElement {
 	const normalizedEffects = normalizeVisualEffects({ effects });
 	const effectiveAdjustments = adjustments ?? DEFAULT_VISUAL_ADJUSTMENTS;
-	const hasAdjustments = !adjustmentsAreDefault({ adjustments: effectiveAdjustments });
+	const hasAdjustments = !adjustmentsAreDefault({
+		adjustments: effectiveAdjustments,
+	});
 	const hasEffects = Boolean(normalizedEffects?.length);
 	if (!hasAdjustments && !hasEffects) {
 		return canvas;
@@ -102,7 +113,10 @@ export function applyVisualFinishing({
 	let current = canvas;
 
 	if (hasAdjustments) {
-		current = applyAdjustments({ canvas: current, adjustments: effectiveAdjustments });
+		current = applyAdjustments({
+			canvas: current,
+			adjustments: effectiveAdjustments,
+		});
 	}
 
 	for (const effect of normalizedEffects ?? []) {
@@ -112,7 +126,10 @@ export function applyVisualFinishing({
 				current = applyBlur({ canvas: current, radius: effect.radius });
 				break;
 			case "vignette":
-				current = applyVignette({ canvas: current, intensity: effect.intensity });
+				current = applyVignette({
+					canvas: current,
+					intensity: effect.intensity,
+				});
 				break;
 			case "sharpen":
 				current = applySharpen({ canvas: current, amount: effect.amount });
@@ -141,7 +158,10 @@ function applyAdjustments({
 	canvas: OffscreenCanvas | HTMLCanvasElement;
 	adjustments: VisualAdjustments;
 }): OffscreenCanvas | HTMLCanvasElement {
-	const next = createScratchCanvas({ width: canvas.width, height: canvas.height });
+	const next = createScratchCanvas({
+		width: canvas.width,
+		height: canvas.height,
+	});
 	const nextCtx = getScratchContext({ canvas: next });
 	const brightness = 1 + adjustments.exposure * 0.6;
 	const contrast = 1 + adjustments.contrast * 0.8;
@@ -175,10 +195,17 @@ function applyAdjustments({
 			r + temperature + highlights * highlightFactor - shadows * shadowFactor,
 		);
 		data[index + 1] = clampChannel(
-			g + tint * 0.25 + shadows * shadowFactor * 0.2 - highlights * highlightFactor * 0.2,
+			g +
+				tint * 0.25 +
+				shadows * shadowFactor * 0.2 -
+				highlights * highlightFactor * 0.2,
 		);
 		data[index + 2] = clampChannel(
-			b - temperature + tint + shadows * shadowFactor - highlights * highlightFactor,
+			b -
+				temperature +
+				tint +
+				shadows * shadowFactor -
+				highlights * highlightFactor,
 		);
 	}
 
@@ -193,7 +220,10 @@ function applyBlur({
 	canvas: OffscreenCanvas | HTMLCanvasElement;
 	radius: number;
 }): OffscreenCanvas | HTMLCanvasElement {
-	const next = createScratchCanvas({ width: canvas.width, height: canvas.height });
+	const next = createScratchCanvas({
+		width: canvas.width,
+		height: canvas.height,
+	});
 	const nextCtx = getScratchContext({ canvas: next });
 	nextCtx.filter = `blur(${radius}px)`;
 	nextCtx.drawImage(canvas, 0, 0);
@@ -208,7 +238,10 @@ function applyVignette({
 	canvas: OffscreenCanvas | HTMLCanvasElement;
 	intensity: number;
 }): OffscreenCanvas | HTMLCanvasElement {
-	const next = createScratchCanvas({ width: canvas.width, height: canvas.height });
+	const next = createScratchCanvas({
+		width: canvas.width,
+		height: canvas.height,
+	});
 	const nextCtx = getScratchContext({ canvas: next });
 	nextCtx.drawImage(canvas, 0, 0);
 	const gradient = nextCtx.createRadialGradient(
@@ -220,7 +253,10 @@ function applyVignette({
 		Math.max(next.width, next.height) * 0.65,
 	);
 	gradient.addColorStop(0, "rgba(0,0,0,0)");
-	gradient.addColorStop(1, `rgba(0,0,0,${Math.max(0, Math.min(1, intensity)) * 0.8})`);
+	gradient.addColorStop(
+		1,
+		`rgba(0,0,0,${Math.max(0, Math.min(1, intensity)) * 0.8})`,
+	);
 	nextCtx.fillStyle = gradient;
 	nextCtx.fillRect(0, 0, next.width, next.height);
 	return next;
@@ -235,7 +271,10 @@ function applySharpen({
 }): OffscreenCanvas | HTMLCanvasElement {
 	const ctx = getScratchContext({ canvas });
 	const source = ctx.getImageData(0, 0, canvas.width, canvas.height);
-	const result = createScratchCanvas({ width: canvas.width, height: canvas.height });
+	const result = createScratchCanvas({
+		width: canvas.width,
+		height: canvas.height,
+	});
 	const resultCtx = getScratchContext({ canvas: result });
 	const output = resultCtx.createImageData(canvas.width, canvas.height);
 	const weights = [

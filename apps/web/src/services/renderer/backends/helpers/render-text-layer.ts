@@ -46,7 +46,10 @@ function drawTextDecoration({
 
 	const thickness = Math.max(1, scaledFontSize * 0.07);
 	const ascent = getMetricAscent({ metrics, fallbackFontSize: scaledFontSize });
-	const descent = getMetricDescent({ metrics, fallbackFontSize: scaledFontSize });
+	const descent = getMetricDescent({
+		metrics,
+		fallbackFontSize: scaledFontSize,
+	});
 
 	let xStart = -lineWidth / 2;
 	if (textAlign === "left") xStart = 0;
@@ -72,7 +75,10 @@ export function renderTextLayer({
 	payload: RenderTextPayload;
 	time: number;
 }): void {
-	if (time < payload.startTime || time >= payload.startTime + payload.duration) {
+	if (
+		time < payload.startTime ||
+		time >= payload.startTime + payload.duration
+	) {
 		return;
 	}
 
@@ -100,7 +106,9 @@ export function renderTextLayer({
 	const letterSpacing = payload.letterSpacing ?? 0;
 	const lineHeight = payload.lineHeight ?? DEFAULT_LINE_HEIGHT;
 	if ("letterSpacing" in ctx) {
-		(ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = `${letterSpacing}px`;
+		(
+			ctx as CanvasRenderingContext2D & { letterSpacing: string }
+		).letterSpacing = `${letterSpacing}px`;
 	}
 
 	const lines = payload.content.split("\n");
@@ -116,9 +124,11 @@ export function renderTextLayer({
 	});
 
 	const prevAlpha = ctx.globalAlpha;
-	ctx.globalCompositeOperation = ((payload.blendMode && payload.blendMode !== "normal"
-		? payload.blendMode
-		: "source-over") as GlobalCompositeOperation);
+	ctx.globalCompositeOperation = (
+		payload.blendMode && payload.blendMode !== "normal"
+			? payload.blendMode
+			: "source-over"
+	) as GlobalCompositeOperation;
 	ctx.globalAlpha = payload.opacity;
 
 	if (
@@ -150,6 +160,14 @@ export function renderTextLayer({
 
 	for (let i = 0; i < lines.length; i++) {
 		const lineY = i * lineHeightPx - block.visualCenterOffset;
+		if (payload.stroke && payload.stroke.width > 0) {
+			ctx.lineJoin = "round";
+			ctx.lineWidth =
+				payload.stroke.width *
+				(payload.canvasHeight / FONT_SIZE_SCALE_REFERENCE);
+			ctx.strokeStyle = payload.stroke.color;
+			ctx.strokeText(lines[i], 0, lineY);
+		}
 		ctx.fillText(lines[i], 0, lineY);
 		drawTextDecoration({
 			ctx,

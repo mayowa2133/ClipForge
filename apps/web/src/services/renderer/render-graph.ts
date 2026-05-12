@@ -8,7 +8,10 @@ import {
 	getVersionCanvasSize,
 	isMainTrack,
 } from "@/lib/timeline";
-import { buildProjectAssemblyTracks, getProjectDurationFromScenes } from "@/lib/scenes";
+import {
+	buildProjectAssemblyTracks,
+	getProjectDurationFromScenes,
+} from "@/lib/scenes";
 import type { TScene } from "@/types/timeline";
 import type { ProjectVersionTarget, TProject } from "@/types/project";
 import { resolveStickerId } from "@/lib/stickers";
@@ -81,6 +84,7 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 					payload: {
 						mediaId: element.mediaId,
 						playbackRate: getElementPlaybackRate({ element }),
+						fit: element.fit,
 						keyframes: element.keyframes ?? null,
 						transitionIn: element.transitionIn ?? null,
 						adjustments: element.adjustments ?? null,
@@ -116,7 +120,9 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 						transform: element.transform,
 						opacity: element.opacity,
 						blendMode: element.blendMode,
-						...(params.isPreview ? { maxSourceSize: PREVIEW_MAX_IMAGE_SIZE } : {}),
+						...(params.isPreview
+							? { maxSourceSize: PREVIEW_MAX_IMAGE_SIZE }
+							: {}),
 					},
 				});
 				continue;
@@ -184,16 +190,19 @@ export function buildRenderGraph(params: BuildRenderGraphParams): RenderGraph {
 		background:
 			background.type === "blur"
 				? {
-					type: "blur",
-					blurIntensity:
-						background.blurIntensity ?? DEFAULT_BLUR_INTENSITY,
-				  }
+						type: "blur",
+						blurIntensity: background.blurIntensity ?? DEFAULT_BLUR_INTENSITY,
+					}
 				: background,
 		layers,
 	};
 }
 
-export function graphHasVideo({ graph }: { graph: RenderGraph | null }): boolean {
+export function graphHasVideo({
+	graph,
+}: {
+	graph: RenderGraph | null;
+}): boolean {
 	if (!graph) return false;
 	return graph.layers.some((layer) => layer.kind === "video");
 }

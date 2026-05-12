@@ -10,6 +10,7 @@ export interface VisualNodeParams {
 	timeOffset: number;
 	trimStart: number;
 	trimEnd: number;
+	fit?: "contain" | "cover";
 	transform: Transform;
 	opacity: number;
 	blendMode?: BlendMode;
@@ -44,12 +45,13 @@ export abstract class VisualNode<
 		renderer.context.save();
 
 		const { transform, opacity } = this.params;
-		const containScale = Math.min(
+		const baseScale = this.params.fit === "cover" ? Math.max : Math.min;
+		const fitScale = baseScale(
 			renderer.width / sourceWidth,
 			renderer.height / sourceHeight,
 		);
-		const scaledWidth = sourceWidth * containScale * transform.scale;
-		const scaledHeight = sourceHeight * containScale * transform.scale;
+		const scaledWidth = sourceWidth * fitScale * transform.scale;
+		const scaledHeight = sourceHeight * fitScale * transform.scale;
 		const x = renderer.width / 2 + transform.position.x - scaledWidth / 2;
 		const y = renderer.height / 2 + transform.position.y - scaledHeight / 2;
 

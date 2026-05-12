@@ -24,22 +24,38 @@ type ResolvedImageLayer = {
 	hidden: boolean;
 	payload: {
 		sourceUrl: string;
-		transform: { scale: number; position: { x: number; y: number }; rotate: number };
+		transform: {
+			scale: number;
+			position: { x: number; y: number };
+			rotate: number;
+		};
 		adjustments?: import("@/types/timeline").VisualAdjustments | null;
 		effects?: import("@/types/timeline").VisualEffect[] | null;
 		opacity: number;
 		blendMode?: string;
 		maxSourceSize?: number;
 		keyframes?: unknown;
-		transitionIn?: { preset: "cross-dissolve" | "fade-black" | "fade-white" | "slide"; duration: number } | null;
+		transitionIn?: {
+			preset: "cross-dissolve" | "fade-black" | "fade-white" | "slide";
+			duration: number;
+		} | null;
 	};
 	previousVisualLayerId?: string | null;
 };
 
-type ResolvedTextLayer = Extract<RenderGraph["layers"][number], { kind: "text" }>;
+type ResolvedTextLayer = Extract<
+	RenderGraph["layers"][number],
+	{ kind: "text" }
+>;
 
-type ResolvedVideoLayer = Extract<RenderGraph["layers"][number], { kind: "video" }> & {
-	payload: Extract<RenderGraph["layers"][number], { kind: "video" }>['payload'] & {
+type ResolvedVideoLayer = Extract<
+	RenderGraph["layers"][number],
+	{ kind: "video" }
+> & {
+	payload: Extract<
+		RenderGraph["layers"][number],
+		{ kind: "video" }
+	>["payload"] & {
 		file?: File;
 	};
 };
@@ -202,7 +218,10 @@ function sampleAnimatedVisualState({
 	layer,
 	time,
 }: {
-	layer: Pick<VisualElement, "type" | "startTime" | "duration" | "transform" | "opacity" | "keyframes">;
+	layer: Pick<
+		VisualElement,
+		"type" | "startTime" | "duration" | "transform" | "opacity" | "keyframes"
+	>;
 	time: number;
 }) {
 	return getEffectiveVisualStateAtTime({
@@ -226,6 +245,7 @@ function toVisualMotionElement({
 			duration: layer.duration,
 			trimStart: layer.trimStart,
 			trimEnd: layer.trimEnd,
+			fit: layer.payload.fit,
 			muted: layer.payload.muted,
 			hidden: layer.hidden,
 			playbackRate: layer.payload.playbackRate,
@@ -253,7 +273,8 @@ function toVisualMotionElement({
 			hidden: layer.hidden,
 			linkedGroupId: null,
 			transitionIn: layer.payload.transitionIn ?? null,
-			keyframes: (layer.payload.keyframes as VisualElement["keyframes"]) ?? null,
+			keyframes:
+				(layer.payload.keyframes as VisualElement["keyframes"]) ?? null,
 			adjustments: layer.payload.adjustments ?? null,
 			effects: layer.payload.effects ?? null,
 			transform: layer.payload.transform,
@@ -472,7 +493,11 @@ async function renderTransitionLayerWithState({
 	canvasWidth: number;
 	canvasHeight: number;
 	videoFrameProvider: RenderVideoFrameProvider;
-	transform: { scale: number; position: { x: number; y: number }; rotate: number };
+	transform: {
+		scale: number;
+		position: { x: number; y: number };
+		rotate: number;
+	};
 	opacity: number;
 }): Promise<void> {
 	if (layer.kind === "video") {
@@ -518,7 +543,11 @@ async function renderVideoVisualLayer({
 	canvasWidth: number;
 	canvasHeight: number;
 	videoFrameProvider: RenderVideoFrameProvider;
-	transformOverride?: { scale: number; position: { x: number; y: number }; rotate: number };
+	transformOverride?: {
+		scale: number;
+		position: { x: number; y: number };
+		rotate: number;
+	};
 	opacityOverride?: number;
 	sampleTimeOverride?: number;
 }): Promise<void> {
@@ -553,7 +582,11 @@ async function renderImageLikeLayer({
 	time: number;
 	canvasWidth: number;
 	canvasHeight: number;
-	transformOverride?: { scale: number; position: { x: number; y: number }; rotate: number };
+	transformOverride?: {
+		scale: number;
+		position: { x: number; y: number };
+		rotate: number;
+	};
 	opacityOverride?: number;
 }): Promise<void> {
 	const source = await loadResolvedSource({
@@ -567,7 +600,8 @@ async function renderImageLikeLayer({
 			duration: layer.duration,
 			transform: layer.payload.transform,
 			opacity: layer.payload.opacity,
-			keyframes: (layer.payload.keyframes as VisualElement["keyframes"]) ?? null,
+			keyframes:
+				(layer.payload.keyframes as VisualElement["keyframes"]) ?? null,
 		} as VisualElement,
 		time,
 	});
@@ -609,8 +643,13 @@ async function loadResolvedSource({
 	if (cached) return cached;
 
 	const promise = (async () => {
-		if (typeof fetch === "undefined" || typeof createImageBitmap === "undefined") {
-			throw new Error("Binary image rendering is unavailable in this environment");
+		if (
+			typeof fetch === "undefined" ||
+			typeof createImageBitmap === "undefined"
+		) {
+			throw new Error(
+				"Binary image rendering is unavailable in this environment",
+			);
 		}
 
 		const response = await fetch(url);

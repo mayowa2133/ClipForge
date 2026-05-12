@@ -8,6 +8,7 @@ export function drawVisualToContext({
 	sourceWidth,
 	sourceHeight,
 	transform,
+	fit = "cover",
 	opacity,
 	blendMode,
 }: {
@@ -18,23 +19,27 @@ export function drawVisualToContext({
 	sourceWidth: number;
 	sourceHeight: number;
 	transform: Transform;
+	fit?: "contain" | "cover";
 	opacity: number;
 	blendMode?: BlendMode;
 }): void {
 	ctx.save();
 
 	const scale = transform.scale || 1;
-	const fillScale = Math.max(canvasWidth / sourceWidth, canvasHeight / sourceHeight);
-	const scaledWidth = sourceWidth * fillScale * scale;
-	const scaledHeight = sourceHeight * fillScale * scale;
+	const fitScale =
+		fit === "contain"
+			? Math.min(canvasWidth / sourceWidth, canvasHeight / sourceHeight)
+			: Math.max(canvasWidth / sourceWidth, canvasHeight / sourceHeight);
+	const scaledWidth = sourceWidth * fitScale * scale;
+	const scaledHeight = sourceHeight * fitScale * scale;
 	const x = canvasWidth / 2 + transform.position.x - scaledWidth / 2;
 	const y = canvasHeight / 2 + transform.position.y - scaledHeight / 2;
 	const centerX = x + scaledWidth / 2;
 	const centerY = y + scaledHeight / 2;
 
-	ctx.globalCompositeOperation = ((blendMode && blendMode !== "normal"
-		? blendMode
-		: "source-over") as GlobalCompositeOperation);
+	ctx.globalCompositeOperation = (
+		blendMode && blendMode !== "normal" ? blendMode : "source-over"
+	) as GlobalCompositeOperation;
 	ctx.globalAlpha = opacity;
 
 	if (transform.rotate) {

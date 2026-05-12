@@ -48,7 +48,10 @@ function drawTextDecoration({
 
 	const thickness = Math.max(1, scaledFontSize * 0.07);
 	const ascent = getMetricAscent({ metrics, fallbackFontSize: scaledFontSize });
-	const descent = getMetricDescent({ metrics, fallbackFontSize: scaledFontSize });
+	const descent = getMetricDescent({
+		metrics,
+		fallbackFontSize: scaledFontSize,
+	});
 
 	let xStart = -lineWidth / 2;
 	if (textAlign === "left") xStart = 0;
@@ -169,6 +172,14 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 		for (let i = 0; i < lineCount; i++) {
 			const y = i * lineHeightPx - block.visualCenterOffset;
+			if (this.params.stroke && this.params.stroke.width > 0) {
+				renderer.context.lineJoin = "round";
+				renderer.context.lineWidth =
+					this.params.stroke.width *
+					(this.params.canvasHeight / FONT_SIZE_SCALE_REFERENCE);
+				renderer.context.strokeStyle = this.params.stroke.color;
+				renderer.context.strokeText(lines[i], 0, y);
+			}
 			renderer.context.fillText(lines[i], 0, y);
 			drawTextDecoration({
 				ctx: renderer.context,

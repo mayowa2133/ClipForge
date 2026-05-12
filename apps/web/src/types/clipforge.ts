@@ -462,6 +462,18 @@ export interface ReferenceEditAudioMixTarget {
 	wind_reduction_enabled: boolean;
 }
 
+export interface ReferenceCaptionOcrWord extends TranscriptWord {
+	confidence: number;
+	source: "ocr" | "metadata" | "manual";
+}
+
+export interface ReferenceCaptionOcrAnalysis {
+	source: "ocr" | "metadata" | "none";
+	words: ReferenceCaptionOcrWord[];
+	confidence: number;
+	warnings: string[];
+}
+
 export interface ReferenceEditAnalysis {
 	analyzedAt: string;
 	reference_asset_id: string;
@@ -471,6 +483,7 @@ export interface ReferenceEditAnalysis {
 	cut_count: number;
 	average_cut_ms: number | null;
 	caption_style: ReferenceEditCaptionStyleAnalysis;
+	caption_ocr: ReferenceCaptionOcrAnalysis;
 	audio_mix: ReferenceEditAudioMixTarget;
 	color_profile: "bt709-social" | "source-matched" | "unknown";
 	warnings: string[];
@@ -517,15 +530,27 @@ export interface ReferenceRecreationSourceRange {
 	timeline_start_ms: number;
 	target_duration_ms: number;
 	confidence: number;
+	agent_score: number;
+	score_breakdown: {
+		speech: number;
+		pause: number;
+		semantic: number;
+		activity: number;
+		cadence: number;
+	};
 	reasons: string[];
 }
 
 export interface ReferenceRecreationCaptionGeneration {
-	source: "compound-audio" | "timeline-transcript" | "none";
+	source: "reference-ocr" | "compound-audio" | "timeline-transcript" | "none";
 	template_id: string;
 	max_words_per_caption: number;
 	min_display_ms: number;
 	uses_word_timings: boolean;
+	reference_words: ReferenceCaptionOcrWord[];
+	needs_review_terms: string[];
+	correction_warnings: string[];
+	alignment_confidence: number;
 }
 
 export interface ReferenceRecreationPlan {
