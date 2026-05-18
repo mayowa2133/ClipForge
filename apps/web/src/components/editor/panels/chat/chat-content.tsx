@@ -703,9 +703,11 @@ export function ChatContent() {
 	const plannerLabel =
 		plannerMode === "openai"
 			? "OpenAI"
-			: plannerMode === "heuristic"
-				? "Heuristic"
-				: "Auto";
+			: plannerMode === "anthropic"
+				? "Anthropic"
+				: plannerMode === "heuristic"
+					? "Heuristic"
+					: "Auto";
 	const healthToneClassName =
 		plannerMode === "heuristic"
 			? "border-slate-400/40 bg-slate-500/10 text-slate-600"
@@ -729,7 +731,7 @@ export function ChatContent() {
 	const healthDetail =
 		plannerMode === "auto"
 			? "Auto mode prefers the best available planner and falls back safely."
-			: plannerMode === "openai"
+			: plannerMode === "openai" || plannerMode === "anthropic"
 				? plannerHealth?.message ?? "Remote planning is enabled and still validated locally."
 				: "The deterministic local planner is active.";
 	const playheadMs = Math.round(editor.playback.getCurrentTime() * 1000);

@@ -14,6 +14,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/utils/ui";
+import { exportProjectToFcpxml, downloadFcpxml } from "@/lib/clipforge/fcpxml-export";
 import { getExportMimeType, getExportFileExtension } from "@/lib/export";
 import { processMediaAssets } from "@/lib/media/processing";
 import {
@@ -1099,6 +1100,7 @@ function ExportPopover({
 										publishDestination={publishDestination}
 										disabled={isExportActionDisabled}
 									/>
+									<FcpxmlExportButton />
 								</div>
 							</>
 						)}
@@ -1384,6 +1386,35 @@ export function getExportIssueTitle({
 		default:
 			return issue.severity === "error" ? "Blocking export issue" : "Export warning";
 	}
+}
+
+function FcpxmlExportButton() {
+	const editor = useEditor();
+
+	const handleFcpxmlExport = () => {
+		const project = editor.project.getActive();
+		if (!project) return;
+
+		const mediaAssets =
+			typeof editor.media?.getAssets === "function"
+				? editor.media.getAssets()
+				: [];
+
+		const result = exportProjectToFcpxml({ project, mediaAssets });
+		if (result.xml) {
+			downloadFcpxml(result);
+		}
+	};
+
+	return (
+		<Button
+			variant="outline"
+			className="mt-2 w-full gap-2 text-xs"
+			onClick={handleFcpxmlExport}
+		>
+			Export FCPXML (DaVinci / FCP)
+		</Button>
+	);
 }
 
 export function buildExportIssueTechnicalDetails({

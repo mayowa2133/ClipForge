@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requestAnthropicChatPlan } from "@/lib/clipforge/chat/server/anthropic-planner";
 import { requestOpenAIChatPlan } from "@/lib/clipforge/chat/server/openai-planner";
 import type {
 	ChatPlannerContext,
@@ -10,6 +11,15 @@ export const runtime = "nodejs";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resolveProvider(requested?: string): "anthropic" | "openai" {
+	if (requested === "anthropic" || requested === "openai") return requested;
+	const explicit = process.env.CLIPFORGE_CHAT_PROVIDER;
+	if (explicit === "anthropic" || explicit === "openai") return explicit;
+	if (process.env.ANTHROPIC_API_KEY) return "anthropic";
+	if (process.env.OPENAI_API_KEY) return "openai";
+	return "anthropic";
 }
 
 export async function POST(request: Request) {
@@ -26,6 +36,8 @@ export async function POST(request: Request) {
 		const projectSummary = body.projectSummary;
 		const context = body.context;
 		const overrides = body.overrides;
+		const requestedProvider =
+			typeof body.provider === "string" ? body.provider : undefined;
 		if (
 			typeof userText !== "string" ||
 			!isRecord(projectSummary) ||
@@ -41,17 +53,23 @@ export async function POST(request: Request) {
 			);
 		}
 
-		const result = await requestOpenAIChatPlan({
+		const provider = resolveProvider(requestedProvider);
+		const planRequest = {
 			userText,
 			projectSummary: projectSummary as unknown as ProjectSummary,
 			context,
 			overrides,
-		});
+		};
+
+		const result =
+			provider === "anthropic"
+				? await requestAnthropicChatPlan(planRequest)
+				: await requestOpenAIChatPlan(planRequest);
 
 		return NextResponse.json(result);
 	} catch (error) {
 		const message =
-			error instanceof Error ? error.message : "OpenAI chat planning failed.";
+			error instanceof Error ? error.message : "Chat planning failed.";
 		const status =
 			error instanceof Error && "status" in error && typeof error.status === "number"
 				? error.status

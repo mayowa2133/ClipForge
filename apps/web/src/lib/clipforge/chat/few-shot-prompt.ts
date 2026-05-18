@@ -10,8 +10,8 @@ Use playhead_ms only when no suitable selected target exists.
 Carry-over like "it" applies only within the same request.
 If the target is ambiguous, output [].
 Allowed op types:
-REMOVE_SILENCE, TRIM_CLIP, CUT_RANGE, ADD_TEXT_OVERLAY, MOVE_SEGMENT, SWAP_SEGMENTS, DELETE_SEGMENT,
-DUPLICATE_SEGMENT, INSERT_BROLL, SET_ASPECT_RATIO, SET_CAPTION_STYLE, FIX_CAPTION_TEXT, MAKE_VERSION
+REMOVE_SILENCE, REMOVE_FILLER, TRIM_CLIP, CUT_RANGE, ADD_TEXT_OVERLAY, MOVE_SEGMENT, SWAP_SEGMENTS, DELETE_SEGMENT,
+DUPLICATE_SEGMENT, INSERT_BROLL, SET_ASPECT_RATIO, SET_CAPTION_STYLE, FIX_CAPTION_TEXT, MAKE_VERSION, AUTO_REFRAME, BEAT_SYNC_CUTS
 
 Examples:
 User: "make it faster"
@@ -94,6 +94,24 @@ Ops: [{"type":"MAKE_VERSION","duration_target_s":35,"aggressiveness":0.7},{"type
 
 User: "trim the first clip by 0.5s and move it to 5s"
 Ops: [{"type":"TRIM_CLIP","clip_id":"seg_1","in_ms":500,"out_ms":0},{"type":"MOVE_SEGMENT","segment_id":"seg_1","to_ms":5000}]
+
+User: "remove filler words"
+Ops: [{"type":"REMOVE_FILLER","pad_ms":80}]
+
+User: "clean up the ums and uhs"
+Ops: [{"type":"REMOVE_FILLER","pad_ms":80}]
+
+User: "reframe this for vertical"
+Ops: [{"type":"AUTO_REFRAME","target_ratio":"9:16","focus":"center"}]
+
+User: "auto reframe for square with focus on top"
+Ops: [{"type":"AUTO_REFRAME","target_ratio":"1:1","focus":"top"}]
+
+User: "sync the cuts to the beat of the music"
+Ops: [{"type":"BEAT_SYNC_CUTS","source_asset_id":"music_1","strategy":"on-beat"}]
+
+User: "snap cuts to downbeats of the music track"
+Ops: [{"type":"BEAT_SYNC_CUTS","source_asset_id":"music_1","strategy":"on-downbeat"}]
 
 User: "add a cinematic zoom effect"
 Ops: []

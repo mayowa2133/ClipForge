@@ -12,13 +12,16 @@ import { SoundsView } from "./views/sounds";
 import { StickersView } from "./views/stickers";
 import { TemplatesView } from "./views/templates";
 import { TextView } from "./views/text";
+import { StockView } from "./views/stock";
 import { TransitionsView } from "./views/transitions";
+import { TranscriptSearchPanel } from "../transcript-search-panel";
 
 export function AssetsPanel() {
 	const { activeTab } = useAssetsPanelStore();
 
 	const viewMap: Record<Tab, React.ReactNode> = {
 		media: <MediaView />,
+		stock: <StockView />,
 		sounds: <SoundsView />,
 		text: <TextView />,
 		stickers: <StickersView />,
@@ -27,6 +30,7 @@ export function AssetsPanel() {
 		captions: <Captions />,
 		filters: <FiltersView />,
 		templates: <TemplatesView />,
+		search: <TranscriptSearchPanel />,
 		settings: <SettingsView />,
 	};
 

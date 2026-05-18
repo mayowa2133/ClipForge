@@ -2,6 +2,7 @@ import type { TimelineDiffOp } from "@/types/clipforge";
 
 export const ALLOWED_TIMELINE_OP_TYPES = new Set<TimelineDiffOp["type"]>([
 	"REMOVE_SILENCE",
+	"REMOVE_FILLER",
 	"TRIM_CLIP",
 	"CUT_RANGE",
 	"ADD_TEXT_OVERLAY",
@@ -14,6 +15,8 @@ export const ALLOWED_TIMELINE_OP_TYPES = new Set<TimelineDiffOp["type"]>([
 	"SET_CAPTION_STYLE",
 	"FIX_CAPTION_TEXT",
 	"MAKE_VERSION",
+	"AUTO_REFRAME",
+	"BEAT_SYNC_CUTS",
 ]);
 
 export const ALLOWED_ASPECT_RATIO_PRESETS = new Set(["9:16", "1:1", "16:9"]);

@@ -343,7 +343,7 @@ function PlannerSettingsContent() {
 				? "border-amber-400/40 bg-amber-500/10 text-amber-600"
 				: "border-red-400/40 bg-red-500/10 text-red-600";
 	const healthMessage = healthError ?? health?.message ?? "Unable to check planner health.";
-	const defaultModel = health?.defaultModel ?? null;
+	const activeProvider = health?.activeProvider ?? null;
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -364,8 +364,9 @@ function PlannerSettingsContent() {
 					</SelectTrigger>
 					<SelectContent>
 						<SelectItem value="auto">Auto (Recommended)</SelectItem>
+						<SelectItem value="anthropic">Anthropic Claude</SelectItem>
 						<SelectItem value="openai">OpenAI</SelectItem>
-						<SelectItem value="heuristic">Heuristic</SelectItem>
+						<SelectItem value="heuristic">Heuristic (Offline)</SelectItem>
 					</SelectContent>
 				</Select>
 				<Button
@@ -388,9 +389,9 @@ function PlannerSettingsContent() {
 					</span>
 				</div>
 				<p className="text-muted-foreground text-xs">{healthMessage}</p>
-				{defaultModel && (
+				{activeProvider && (
 					<p className="text-muted-foreground text-xs">
-						Default model: {defaultModel}
+						Active provider: {activeProvider === "anthropic" ? "Anthropic Claude" : "OpenAI"}
 					</p>
 				)}
 				<Button

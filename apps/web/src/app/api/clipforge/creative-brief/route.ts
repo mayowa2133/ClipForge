@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requestOpenAICreativeBrief } from "@/lib/clipforge/chat/server/creative-brief-planner";
+import { requestCreativeBrief } from "@/lib/clipforge/chat/server/creative-brief-planner";
 import type { CreativeBrief } from "@/types/clipforge";
 import type { ProjectSummary } from "@/lib/clipforge/chat/types";
 
@@ -39,6 +39,8 @@ export async function POST(request: Request) {
 		}
 
 		const { userText, heuristicBrief, projectSummary } = body;
+		const requestedProvider =
+			typeof body.provider === "string" ? body.provider : undefined;
 		if (
 			typeof userText !== "string" ||
 			!isCreativeBrief(heuristicBrief) ||
@@ -53,16 +55,17 @@ export async function POST(request: Request) {
 			);
 		}
 
-		const result = await requestOpenAICreativeBrief({
+		const result = await requestCreativeBrief({
 			userText,
 			heuristicBrief,
 			projectSummary: projectSummary as unknown as ProjectSummary,
+			provider: requestedProvider,
 		});
 
 		return NextResponse.json(result);
 	} catch (error) {
 		const message =
-			error instanceof Error ? error.message : "OpenAI creative brief planning failed.";
+			error instanceof Error ? error.message : "Creative brief planning failed.";
 		const status =
 			error instanceof Error && "status" in error && typeof error.status === "number"
 				? error.status

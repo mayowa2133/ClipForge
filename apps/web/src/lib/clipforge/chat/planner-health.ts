@@ -33,9 +33,9 @@ export async function fetchChatPlannerHealth(): Promise<ChatPlannerHealth> {
 
 	const {
 		modelRouteAvailable,
+		activeProvider,
+		anthropicConfigured,
 		openaiConfigured,
-		endpointConfigured,
-		defaultModel,
 		status,
 		message,
 		checkedAt,
@@ -43,9 +43,9 @@ export async function fetchChatPlannerHealth(): Promise<ChatPlannerHealth> {
 
 	if (
 		typeof modelRouteAvailable !== "boolean" ||
+		!(activeProvider === "anthropic" || activeProvider === "openai" || activeProvider === null) ||
+		typeof anthropicConfigured !== "boolean" ||
 		typeof openaiConfigured !== "boolean" ||
-		typeof endpointConfigured !== "boolean" ||
-		!(typeof defaultModel === "string" || defaultModel === null) ||
 		!isHealthStatus(status) ||
 		typeof message !== "string" ||
 		typeof checkedAt !== "string"
@@ -55,9 +55,9 @@ export async function fetchChatPlannerHealth(): Promise<ChatPlannerHealth> {
 
 	return {
 		modelRouteAvailable,
+		activeProvider,
+		anthropicConfigured,
 		openaiConfigured,
-		endpointConfigured,
-		defaultModel,
 		status,
 		message,
 		checkedAt,

@@ -10,10 +10,13 @@ import { buildTextElement } from "@/lib/timeline/element-utils";
 import { buildEmptyTrack, getDefaultInsertIndexForTrack } from "@/lib/timeline/track-utils";
 import type {
 	AddTextOverlayOp,
+	AutoReframeOp,
+	BeatSyncCutsOp,
 	CaptionStyleTemplate,
 	ClipForgeProjectData,
 	InsertBrollOp,
 	MakeVersionOp,
+	RemoveFillerOp,
 	RemoveSilenceOp,
 	TimelineDiffAuditEntry,
 	TimelineDiffOp,
@@ -30,6 +33,8 @@ import type {
 	VideoElement,
 } from "@/types/timeline";
 import { generateUUID } from "@/utils/id";
+import { detectFillerRegions, mergeFillerRegions } from "@/lib/clipforge/filler-detection";
+import { findNearestBeat, generateHalfBeats } from "@/lib/clipforge/beat-detection";
 import { applyCaptionStyleToTextElement, isCaptionTextElement } from "./caption-studio";
 import {
 	buildDefaultClipForgeProjectData,
@@ -118,6 +123,9 @@ export function applyTimelineDiffOpsToProject({
 			case "REMOVE_SILENCE":
 				applyRemoveSilenceOp({ tracks: activeScene.tracks, op, project: nextProject });
 				break;
+			case "REMOVE_FILLER":
+				applyRemoveFillerOp({ tracks: activeScene.tracks, op, project: nextProject });
+				break;
 			case "TRIM_CLIP":
 				applyTrimClipOp({ tracks: activeScene.tracks, op });
 				break;
@@ -174,6 +182,12 @@ export function applyTimelineDiffOpsToProject({
 				break;
 			case "MAKE_VERSION":
 				applyMakeVersionOp({ tracks: activeScene.tracks, op });
+				break;
+			case "AUTO_REFRAME":
+				applyAutoReframeOp({ project: nextProject, tracks: activeScene.tracks, op });
+				break;
+			case "BEAT_SYNC_CUTS":
+				applyBeatSyncCutsOp({ tracks: activeScene.tracks, op, mediaAssets });
 				break;
 		}
 	}
@@ -696,6 +710,67 @@ function applyRemoveSilenceOp({
 	}
 }
 
+function applyRemoveFillerOp({
+	tracks,
+	op,
+	project,
+}: {
+	tracks: TimelineTrack[];
+	op: RemoveFillerOp;
+	project: TProject & { clipforge?: ClipForgeProjectData };
+}): void {
+	const clipforgeData = project.clipforge ?? buildDefaultClipForgeProjectData();
+	const MIN_KEEP_MS = 300;
+
+	for (const track of tracks) {
+		const sortedElements = [...track.elements].sort(
+			(a, b) => a.startTime - b.startTime,
+		);
+
+		for (const element of sortedElements) {
+			if (element.type !== "video" && element.type !== "audio") continue;
+			if (!("mediaId" in element) || typeof element.mediaId !== "string") continue;
+
+			const metadata = clipforgeData.mediaMetadataById[element.mediaId];
+			if (!metadata || metadata.words.length === 0) continue;
+
+			const windowStart = element.trimStart;
+			const windowEnd = element.trimStart + element.duration;
+
+			const visibleWords = metadata.words.filter(
+				(w) => w.end_ms > windowStart && w.start_ms < windowEnd,
+			);
+
+			const fillerRegions = mergeFillerRegions(detectFillerRegions(visibleWords));
+			if (fillerRegions.length === 0) continue;
+
+			let removableTotal = 0;
+			for (const region of fillerRegions) {
+				const overlapStart = Math.max(region.start_ms, windowStart);
+				const overlapEnd = Math.min(region.end_ms, windowEnd);
+				const duration = overlapEnd - overlapStart;
+				if (duration <= 0) continue;
+				const removable = Math.max(0, duration - op.pad_ms);
+				removableTotal += removable;
+			}
+
+			if (removableTotal <= 0) continue;
+
+			const maxReduction = Math.max(0, element.duration - MIN_KEEP_MS);
+			const reduction = Math.min(maxReduction, removableTotal);
+			if (reduction <= 0) continue;
+
+			element.duration = Math.max(MIN_KEEP_MS, element.duration - reduction);
+
+			for (const peer of track.elements) {
+				if (peer.id !== element.id && peer.startTime > element.startTime) {
+					peer.startTime = Math.max(0, peer.startTime - reduction);
+				}
+			}
+		}
+	}
+}
+
 function applyMakeVersionOp({
 	tracks,
 	op,
@@ -708,6 +783,159 @@ function applyMakeVersionOp({
 	if (targetMs <= 0 || targetMs >= totalDuration) return;
 
 	applyCutRangeOp({ tracks, startMs: targetMs, endMs: totalDuration });
+}
+
+function applyAutoReframeOp({
+	project,
+	tracks,
+	op,
+}: {
+	project: TProject & { clipforge: ClipForgeProjectData };
+	tracks: TimelineTrack[];
+	op: AutoReframeOp;
+}): void {
+	const nextCanvasSize = ASPECT_RATIO_PRESETS[op.target_ratio];
+	if (!nextCanvasSize) return;
+
+	const prevCanvas = project.settings.canvasSize;
+	const widthRatio = nextCanvasSize.width / Math.max(1, prevCanvas.width);
+	const heightRatio = nextCanvasSize.height / Math.max(1, prevCanvas.height);
+
+	// Compute vertical bias from focus mode
+	const focusOffsetY =
+		op.focus === "top"
+			? -nextCanvasSize.height * 0.1
+			: op.focus === "bottom"
+				? nextCanvasSize.height * 0.1
+				: 0;
+
+	// Apply canvas change (like SET_ASPECT_RATIO)
+	project.settings = {
+		...project.settings,
+		canvasSize: nextCanvasSize,
+		originalCanvasSize: project.settings.originalCanvasSize ?? prevCanvas,
+		versionPack: buildDefaultProjectVersionPack({
+			canvasSize: nextCanvasSize,
+		}),
+	};
+
+	// Reposition all visual elements to fit the new canvas
+	for (const track of tracks) {
+		if (track.type !== "video" && track.type !== "text") continue;
+		for (const element of track.elements) {
+			if (element.type !== "video" && element.type !== "image" && element.type !== "text") {
+				continue;
+			}
+
+			const visual = element as VideoElement | ImageElement | TextElement;
+			if (!("transform" in visual)) continue;
+
+			// Scale position proportionally + apply focus offset
+			const newX = visual.transform.position.x * widthRatio;
+			const newY = visual.transform.position.y * heightRatio + focusOffsetY;
+
+			// Compute scale factor to ensure element fills the new canvas
+			const fillScale = Math.max(widthRatio, heightRatio);
+
+			visual.transform = {
+				scale: visual.transform.scale * fillScale,
+				position: { x: newX, y: newY },
+				rotate: visual.transform.rotate,
+			};
+		}
+	}
+}
+
+function applyBeatSyncCutsOp({
+	tracks,
+	op,
+	mediaAssets,
+}: {
+	tracks: TimelineTrack[];
+	op: BeatSyncCutsOp;
+	mediaAssets: MediaAsset[];
+}): void {
+	// Find the source asset's beat analysis
+	const sourceAsset = mediaAssets.find((a) => a.id === op.source_asset_id);
+	if (!sourceAsset) return;
+
+	const beatAnalysis = sourceAsset.beatAnalysis;
+	if (!beatAnalysis) return;
+
+	// Select beat markers based on strategy
+	let markers: number[];
+	switch (op.strategy) {
+		case "on-downbeat":
+			markers = beatAnalysis.downbeats.length > 0
+				? beatAnalysis.downbeats
+				: beatAnalysis.beats;
+			break;
+		case "half-beat":
+			markers = generateHalfBeats(beatAnalysis.beats);
+			break;
+		case "on-beat":
+		default:
+			markers = beatAnalysis.beats;
+			break;
+	}
+
+	if (markers.length < 2) return;
+
+	// Snap video clip boundaries to nearest beat marker
+	const mainVideoTrack = tracks.find(
+		(t) => t.type === "video" && t.isMain,
+	) as (typeof tracks)[number] | undefined;
+	if (!mainVideoTrack) return;
+
+	const elements = mainVideoTrack.elements;
+	if (elements.length < 2) return;
+
+	// Sort by start time
+	elements.sort((a, b) => a.startTime - b.startTime);
+
+	// For each clip boundary (transition point between clips),
+	// snap to the nearest beat
+	for (let i = 1; i < elements.length; i++) {
+		const prev = elements[i - 1];
+		const curr = elements[i];
+
+		// Current cut point is the start of the current clip
+		const cutTimeSec = curr.startTime;
+		const nearest = findNearestBeat(cutTimeSec, markers);
+		if (!nearest || nearest.distance > 1.0) continue; // Only snap within 1s
+
+		const delta = nearest.beat - cutTimeSec;
+		if (Math.abs(delta) < 0.01) continue; // Already on beat
+
+		if (delta > 0) {
+			// Beat is after current cut — extend previous, trim current start
+			const extensionAvailable = curr.duration - 0.1; // Keep at least 100ms
+			const trim = Math.min(delta, extensionAvailable);
+			if (trim <= 0) continue;
+
+			prev.duration += trim;
+			curr.startTime += trim;
+			curr.trimStart += trim;
+			curr.duration -= trim;
+		} else {
+			// Beat is before current cut — shrink previous, extend current start
+			const shrinkAvailable = prev.duration - 0.1;
+			const shrink = Math.min(-delta, shrinkAvailable);
+			if (shrink <= 0) continue;
+
+			prev.duration -= shrink;
+			curr.startTime -= shrink;
+			curr.trimStart = Math.max(0, curr.trimStart - shrink);
+			curr.duration += shrink;
+		}
+	}
+
+	// Re-layout: ensure clips are contiguous after snapping
+	let runningTime = elements[0].startTime;
+	for (const element of elements) {
+		element.startTime = runningTime;
+		runningTime += element.duration;
+	}
 }
 
 function getSegmentLocationById({

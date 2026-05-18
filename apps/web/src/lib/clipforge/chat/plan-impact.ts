@@ -434,6 +434,33 @@ function buildImpactCard({
 				detail: `threshold ${op.threshold_ms}ms · pad ${op.pad_ms}ms · min keep ${op.min_keep_ms}ms`,
 				jump: null,
 			};
+		case "REMOVE_FILLER":
+			return {
+				opIndex,
+				opType: op.type,
+				kind: "remove-silence",
+				title: "Remove filler words",
+				detail: `pad ${op.pad_ms}ms`,
+				jump: null,
+			};
+		case "AUTO_REFRAME":
+			return {
+				opIndex,
+				opType: op.type,
+				kind: "auto-reframe",
+				title: "Auto reframe",
+				detail: `${op.target_ratio} · focus ${op.focus}`,
+				jump: null,
+			};
+		case "BEAT_SYNC_CUTS":
+			return {
+				opIndex,
+				opType: op.type,
+				kind: "sound-sync",
+				title: "Beat-sync cuts",
+				detail: `strategy ${op.strategy} · source ${op.source_asset_id}`,
+				jump: null,
+			};
 		default:
 			return {
 				opIndex,

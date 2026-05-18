@@ -232,15 +232,15 @@ export interface ChatPlannerContext {
 	active_scene_id: string | null;
 }
 
-export type ChatPlannerKind = "heuristic" | "openai";
-export type ChatPlannerMode = "auto" | "heuristic" | "openai";
+export type ChatPlannerKind = "heuristic" | "openai" | "anthropic";
+export type ChatPlannerMode = "auto" | "heuristic" | "openai" | "anthropic";
 export type ChatPlannerHealthStatus = "ready" | "degraded" | "unavailable";
 
 export interface ChatPlannerHealth {
 	modelRouteAvailable: boolean;
+	activeProvider: "anthropic" | "openai" | null;
+	anthropicConfigured: boolean;
 	openaiConfigured: boolean;
-	endpointConfigured: boolean;
-	defaultModel: string | null;
 	status: ChatPlannerHealthStatus;
 	message: string;
 	checkedAt: string;

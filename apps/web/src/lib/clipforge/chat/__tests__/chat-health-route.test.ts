@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { GET } from "@/app/api/clipforge/chat/health/route";
 
-const originalApiKey = process.env.OPENAI_API_KEY;
-const originalModel = process.env.CLIPFORGE_OPENAI_MODEL;
-const originalEndpoint = process.env.CLIPFORGE_OPENAI_ENDPOINT;
+const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+const originalOpenAIKey = process.env.OPENAI_API_KEY;
 
 function restoreEnv(key: string, value: string | undefined) {
 	if (typeof value === "string") {
@@ -15,46 +14,50 @@ function restoreEnv(key: string, value: string | undefined) {
 
 describe("GET /api/clipforge/chat/health", () => {
 	beforeEach(() => {
-		process.env.OPENAI_API_KEY = "test-key";
-		process.env.CLIPFORGE_OPENAI_MODEL = "gpt-4.1-mini";
-		process.env.CLIPFORGE_OPENAI_ENDPOINT = "https://example.test/v1/responses";
+		process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
+		process.env.OPENAI_API_KEY = "test-openai-key";
 	});
 
 	afterEach(() => {
-		restoreEnv("OPENAI_API_KEY", originalApiKey);
-		restoreEnv("CLIPFORGE_OPENAI_MODEL", originalModel);
-		restoreEnv("CLIPFORGE_OPENAI_ENDPOINT", originalEndpoint);
+		restoreEnv("ANTHROPIC_API_KEY", originalAnthropicKey);
+		restoreEnv("OPENAI_API_KEY", originalOpenAIKey);
 	});
 
-	test("returns ready when key and endpoint are configured", async () => {
+	test("returns ready with anthropic as active provider when both keys are set", async () => {
 		const response = await GET();
 		const body = (await response.json()) as Record<string, unknown>;
 
 		expect(response.status).toBe(200);
 		expect(body.status).toBe("ready");
+		expect(body.activeProvider).toBe("anthropic");
+		expect(body.anthropicConfigured).toBe(true);
 		expect(body.openaiConfigured).toBe(true);
-		expect(body.endpointConfigured).toBe(true);
-		expect(body.defaultModel).toBe("gpt-4.1-mini");
 	});
 
-	test("returns degraded when the api key is missing", async () => {
+	test("returns ready with openai when only openai key is set", async () => {
+		delete process.env.ANTHROPIC_API_KEY;
+
+		const response = await GET();
+		const body = (await response.json()) as Record<string, unknown>;
+
+		expect(body.status).toBe("ready");
+		expect(body.activeProvider).toBe("openai");
+		expect(body.anthropicConfigured).toBe(false);
+		expect(body.openaiConfigured).toBe(true);
+	});
+
+	test("returns degraded when no api keys are set", async () => {
+		delete process.env.ANTHROPIC_API_KEY;
 		delete process.env.OPENAI_API_KEY;
 
 		const response = await GET();
 		const body = (await response.json()) as Record<string, unknown>;
 
 		expect(body.status).toBe("degraded");
+		expect(body.activeProvider).toBe(null);
+		expect(body.anthropicConfigured).toBe(false);
 		expect(body.openaiConfigured).toBe(false);
-		expect(JSON.stringify(body)).not.toContain("test-key");
-	});
-
-	test("returns degraded when the endpoint is missing", async () => {
-		delete process.env.CLIPFORGE_OPENAI_ENDPOINT;
-
-		const response = await GET();
-		const body = (await response.json()) as Record<string, unknown>;
-
-		expect(body.status).toBe("degraded");
-		expect(body.endpointConfigured).toBe(false);
+		expect(JSON.stringify(body)).not.toContain("test-anthropic-key");
+		expect(JSON.stringify(body)).not.toContain("test-openai-key");
 	});
 });

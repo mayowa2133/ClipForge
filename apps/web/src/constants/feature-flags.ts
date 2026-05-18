@@ -7,10 +7,11 @@ function readEnabledByDefaultFlag(value: string | undefined): boolean {
 	return readFlag(value);
 }
 
-function readPlannerMode(value: string | undefined): "auto" | "heuristic" | "openai" {
+function readPlannerMode(value: string | undefined): "auto" | "heuristic" | "openai" | "anthropic" {
 	switch (value) {
 		case "heuristic":
 		case "openai":
+		case "anthropic":
 			return value;
 		default:
 			return "auto";

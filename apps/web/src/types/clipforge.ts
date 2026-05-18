@@ -595,6 +595,7 @@ export interface ClipForgeRecentReferenceAssemblyChoice {
 export interface TimelineDiffBaseOp {
 	type:
 		| "REMOVE_SILENCE"
+		| "REMOVE_FILLER"
 		| "TRIM_CLIP"
 		| "CUT_RANGE"
 		| "ADD_TEXT_OVERLAY"
@@ -606,7 +607,9 @@ export interface TimelineDiffBaseOp {
 		| "SET_ASPECT_RATIO"
 		| "SET_CAPTION_STYLE"
 		| "FIX_CAPTION_TEXT"
-		| "MAKE_VERSION";
+		| "MAKE_VERSION"
+		| "AUTO_REFRAME"
+		| "BEAT_SYNC_CUTS";
 }
 
 export interface RemoveSilenceOp extends TimelineDiffBaseOp {
@@ -614,6 +617,11 @@ export interface RemoveSilenceOp extends TimelineDiffBaseOp {
 	threshold_ms: number;
 	pad_ms: number;
 	min_keep_ms: number;
+}
+
+export interface RemoveFillerOp extends TimelineDiffBaseOp {
+	type: "REMOVE_FILLER";
+	pad_ms: number;
 }
 
 export interface TrimClipOp extends TimelineDiffBaseOp {
@@ -704,8 +712,25 @@ export interface MakeVersionOp extends TimelineDiffBaseOp {
 	aggressiveness: number;
 }
 
+export type AutoReframeFocus = "center" | "top" | "bottom";
+
+export interface AutoReframeOp extends TimelineDiffBaseOp {
+	type: "AUTO_REFRAME";
+	target_ratio: ClipForgeAspectRatioPreset;
+	focus: AutoReframeFocus;
+}
+
+export type BeatSyncStrategy = "on-beat" | "on-downbeat" | "half-beat";
+
+export interface BeatSyncCutsOp extends TimelineDiffBaseOp {
+	type: "BEAT_SYNC_CUTS";
+	source_asset_id: string;
+	strategy: BeatSyncStrategy;
+}
+
 export type TimelineDiffOp =
 	| RemoveSilenceOp
+	| RemoveFillerOp
 	| TrimClipOp
 	| CutRangeOp
 	| AddTextOverlayOp
@@ -717,7 +742,9 @@ export type TimelineDiffOp =
 	| SetAspectRatioOp
 	| SetCaptionStyleOp
 	| FixCaptionTextOp
-	| MakeVersionOp;
+	| MakeVersionOp
+	| AutoReframeOp
+	| BeatSyncCutsOp;
 
 export interface TimelineOpEditorCommand {
 	kind: "timeline-op";

@@ -21,11 +21,11 @@ describe("fetchChatPlannerHealth", () => {
 			new Response(
 				JSON.stringify({
 					modelRouteAvailable: true,
+					activeProvider: "anthropic",
+					anthropicConfigured: true,
 					openaiConfigured: true,
-					endpointConfigured: true,
-					defaultModel: "gpt-4.1-mini",
 					status: "ready",
-					message: "OpenAI planner is configured and ready.",
+					message: "anthropic planner is configured and ready.",
 					checkedAt: "2026-03-03T10:00:00.000Z",
 				}),
 				{ status: 200 },
@@ -34,11 +34,11 @@ describe("fetchChatPlannerHealth", () => {
 
 		await expect(fetchChatPlannerHealth()).resolves.toEqual({
 			modelRouteAvailable: true,
+			activeProvider: "anthropic",
+			anthropicConfigured: true,
 			openaiConfigured: true,
-			endpointConfigured: true,
-			defaultModel: "gpt-4.1-mini",
 			status: "ready",
-			message: "OpenAI planner is configured and ready.",
+			message: "anthropic planner is configured and ready.",
 			checkedAt: "2026-03-03T10:00:00.000Z",
 		});
 	});

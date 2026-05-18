@@ -19,7 +19,7 @@ export function migrateClipForgeChatSettingsState(persistedState: unknown): {
 
 	return {
 		plannerMode:
-			plannerMode === "heuristic" || plannerMode === "openai" || plannerMode === "auto"
+			plannerMode === "heuristic" || plannerMode === "openai" || plannerMode === "anthropic" || plannerMode === "auto"
 				? plannerMode
 				: DEFAULT_CLIPFORGE_CHAT_PLANNER_MODE,
 	};

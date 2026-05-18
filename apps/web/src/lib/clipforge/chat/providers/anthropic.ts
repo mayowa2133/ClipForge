@@ -5,18 +5,18 @@ import type {
 	ChatProposalResult,
 } from "../types";
 
-interface OpenAIProviderConfig {
+interface AnthropicProviderConfig {
 	routePath?: string;
 }
 
-interface OpenAIPlannerRouteSuccess {
+interface AnthropicPlannerRouteSuccess {
 	ops: unknown[];
-	provider: "openai";
+	provider: "anthropic";
 	warnings?: string[];
 	rawText?: string | null;
 }
 
-function isPlannerRouteSuccess(payload: unknown): payload is OpenAIPlannerRouteSuccess {
+function isPlannerRouteSuccess(payload: unknown): payload is AnthropicPlannerRouteSuccess {
 	return (
 		typeof payload === "object" &&
 		payload !== null &&
@@ -25,10 +25,10 @@ function isPlannerRouteSuccess(payload: unknown): payload is OpenAIPlannerRouteS
 	);
 }
 
-export class OpenAIChatOpsProvider implements ChatOpsProvider {
+export class AnthropicChatOpsProvider implements ChatOpsProvider {
 	private readonly routePath: string;
 
-	constructor(config: OpenAIProviderConfig = {}) {
+	constructor(config: AnthropicProviderConfig = {}) {
 		this.routePath = config.routePath ?? "/api/clipforge/chat/plan";
 	}
 
@@ -48,12 +48,12 @@ export class OpenAIChatOpsProvider implements ChatOpsProvider {
 				projectSummary,
 				context,
 				overrides,
-				provider: "openai",
+				provider: "anthropic",
 			}),
 		});
 
 		const payload = (await response.json().catch(() => null)) as
-			| OpenAIPlannerRouteSuccess
+			| AnthropicPlannerRouteSuccess
 			| {
 					error?: string;
 			  }
@@ -67,18 +67,18 @@ export class OpenAIChatOpsProvider implements ChatOpsProvider {
 			throw new Error(
 				typeof message === "string"
 					? message
-					: `OpenAI planner request failed with status ${response.status}.`,
+					: `Anthropic planner request failed with status ${response.status}.`,
 			);
 		}
 
 		if (!isPlannerRouteSuccess(payload)) {
-			throw new Error("OpenAI planner returned an invalid payload.");
+			throw new Error("Anthropic planner returned an invalid payload.");
 		}
 
 		return {
 			commands: wrapTimelineOpsAsCommands(payload.ops as TimelineDiffOp[]),
 			ops: payload.ops as TimelineDiffOp[],
-			provider: "openai",
+			provider: "anthropic",
 			fallbackUsed: false,
 			warnings: Array.isArray(payload.warnings)
 				? payload.warnings.filter(

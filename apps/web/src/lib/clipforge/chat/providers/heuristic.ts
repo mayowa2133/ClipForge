@@ -481,6 +481,50 @@ function planLegacyClause({
 		});
 	}
 
+	if (
+		text.includes("remove filler") ||
+		(text.includes("clean up") && (text.includes(" um") || text.includes(" uh"))) ||
+		/remove\s+(?:the\s+)?(?:ums?|uhs?|filler\s*words?|hesitat)/i.test(text)
+	) {
+		ops.push({ type: "REMOVE_FILLER", pad_ms: 80 });
+	}
+
+	if (
+		/\b(?:beat[- ]?sync|sync\s+(?:to\s+)?(?:the\s+)?beats?|snap\s+(?:to\s+)?(?:the\s+)?beats?|cut\s+(?:on|to)\s+(?:the\s+)?beats?)\b/i.test(text)
+	) {
+		const musicAssets = projectSummary.available_music_assets;
+		const importedAudio = projectSummary.imported_audio_assets ?? [];
+		const sourceAssetId =
+			musicAssets[0]?.asset_id ?? importedAudio[0]?.asset_id ?? null;
+		if (sourceAssetId) {
+			const strategy = /downbeat/i.test(text)
+				? ("on-downbeat" as const)
+				: /half[- ]?beat/i.test(text)
+					? ("half-beat" as const)
+					: ("on-beat" as const);
+			ops.push({
+				type: "BEAT_SYNC_CUTS",
+				source_asset_id: sourceAssetId,
+				strategy,
+			});
+		}
+	}
+
+	if (
+		/\b(?:reframe|auto[- ]?reframe)\s+(?:for\s+)?(?:vertical|portrait|9:16|square|1:1|landscape|horizontal|16:9)\b/i.test(text) ||
+		/\b(?:make\s+(?:it\s+)?(?:vertical|portrait|square|landscape|horizontal))\b/i.test(text)
+	) {
+		const targetRatio: "9:16" | "1:1" | "16:9" =
+			/vertical|portrait|9:16/i.test(text) ? "9:16"
+			: /square|1:1/i.test(text) ? "1:1"
+			: "16:9";
+		const focus: "center" | "top" | "bottom" =
+			/\btop\b/i.test(text) ? "top"
+			: /\bbottom\b/i.test(text) ? "bottom"
+			: "center";
+		ops.push({ type: "AUTO_REFRAME", target_ratio: targetRatio, focus });
+	}
+
 	const durationMatch =
 		timedBrollMatch || phraseBrollRequest
 			? null

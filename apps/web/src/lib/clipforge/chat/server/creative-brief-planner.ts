@@ -9,7 +9,7 @@ interface CreativeBriefPlanRequest {
 
 export interface CreativeBriefPlanSuccess {
 	brief: CreativeBrief;
-	provider: "openai";
+	provider: "openai" | "anthropic";
 	warnings: string[];
 	rawText: string | null;
 }
@@ -190,18 +190,37 @@ function sanitizeCreativeBrief({
 	};
 }
 
-export async function requestOpenAICreativeBrief({
+function buildCompactProjectContext(projectSummary: ProjectSummary): Record<string, unknown> {
+	return {
+		total_duration_s: projectSummary.total_duration_s,
+		segment_count: projectSummary.segments.length,
+		current_scene_segments: projectSummary.current_scene_segments.slice(0, 60),
+		version_pack: projectSummary.version_pack,
+		trend_reference_summary: projectSummary.trend_reference_summary,
+		active_reference_video: projectSummary.active_reference_video,
+		footage_match_readiness: projectSummary.footage_match_readiness,
+	};
+}
+
+function extractAnthropicText(payload: unknown): string {
+	if (!isRecord(payload)) return "";
+	const content = payload.content;
+	if (!Array.isArray(content)) return "";
+
+	const textParts: string[] = [];
+	for (const block of content) {
+		if (isRecord(block) && block.type === "text" && typeof block.text === "string") {
+			textParts.push(block.text);
+		}
+	}
+	return textParts.join("\n").trim();
+}
+
+async function requestOpenAICreativeBriefInternal({
 	userText,
 	heuristicBrief,
 	projectSummary,
 }: CreativeBriefPlanRequest): Promise<CreativeBriefPlanSuccess> {
-	if (typeof userText !== "string" || userText.trim().length === 0) {
-		throw createPlanError({
-			message: "Creative brief request must include userText.",
-			status: 400,
-		});
-	}
-
 	const apiKey = process.env.OPENAI_API_KEY;
 	if (!apiKey) {
 		throw createPlanError({
@@ -238,16 +257,7 @@ export async function requestOpenAICreativeBrief({
 					content: JSON.stringify({
 						userText: requestUserText,
 						heuristicBrief,
-						projectSummary: {
-							total_duration_s: projectSummary.total_duration_s,
-							segment_count: projectSummary.segments.length,
-							current_scene_segments:
-								projectSummary.current_scene_segments.slice(0, 60),
-							version_pack: projectSummary.version_pack,
-							trend_reference_summary: projectSummary.trend_reference_summary,
-							active_reference_video: projectSummary.active_reference_video,
-							footage_match_readiness: projectSummary.footage_match_readiness,
-						},
+						projectSummary: buildCompactProjectContext(projectSummary),
 					}),
 				},
 			],
@@ -272,10 +282,7 @@ export async function requestOpenAICreativeBrief({
 	try {
 		const parsed = parseJsonObject({ rawText });
 		return {
-			brief: sanitizeCreativeBrief({
-				candidate: parsed,
-				fallback: heuristicBrief,
-			}),
+			brief: sanitizeCreativeBrief({ candidate: parsed, fallback: heuristicBrief }),
 			provider: "openai",
 			warnings,
 			rawText,
@@ -292,3 +299,117 @@ export async function requestOpenAICreativeBrief({
 		});
 	}
 }
+
+async function requestAnthropicCreativeBriefInternal({
+	userText,
+	heuristicBrief,
+	projectSummary,
+}: CreativeBriefPlanRequest): Promise<CreativeBriefPlanSuccess> {
+	const apiKey = process.env.ANTHROPIC_API_KEY;
+	if (!apiKey) {
+		throw createPlanError({
+			message: "Anthropic creative brief planner is not configured. Set ANTHROPIC_API_KEY.",
+			status: 503,
+		});
+	}
+
+	const warnings: string[] = [];
+	const model = process.env.CLIPFORGE_ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
+	const requestUserText =
+		userText.length > 2000 ? userText.slice(0, 2000) : userText;
+	if (requestUserText.length !== userText.length) {
+		warnings.push("User prompt was truncated to 2000 characters before creative planning.");
+	}
+
+	const response = await fetch("https://api.anthropic.com/v1/messages", {
+		method: "POST",
+		headers: {
+			"x-api-key": apiKey,
+			"anthropic-version": "2023-06-01",
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			model,
+			max_tokens: 1024,
+			system: CREATIVE_BRIEF_SYSTEM_PROMPT,
+			messages: [
+				{
+					role: "user",
+					content: JSON.stringify({
+						userText: requestUserText,
+						heuristicBrief,
+						projectSummary: buildCompactProjectContext(projectSummary),
+					}),
+				},
+			],
+		}),
+	});
+
+	if (!response.ok) {
+		let message = `Anthropic creative brief request failed with status ${response.status}.`;
+		try {
+			const payload = (await response.json()) as unknown;
+			if (isRecord(payload) && isRecord(payload.error) && typeof payload.error.message === "string") {
+				message = payload.error.message;
+			}
+		} catch {
+			// Keep default status message.
+		}
+		throw createPlanError({ message, status: 502 });
+	}
+
+	const payload = (await response.json()) as unknown;
+	const rawText = extractAnthropicText(payload);
+	try {
+		const parsed = parseJsonObject({ rawText });
+		return {
+			brief: sanitizeCreativeBrief({ candidate: parsed, fallback: heuristicBrief }),
+			provider: "anthropic",
+			warnings,
+			rawText,
+		};
+	} catch (error) {
+		throw createPlanError({
+			message:
+				error instanceof Error
+					? error.message
+					: "Failed to parse creative brief model response.",
+			status: 422,
+			warnings,
+			rawText,
+		});
+	}
+}
+
+function resolveCreativeBriefProvider(requested?: string): "anthropic" | "openai" {
+	if (requested === "anthropic" || requested === "openai") return requested;
+	const explicit = process.env.CLIPFORGE_CHAT_PROVIDER;
+	if (explicit === "anthropic" || explicit === "openai") return explicit;
+	if (process.env.ANTHROPIC_API_KEY) return "anthropic";
+	if (process.env.OPENAI_API_KEY) return "openai";
+	return "anthropic";
+}
+
+export async function requestCreativeBrief({
+	userText,
+	heuristicBrief,
+	projectSummary,
+	provider: requestedProvider,
+}: CreativeBriefPlanRequest & { provider?: string }): Promise<CreativeBriefPlanSuccess> {
+	if (typeof userText !== "string" || userText.trim().length === 0) {
+		throw createPlanError({
+			message: "Creative brief request must include userText.",
+			status: 400,
+		});
+	}
+
+	const provider = resolveCreativeBriefProvider(requestedProvider);
+	return provider === "anthropic"
+		? requestAnthropicCreativeBriefInternal({ userText, heuristicBrief, projectSummary })
+		: requestOpenAICreativeBriefInternal({ userText, heuristicBrief, projectSummary });
+}
+
+/** @deprecated Use {@link requestCreativeBrief} instead. */
+export const requestOpenAICreativeBrief = (
+	req: CreativeBriefPlanRequest,
+) => requestCreativeBrief(req);

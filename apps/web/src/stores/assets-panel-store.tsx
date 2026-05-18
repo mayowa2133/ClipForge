@@ -11,12 +11,15 @@ import {
 	TextIcon,
 	Settings01Icon,
 	ColorsIcon,
+	Video02Icon,
+	SearchList01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { LayoutTemplate } from "lucide-react";
 
 export const TAB_KEYS = [
 	"media",
+	"stock",
 	"sounds",
 	"text",
 	"stickers",
@@ -25,6 +28,7 @@ export const TAB_KEYS = [
 	"captions",
 	"filters",
 	"templates",
+	"search",
 	"settings",
 ] as const;
 
@@ -42,6 +46,10 @@ export const tabs = {
 	media: {
 		icon: createHugeiconsIcon({ icon: Folder03Icon }),
 		label: "Media",
+	},
+	stock: {
+		icon: createHugeiconsIcon({ icon: Video02Icon }),
+		label: "Stock Video",
 	},
 	sounds: {
 		icon: createHugeiconsIcon({ icon: HeadphonesIcon }),
@@ -74,6 +82,10 @@ export const tabs = {
 	templates: {
 		icon: LayoutTemplate,
 		label: "Templates",
+	},
+	search: {
+		icon: createHugeiconsIcon({ icon: SearchList01Icon }),
+		label: "Transcript Search",
 	},
 	settings: {
 		icon: createHugeiconsIcon({ icon: Settings01Icon }),

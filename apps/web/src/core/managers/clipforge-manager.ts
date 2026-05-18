@@ -896,6 +896,7 @@ export class ClipForgeManager {
 					userText: prompt,
 					heuristicBrief,
 					projectSummary,
+					provider: plannerMode === "anthropic" || plannerMode === "openai" ? plannerMode : undefined,
 				}),
 			});
 			const payload = (await response.json().catch(() => null)) as

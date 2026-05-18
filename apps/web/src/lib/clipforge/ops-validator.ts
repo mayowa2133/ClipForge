@@ -1,9 +1,12 @@
 import { calculateTotalDuration } from "@/lib/timeline";
 import type {
 	AddTextOverlayOp,
+	AutoReframeOp,
+	BeatSyncCutsOp,
 	FixCaptionTextOp,
 	InsertBrollOp,
 	MakeVersionOp,
+	RemoveFillerOp,
 	RemoveSilenceOp,
 	SetAspectRatioOp,
 	SetCaptionStyleOp,
@@ -147,6 +150,8 @@ function validateSingleOp({
 	switch (candidate.type) {
 		case "REMOVE_SILENCE":
 			return validateRemoveSilenceOp({ opIndex, candidate });
+		case "REMOVE_FILLER":
+			return validateRemoveFillerOp({ opIndex, candidate });
 		case "TRIM_CLIP":
 			return validateTrimClipOp({ opIndex, candidate, segmentLookup });
 		case "CUT_RANGE":
@@ -180,6 +185,10 @@ function validateSingleOp({
 			return validateFixCaptionTextOp({ opIndex, candidate, segmentLookup });
 		case "MAKE_VERSION":
 			return validateMakeVersionOp({ opIndex, candidate });
+		case "AUTO_REFRAME":
+			return validateAutoReframeOp({ opIndex, candidate });
+		case "BEAT_SYNC_CUTS":
+			return validateBeatSyncCutsOp({ opIndex, candidate, mediaAssetLookup });
 	}
 }
 
@@ -216,6 +225,34 @@ function validateRemoveSilenceOp({
 		threshold_ms: candidate.threshold_ms,
 		pad_ms: candidate.pad_ms,
 		min_keep_ms: candidate.min_keep_ms,
+	};
+	return { ok: true, op };
+}
+
+function validateRemoveFillerOp({
+	opIndex,
+	candidate,
+}: {
+	opIndex: number;
+	candidate: Record<string, unknown>;
+}): { ok: true; op: TimelineDiffOp } | { ok: false; errors: TimelineOpsValidationError[] } {
+	const padMs = isFiniteNumber(candidate.pad_ms) ? candidate.pad_ms : 80;
+	if (padMs < 0) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_remove_filler",
+					message: "REMOVE_FILLER requires pad_ms >= 0.",
+				},
+			],
+		};
+	}
+
+	const op: RemoveFillerOp = {
+		type: "REMOVE_FILLER",
+		pad_ms: padMs,
 	};
 	return { ok: true, op };
 }
@@ -979,4 +1016,107 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isHexColor(value: string): boolean {
 	return /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+const ALLOWED_AUTO_REFRAME_FOCUS = new Set(["center", "top", "bottom"]);
+
+function validateAutoReframeOp({
+	opIndex,
+	candidate,
+}: {
+	opIndex: number;
+	candidate: Record<string, unknown>;
+}): { ok: true; op: TimelineDiffOp } | { ok: false; errors: TimelineOpsValidationError[] } {
+	if (
+		typeof candidate.target_ratio !== "string" ||
+		!ALLOWED_ASPECT_RATIO_PRESETS.has(candidate.target_ratio)
+	) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_auto_reframe_ratio",
+					message: "AUTO_REFRAME target_ratio must be one of 9:16, 1:1, 16:9.",
+				},
+			],
+		};
+	}
+
+	const focus =
+		typeof candidate.focus === "string" && ALLOWED_AUTO_REFRAME_FOCUS.has(candidate.focus)
+			? candidate.focus
+			: "center";
+
+	const op: AutoReframeOp = {
+		type: "AUTO_REFRAME",
+		target_ratio: candidate.target_ratio as AutoReframeOp["target_ratio"],
+		focus: focus as AutoReframeOp["focus"],
+	};
+	return { ok: true, op };
+}
+
+const ALLOWED_BEAT_SYNC_STRATEGIES = new Set(["on-beat", "on-downbeat", "half-beat"]);
+
+function validateBeatSyncCutsOp({
+	opIndex,
+	candidate,
+	mediaAssetLookup,
+}: {
+	opIndex: number;
+	candidate: Record<string, unknown>;
+	mediaAssetLookup: Map<string, MediaAsset>;
+}): { ok: true; op: TimelineDiffOp } | { ok: false; errors: TimelineOpsValidationError[] } {
+	if (typeof candidate.source_asset_id !== "string") {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_beat_sync_source",
+					message: "BEAT_SYNC_CUTS requires source_asset_id.",
+				},
+			],
+		};
+	}
+
+	const asset = mediaAssetLookup.get(candidate.source_asset_id);
+	if (!asset) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "beat_sync_asset_not_found",
+					message: `BEAT_SYNC_CUTS source_asset_id not found: ${candidate.source_asset_id}`,
+				},
+			],
+		};
+	}
+
+	if (asset.type !== "audio" && asset.type !== "video") {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "beat_sync_asset_not_audio",
+					message: "BEAT_SYNC_CUTS requires an audio or video asset with audio.",
+				},
+			],
+		};
+	}
+
+	const strategy =
+		typeof candidate.strategy === "string" &&
+		ALLOWED_BEAT_SYNC_STRATEGIES.has(candidate.strategy)
+			? candidate.strategy
+			: "on-beat";
+
+	const op: BeatSyncCutsOp = {
+		type: "BEAT_SYNC_CUTS",
+		source_asset_id: candidate.source_asset_id,
+		strategy: strategy as BeatSyncCutsOp["strategy"],
+	};
+	return { ok: true, op };
 }
