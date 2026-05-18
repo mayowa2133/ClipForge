@@ -383,6 +383,73 @@ export function useEditorActions() {
 	);
 
 	useActionHandler(
+		"clipforge-generate-draft",
+		() => {
+			if (!ENABLE_CLIPFORGE_AUTO_EDIT) {
+				toast.error("ClipForge auto edit is disabled.");
+				return;
+			}
+
+			const draftPromise = toast.promise(
+				editor.clipforge.generateAutoDraft(),
+				{
+					loading: "Generating AI draft...",
+					success: (result) => {
+						const warnings = result.warnings;
+						if (warnings.length > 0) {
+							for (const warning of warnings.slice(0, 3)) {
+								toast.warning(warning);
+							}
+						}
+						return `Draft complete: ${result.appliedSteps} steps applied.`;
+					},
+					error: (error) =>
+						error instanceof Error
+							? error.message
+							: "Draft generation failed.",
+				},
+			);
+			void draftPromise;
+		},
+		undefined,
+	);
+
+	useActionHandler(
+		"clipforge-refine-edit",
+		() => {
+			if (!ENABLE_CLIPFORGE_AUTO_EDIT) {
+				toast.error("ClipForge auto edit is disabled.");
+				return;
+			}
+
+			const refinePromise = toast.promise(
+				editor.clipforge.refineWithLLM({
+					prompt: "polish this edit — tighten pacing, clean up silence, ensure captions are applied",
+				}),
+				{
+					loading: "Refining edit with AI...",
+					success: (result) => {
+						if (result.warnings.length > 0) {
+							for (const warning of result.warnings.slice(0, 3)) {
+								toast.warning(warning);
+							}
+						}
+						return result.totalOpsApplied > 0
+							? `Refinement applied ${result.totalOpsApplied} ops across ${result.passesUsed} passes.`
+							: "Edit looks good — no further changes needed.";
+					},
+					error: (error) =>
+						error instanceof Error
+							? error.message
+							: "Refinement failed.",
+				},
+			);
+			void refinePromise;
+		},
+		undefined,
+	);
+
+	useActionHandler(
 		"clipforge-export-best-effort",
 		() => {
 			if (!ENABLE_CLIPFORGE_AUTO_EDIT) {

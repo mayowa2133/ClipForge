@@ -1,4 +1,4 @@
-import { CHAT_OPS_FEW_SHOT_PROMPT } from "@/lib/clipforge/chat/few-shot-prompt";
+import { buildCreativeSystemPrompt } from "@/lib/clipforge/chat/creative-system-prompt";
 import {
 	parseModelOpsPayload,
 	structurallyGuardOps,
@@ -14,6 +14,7 @@ export interface AnthropicPlanRequest {
 	projectSummary: ProjectSummary;
 	context: ChatPlannerContext;
 	overrides?: ChatPlannerOverrides;
+	refinementPass?: number;
 }
 
 export interface AnthropicPlanSuccess {
@@ -97,6 +98,7 @@ export async function requestAnthropicChatPlan({
 	projectSummary,
 	context,
 	overrides,
+	refinementPass = 0,
 }: AnthropicPlanRequest): Promise<AnthropicPlanSuccess> {
 	if (typeof userText !== "string" || userText.trim().length === 0) {
 		throw createPlanError({
@@ -135,7 +137,10 @@ export async function requestAnthropicChatPlan({
 		body: JSON.stringify({
 			model,
 			max_tokens: 2048,
-			system: CHAT_OPS_FEW_SHOT_PROMPT,
+			system: buildCreativeSystemPrompt({
+				projectSummary: truncated.projectSummary,
+				refinementPass,
+			}),
 			messages: [
 				{
 					role: "user",

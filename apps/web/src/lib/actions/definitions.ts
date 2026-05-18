@@ -109,6 +109,14 @@ export const ACTIONS = {
 		description: "Auto Edit TikTok draft",
 		category: "editing",
 	},
+	"clipforge-generate-draft": {
+		description: "Generate AI draft from imported clips",
+		category: "editing",
+	},
+	"clipforge-refine-edit": {
+		description: "Refine the current edit with AI (multi-pass)",
+		category: "editing",
+	},
 	"clipforge-export-best-effort": {
 		description: "Export with ClipForge best-effort integration",
 		category: "controls",

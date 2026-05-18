@@ -692,6 +692,24 @@ export function MediaView() {
 					>
 						Auto Edit TikTok
 					</Button>
+					<Button
+						variant="default"
+						onClick={() => invokeAction("clipforge-generate-draft")}
+						disabled={isProcessing || !hasVideoAssets}
+						size="sm"
+						className="items-center justify-center gap-1.5 ml-1.5"
+					>
+						Generate Draft
+					</Button>
+					<Button
+						variant="outline"
+						onClick={() => invokeAction("clipforge-refine-edit")}
+						disabled={isProcessing || !hasVideoAssets}
+						size="sm"
+						className="items-center justify-center gap-1.5 ml-1.5"
+					>
+						Refine Edit
+					</Button>
 				</>
 			)}
 		</div>

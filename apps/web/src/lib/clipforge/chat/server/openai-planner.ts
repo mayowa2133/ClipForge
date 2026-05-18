@@ -1,4 +1,4 @@
-import { CHAT_OPS_FEW_SHOT_PROMPT } from "@/lib/clipforge/chat/few-shot-prompt";
+import { buildCreativeSystemPrompt } from "@/lib/clipforge/chat/creative-system-prompt";
 import {
 	parseModelOpsPayload,
 	structurallyGuardOps,
@@ -14,6 +14,7 @@ export interface ModelPlanRequest {
 	projectSummary: ProjectSummary;
 	context: ChatPlannerContext;
 	overrides?: ChatPlannerOverrides;
+	refinementPass?: number;
 }
 
 export interface ModelPlanSuccess {
@@ -106,6 +107,7 @@ export async function requestOpenAIChatPlan({
 	projectSummary,
 	context,
 	overrides,
+	refinementPass = 0,
 }: ModelPlanRequest): Promise<ModelPlanSuccess> {
 	if (typeof userText !== "string" || userText.trim().length === 0) {
 		throw createPlanError({
@@ -147,7 +149,10 @@ export async function requestOpenAIChatPlan({
 			input: [
 				{
 					role: "system",
-					content: CHAT_OPS_FEW_SHOT_PROMPT,
+					content: buildCreativeSystemPrompt({
+						projectSummary: truncated.projectSummary,
+						refinementPass,
+					}),
 				},
 				{
 					role: "user",

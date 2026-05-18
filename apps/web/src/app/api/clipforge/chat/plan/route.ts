@@ -53,12 +53,18 @@ export async function POST(request: Request) {
 			);
 		}
 
+		const refinementPass =
+			typeof body.refinementPass === "number" && Number.isFinite(body.refinementPass)
+				? Math.max(0, Math.min(5, Math.round(body.refinementPass)))
+				: 0;
+
 		const provider = resolveProvider(requestedProvider);
 		const planRequest = {
 			userText,
 			projectSummary: projectSummary as unknown as ProjectSummary,
 			context,
 			overrides,
+			refinementPass,
 		};
 
 		const result =

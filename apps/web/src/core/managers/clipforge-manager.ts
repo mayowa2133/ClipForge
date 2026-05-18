@@ -946,6 +946,182 @@ export class ClipForgeManager {
 		}
 	}
 
+	/**
+	 * Single-trigger autonomous draft pipeline.
+	 * Chains: footage analysis → creative brief → recipe plan → recipe execution.
+	 * This is the "AI edits the video for me" entry point.
+	 */
+	async generateAutoDraft({
+		prompt = "make a viral tiktok",
+	}: {
+		prompt?: string;
+	} = {}): Promise<{
+		appliedSteps: number;
+		skippedSteps: number;
+		messages: string[];
+		warnings: string[];
+	}> {
+		const warnings: string[] = [];
+
+		// 1. Auto-transcribe any un-transcribed video/audio clips
+		const assets = this.editor.media.getAssets();
+		const activeProject = this.editor.project.getActive();
+		const metadataById = activeProject.clipforge?.mediaMetadataById ?? {};
+		const untranscribed = assets.filter(
+			(asset) =>
+				(asset.type === "video" || asset.type === "audio") &&
+				!asset.ephemeral &&
+				(!metadataById[asset.id] ||
+					metadataById[asset.id].transcriptionStatus === "idle"),
+		);
+		if (untranscribed.length > 0) {
+			try {
+				await this.indexMediaAssets({
+					mediaIds: untranscribed.map((asset) => asset.id),
+				});
+			} catch {
+				warnings.push(
+					"Some clips could not be auto-transcribed; the draft will use available metadata.",
+				);
+			}
+		}
+
+		// 2. Run footage intelligence analysis
+		try {
+			await this.analyzeSceneFootageIntelligence();
+		} catch {
+			warnings.push(
+				"Footage intelligence analysis was unavailable; clip ranking falls back to metadata scoring.",
+			);
+		}
+
+		// 3. Build creative brief from prompt (heuristic — no server call needed)
+		const brief = this.buildCreativeBrief({ prompt });
+
+		// 4. Plan the full draft recipe
+		const recipe = this.planDraftRecipe({ brief });
+
+		// 5. Execute the recipe
+		const result = await this.applyDraftRecipe({ recipe });
+
+		return {
+			appliedSteps: result.appliedSteps,
+			skippedSteps: result.skippedSteps,
+			messages: result.messages,
+			warnings: [...warnings, ...recipe.warnings],
+		};
+	}
+
+	/**
+	 * Iterative refinement loop: call the LLM planner up to maxPasses times.
+	 * After each pass, the project is re-summarized and the LLM decides
+	 * whether more edits are needed. Returns [] on a pass to signal "done".
+	 */
+	async refineWithLLM({
+		prompt,
+		maxPasses = 3,
+	}: {
+		prompt: string;
+		maxPasses?: number;
+	}): Promise<{
+		totalOpsApplied: number;
+		passesUsed: number;
+		messages: string[];
+		warnings: string[];
+	}> {
+		const messages: string[] = [];
+		const warnings: string[] = [];
+		let totalOpsApplied = 0;
+		let passesUsed = 0;
+
+		for (let pass = 0; pass < maxPasses; pass++) {
+			passesUsed = pass + 1;
+			const activeProject = this.editor.project.getActive();
+			const projectSummary = buildProjectSummary({
+				project: activeProject,
+				mediaAssets: this.editor.media.getAssets(),
+				playheadMs: Math.round(this.editor.playback.getCurrentTime() * 1000),
+				selectedSegmentIds: this.editor.selection
+					.getSelectedElements()
+					.map((s) => s.elementId),
+				projectKitTemplates: this.editor.project.getProjectKitTemplates(),
+				sceneRecipeTemplates: this.editor.project.getSceneRecipeTemplates(),
+			});
+			const context = {
+				playhead_ms: Math.round(this.editor.playback.getCurrentTime() * 1000),
+				selected_segment_ids: this.editor.selection
+					.getSelectedElements()
+					.map((s) => s.elementId),
+				active_scene_id: activeProject.currentSceneId,
+			};
+
+			let ops: unknown[];
+			try {
+				const response = await fetch("/api/clipforge/chat/plan", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						userText: pass === 0 ? prompt : `Continue refining: ${prompt}`,
+						projectSummary,
+						context,
+						refinementPass: pass,
+					}),
+				});
+				if (!response.ok) {
+					warnings.push(`Refinement pass ${pass + 1} failed (HTTP ${response.status}).`);
+					break;
+				}
+				const payload = (await response.json()) as {
+					ops?: unknown[];
+					warnings?: string[];
+				};
+				ops = Array.isArray(payload.ops) ? payload.ops : [];
+				if (Array.isArray(payload.warnings)) {
+					for (const w of payload.warnings) {
+						if (typeof w === "string") warnings.push(w);
+					}
+				}
+			} catch {
+				warnings.push(`Refinement pass ${pass + 1} failed (network error).`);
+				break;
+			}
+
+			// Empty ops array = LLM says we're done
+			if (ops.length === 0) {
+				messages.push(
+					pass === 0
+						? "No changes needed."
+						: `Refinement complete after ${pass + 1} passes.`,
+				);
+				break;
+			}
+
+			// Apply the ops
+			const result = this.applyOps({
+				source: "chat",
+				ops: ops as Parameters<typeof this.applyOps>[0]["ops"],
+			});
+			if (result.applied) {
+				totalOpsApplied += ops.length;
+				messages.push(
+					`Pass ${pass + 1}: applied ${ops.length} operation${ops.length > 1 ? "s" : ""}.`,
+				);
+			} else {
+				warnings.push(
+					`Pass ${pass + 1}: ops failed — ${result.errors[0]?.message ?? "unknown error"}.`,
+				);
+				break;
+			}
+		}
+
+		return {
+			totalOpsApplied,
+			passesUsed,
+			messages,
+			warnings,
+		};
+	}
+
 	getTrendSoundReferences(): TrendSoundReference[] {
 		const activeProject = this.editor.project.getActive();
 		if (!activeProject) {
