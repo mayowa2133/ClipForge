@@ -117,6 +117,10 @@ export const ACTIONS = {
 		description: "Refine the current edit with AI (multi-pass)",
 		category: "editing",
 	},
+	"clipforge-full-pipeline": {
+		description: "Run full autonomous AI pipeline (draft + music + versions + thumbnail)",
+		category: "editing",
+	},
 	"clipforge-export-best-effort": {
 		description: "Export with ClipForge best-effort integration",
 		category: "controls",

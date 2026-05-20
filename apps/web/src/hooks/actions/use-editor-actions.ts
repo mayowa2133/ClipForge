@@ -450,6 +450,48 @@ export function useEditorActions() {
 	);
 
 	useActionHandler(
+		"clipforge-full-pipeline",
+		() => {
+			if (!ENABLE_CLIPFORGE_AUTO_EDIT) {
+				toast.error("ClipForge auto edit is disabled.");
+				return;
+			}
+
+			const pipelinePromise = toast.promise(
+				editor.clipforge.generateFullPipeline(),
+				{
+					loading: "Running full AI pipeline...",
+					success: (result) => {
+						const parts: string[] = [];
+						parts.push(`${result.draftAppliedSteps} draft steps`);
+						if (result.versionsGenerated > 1) {
+							parts.push(`${result.versionsGenerated} versions`);
+						}
+						if (result.musicSelection) {
+							parts.push(`music: ${result.musicSelection.track.label}`);
+						}
+						if (result.thumbnailRecommendation) {
+							parts.push(
+								`thumbnail at ${result.thumbnailRecommendation.primary.timeS.toFixed(1)}s`,
+							);
+						}
+						for (const warning of result.warnings.slice(0, 3)) {
+							toast.warning(warning);
+						}
+						return `Pipeline complete: ${parts.join(", ")}.`;
+					},
+					error: (error) =>
+						error instanceof Error
+							? error.message
+							: "Pipeline failed.",
+				},
+			);
+			void pipelinePromise;
+		},
+		undefined,
+	);
+
+	useActionHandler(
 		"clipforge-export-best-effort",
 		() => {
 			if (!ENABLE_CLIPFORGE_AUTO_EDIT) {

@@ -710,6 +710,15 @@ export function MediaView() {
 					>
 						Refine Edit
 					</Button>
+					<Button
+						variant="default"
+						onClick={() => invokeAction("clipforge-full-pipeline")}
+						disabled={isProcessing || !hasVideoAssets}
+						size="sm"
+						className="items-center justify-center gap-1.5 ml-1.5 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+					>
+						Full Pipeline
+					</Button>
 				</>
 			)}
 		</div>

@@ -56,6 +56,14 @@ Complex creative requests need multiple coordinated ops:
 - "clean it up for youtube" → [REMOVE_FILLER, REMOVE_SILENCE(gentle), AUTO_REFRAME(16:9), SET_CAPTION_STYLE(clean-bottom)]
 - "tighten the edit" → [REMOVE_SILENCE(aggressive), MAKE_VERSION(shorter, 0.7)]
 - "match the reference style" → use reference_analysis_snapshot to pick caption style, pacing, and reframe target
+
+### Autonomous pipeline awareness
+The project may have been processed by the full autonomous pipeline. Signals:
+- Scene import analysis: content type (talking-head/montage/mixed) and scene cut count inform pacing strategy
+- Music auto-selection: a music track may already be applied — check imported_audio_assets before adding another
+- Multi-version: the project may already have 9:16, 1:1, and 16:9 versions enabled — check version_pack
+- Thumbnail: a thumbnail recommendation may exist — don't re-cut the hook frame if the user hasn't complained about it
+When the user says "do everything" or "full auto", the full pipeline has likely already run. Focus refinements on specific issues.
 `.trim();
 
 const REFERENCE_STYLE_TRANSFER_PROMPT = `

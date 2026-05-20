@@ -51,7 +51,21 @@ import {
 	getPolishProfileById,
 	buildReferenceGuidedDraft,
 	buildReferenceRecreationDraft,
+	selectBestMusicTrack,
+	selectBestThumbnail,
+	analyzeImportedClips,
+	planMultiVersionDraft,
+	buildPipelineSummary,
 } from "@/lib/clipforge";
+import type {
+	MusicSelectionResult,
+} from "@/lib/clipforge/music-auto-select";
+import type {
+	ThumbnailRecommendation,
+} from "@/lib/clipforge/thumbnail-optimizer";
+import type {
+	FullPipelineResult,
+} from "@/lib/clipforge/multi-version-generator";
 import {
 	buildCommandPlanImpactPreview,
 	buildPlanImpactPreview,
@@ -1120,6 +1134,463 @@ export class ClipForgeManager {
 			messages,
 			warnings,
 		};
+	}
+
+	/**
+	 * Full autonomous pipeline — Tier 3.
+	 *
+	 * Chains every subsystem in one call:
+	 * 1. Auto-transcribe untranscribed clips
+	 * 2. Scene detection & import analysis
+	 * 3. Footage intelligence analysis
+	 * 4. Creative brief generation
+	 * 5. Music auto-selection from bundled library
+	 * 6. Draft recipe planning & execution
+	 * 7. Multi-version generation (9:16, 1:1, 16:9)
+	 * 8. Thumbnail/hook optimization
+	 * 9. LLM refinement pass
+	 */
+	async generateFullPipeline({
+		prompt = "make a viral tiktok",
+		enableAllFormats = true,
+		maxRefinementPasses = 2,
+	}: {
+		prompt?: string;
+		enableAllFormats?: boolean;
+		maxRefinementPasses?: number;
+	} = {}): Promise<FullPipelineResult> {
+		const warnings: string[] = [];
+		const messages: string[] = [];
+		let sceneAnalysisPerformed = false;
+
+		// --- 1. Auto-transcribe untranscribed clips ---
+		const assets = this.editor.media.getAssets();
+		const activeProject = this.editor.project.getActive();
+		const metadataById = activeProject.clipforge?.mediaMetadataById ?? {};
+		const untranscribed = assets.filter(
+			(asset) =>
+				(asset.type === "video" || asset.type === "audio") &&
+				!asset.ephemeral &&
+				(!metadataById[asset.id] ||
+					metadataById[asset.id].transcriptionStatus === "idle"),
+		);
+		if (untranscribed.length > 0) {
+			try {
+				const indexResult = await this.indexMediaAssets({
+					mediaIds: untranscribed.map((asset) => asset.id),
+				});
+				messages.push(
+					`Transcribed ${indexResult.completed.length} clip${indexResult.completed.length !== 1 ? "s" : ""}.`,
+				);
+				if (indexResult.failed.length > 0) {
+					warnings.push(
+						`${indexResult.failed.length} clip${indexResult.failed.length !== 1 ? "s" : ""} could not be transcribed.`,
+					);
+				}
+			} catch {
+				warnings.push(
+					"Auto-transcription failed; pipeline continues with available metadata.",
+				);
+			}
+		}
+
+		// --- 2. Scene detection & import analysis ---
+		try {
+			const videoAssets = this.editor.media
+				.getAssets()
+				.filter((a) => a.type === "video" && !a.ephemeral);
+
+			// Run visual analysis on any clips that lack it
+			for (const asset of videoAssets) {
+				if (!asset.visualAnalysis) {
+					try {
+						await this.editor.media.analyzeVisualActivity({
+							mediaId: asset.id,
+						});
+					} catch {
+						// Individual asset analysis failure is non-fatal
+					}
+				}
+			}
+
+			const refreshedAssets = this.editor.media
+				.getAssets()
+				.filter((a) => a.type === "video" && !a.ephemeral);
+			const refreshedProject = this.editor.project.getActive();
+			const refreshedMetadata =
+				refreshedProject.clipforge?.mediaMetadataById ?? {};
+
+			const importResults = analyzeImportedClips({
+				assets: refreshedAssets,
+				metadataById: refreshedMetadata,
+			});
+
+			// Store import analysis snapshots
+			const projectWithData = ensureClipForgeProjectData({
+				project: refreshedProject,
+			});
+			const importAnalysis: Record<string, import("@/types/clipforge").ImportAnalysisSnapshot> = {
+				...(projectWithData.clipforge.importAnalysisByAssetId ?? {}),
+			};
+			for (const result of importResults) {
+				importAnalysis[result.assetId] = {
+					analyzedAt: new Date().toISOString(),
+					sceneCutCount: result.sceneCutCount,
+					activityLevel: result.activityLevel,
+					contentType: result.contentType,
+					hasSpeech: result.hasSpeech,
+					segmentCount: result.segments.length,
+				};
+			}
+			this.editor.project.setActiveProject({
+				project: {
+					...projectWithData,
+					metadata: { ...projectWithData.metadata, updatedAt: new Date() },
+					clipforge: {
+						...projectWithData.clipforge,
+						importAnalysisByAssetId: importAnalysis,
+					},
+				},
+			});
+			this.editor.save.markDirty();
+
+			const totalCuts = importResults.reduce(
+				(sum, r) => sum + r.sceneCutCount,
+				0,
+			);
+			const contentTypes = [
+				...new Set(importResults.map((r) => r.contentType).filter((t) => t !== "unknown")),
+			];
+			messages.push(
+				`Scene analysis: ${totalCuts} cut${totalCuts !== 1 ? "s" : ""} across ${importResults.length} clip${importResults.length !== 1 ? "s" : ""}` +
+					(contentTypes.length > 0 ? ` (${contentTypes.join(", ")})` : "") +
+					".",
+			);
+			sceneAnalysisPerformed = true;
+		} catch {
+			warnings.push(
+				"Scene import analysis failed; the pipeline continues without it.",
+			);
+		}
+
+		// --- 3. Footage intelligence analysis ---
+		try {
+			await this.analyzeSceneFootageIntelligence();
+			messages.push("Footage intelligence analysis completed.");
+		} catch {
+			warnings.push(
+				"Footage intelligence was unavailable; clip ranking falls back to metadata.",
+			);
+		}
+
+		// --- 4. Creative brief ---
+		const brief = this.buildCreativeBrief({ prompt });
+
+		// --- 5. Music auto-selection ---
+		let musicSelection: MusicSelectionResult | null = null;
+		try {
+			musicSelection = selectBestMusicTrack({
+				musicLibrary: BUNDLED_MUSIC,
+				brief,
+			});
+			if (musicSelection) {
+				// Ensure the bundled track is imported as a project asset
+				const musicItem = BUNDLED_MUSIC.find(
+					(item) => item.id === musicSelection!.track.id,
+				);
+				if (musicItem) {
+					try {
+						const musicAsset = await ensureBundledAudioAsset({
+							editor: this.editor,
+							item: musicItem,
+						});
+						// Apply the music track to the timeline
+						await this.executeDirectCommand({
+							command: {
+								kind: "apply-music-track",
+								music_asset_id: musicAsset.id,
+								volume: 0.35,
+								loop_to_project_end: true,
+							},
+						});
+						messages.push(
+							`Music: auto-selected "${musicSelection.track.label}" (score ${musicSelection.score.toFixed(1)}).`,
+						);
+					} catch (applyError) {
+						warnings.push(
+							`Music track "${musicSelection.track.label}" was selected but could not be applied: ${applyError instanceof Error ? applyError.message : "unknown error"}.`,
+						);
+					}
+				}
+
+				// Persist the selection snapshot
+				const postMusicProject = ensureClipForgeProjectData({
+					project: this.editor.project.getActive(),
+				});
+				this.editor.project.setActiveProject({
+					project: {
+						...postMusicProject,
+						metadata: { ...postMusicProject.metadata, updatedAt: new Date() },
+						clipforge: {
+							...postMusicProject.clipforge,
+							lastMusicSelection: {
+								selectedAt: new Date().toISOString(),
+								trackId: musicSelection.track.id,
+								trackLabel: musicSelection.track.label,
+								score: musicSelection.score,
+							},
+						},
+					},
+				});
+				this.editor.save.markDirty();
+			}
+		} catch {
+			warnings.push("Music auto-selection failed; no music track was applied.");
+		}
+
+		// --- 6. Draft recipe & execution ---
+		const recipe = this.planDraftRecipe({ brief });
+		const draftResult = await this.applyDraftRecipe({ recipe });
+		messages.push(
+			`Draft: ${draftResult.appliedSteps} steps applied, ${draftResult.skippedSteps} skipped.`,
+		);
+		messages.push(...draftResult.messages);
+		warnings.push(...recipe.warnings);
+
+		// --- 7. Multi-version generation ---
+		let versionsGenerated = 1;
+		try {
+			const versionPlan = planMultiVersionDraft({
+				brief,
+				enableAllFormats,
+			});
+
+			for (const step of versionPlan.additionalSteps) {
+				try {
+					// Re-use the existing draft recipe step handlers
+					if (step.kind === "apply-version-pack") {
+						const targets = (step.params.targets as string[]).filter(
+							isProjectVersionTarget,
+						);
+						if (targets.length > 0) {
+							const currentProject = this.editor.project.getActive();
+							const currentPack = currentProject.settings.versionPack;
+							if (currentPack) {
+								await this.editor.project.updateVersionPack({
+									versionPack: {
+										...currentPack,
+										targets: currentPack.targets.map((target) => ({
+											...target,
+											enabled: targets.includes(target.id),
+										})),
+										activeTargetId:
+											versionPlan.primaryTarget ??
+											currentPack.activeTargetId ??
+											null,
+									},
+								});
+								versionsGenerated = targets.length;
+							}
+						}
+					} else if (step.kind === "apply-safe-layout") {
+						const targetVersionIds = (
+							(step.params.targetVersionIds as string[]) ?? []
+						).filter(isProjectVersionTarget);
+						for (const targetVersionId of targetVersionIds) {
+							this.editor.timeline.applySafeLayoutToScene({
+								targetVersionId,
+							});
+						}
+					}
+				} catch (stepError) {
+					warnings.push(
+						`Multi-version step ${step.kind} failed: ${stepError instanceof Error ? stepError.message : "unknown"}.`,
+					);
+				}
+			}
+
+			if (versionsGenerated > 1) {
+				messages.push(
+					`Multi-version: generated ${versionsGenerated} platform formats.`,
+				);
+			}
+			warnings.push(...versionPlan.warnings);
+		} catch {
+			warnings.push("Multi-version generation failed; only the primary format is available.");
+		}
+
+		// --- 8. Thumbnail optimization ---
+		let thumbnailRecommendation: ThumbnailRecommendation | null = null;
+		try {
+			const footageReport = this.getSceneFootageIntelligence();
+			if (footageReport) {
+				const currentProject = this.editor.project.getActive();
+				const totalDuration = currentProject.metadata.duration ?? 0;
+				thumbnailRecommendation = selectBestThumbnail({
+					footageReport,
+					totalDurationS: totalDuration,
+				});
+				if (thumbnailRecommendation) {
+					const thumb = thumbnailRecommendation.primary;
+					messages.push(
+						`Thumbnail: best frame at ${thumb.timeS.toFixed(1)}s (score ${thumb.score.toFixed(1)}).`,
+					);
+
+					// Persist the thumbnail snapshot
+					const postThumbProject = ensureClipForgeProjectData({
+						project: this.editor.project.getActive(),
+					});
+					this.editor.project.setActiveProject({
+						project: {
+							...postThumbProject,
+							metadata: { ...postThumbProject.metadata, updatedAt: new Date() },
+							clipforge: {
+								...postThumbProject.clipforge,
+								lastThumbnailRecommendation: {
+									generatedAt: new Date().toISOString(),
+									primaryTimeS: thumb.timeS,
+									primaryElementId: thumb.elementId,
+									primaryScore: thumb.score,
+									alternativeCount: thumbnailRecommendation.alternatives.length,
+								},
+							},
+						},
+					});
+					this.editor.save.markDirty();
+
+					warnings.push(...thumbnailRecommendation.warnings);
+				}
+			}
+		} catch {
+			warnings.push("Thumbnail optimization failed; no recommendation was generated.");
+		}
+
+		// --- 9. Optional LLM refinement ---
+		if (maxRefinementPasses > 0) {
+			try {
+				const refineResult = await this.refineWithLLM({
+					prompt: `Polish this draft — tighten pacing, clean silence, ensure captions match the ${brief.tone} tone`,
+					maxPasses: maxRefinementPasses,
+				});
+				if (refineResult.totalOpsApplied > 0) {
+					messages.push(
+						`Refinement: ${refineResult.totalOpsApplied} ops across ${refineResult.passesUsed} pass${refineResult.passesUsed !== 1 ? "es" : ""}.`,
+					);
+				} else {
+					messages.push("Refinement: edit looks good — no further changes.");
+				}
+				messages.push(...refineResult.messages);
+				warnings.push(...refineResult.warnings);
+			} catch {
+				warnings.push("LLM refinement failed; the draft is used as-is.");
+			}
+		}
+
+		const result: FullPipelineResult = {
+			draftAppliedSteps: draftResult.appliedSteps,
+			draftSkippedSteps: draftResult.skippedSteps,
+			versionsGenerated,
+			musicSelection,
+			thumbnailRecommendation,
+			sceneAnalysisPerformed,
+			messages,
+			warnings,
+		};
+
+		messages.push(`Pipeline complete: ${buildPipelineSummary({ result })}`);
+
+		return result;
+	}
+
+	/**
+	 * Analyze imported clips for scene detection and content type classification.
+	 * Meant to be called on import for early metadata enrichment.
+	 */
+	analyzeImportedAssets(): {
+		analyzed: number;
+		results: Array<{
+			assetId: string;
+			sceneCutCount: number;
+			contentType: string;
+		}>;
+	} {
+		const assets = this.editor.media
+			.getAssets()
+			.filter((a) => a.type === "video" && !a.ephemeral);
+		const activeProject = this.editor.project.getActive();
+		const metadataById = activeProject.clipforge?.mediaMetadataById ?? {};
+
+		const importResults = analyzeImportedClips({
+			assets,
+			metadataById,
+		});
+
+		// Persist
+		const projectWithData = ensureClipForgeProjectData({
+			project: activeProject,
+		});
+		const importAnalysis: Record<string, import("@/types/clipforge").ImportAnalysisSnapshot> = {
+			...(projectWithData.clipforge.importAnalysisByAssetId ?? {}),
+		};
+		for (const result of importResults) {
+			importAnalysis[result.assetId] = {
+				analyzedAt: new Date().toISOString(),
+				sceneCutCount: result.sceneCutCount,
+				activityLevel: result.activityLevel,
+				contentType: result.contentType,
+				hasSpeech: result.hasSpeech,
+				segmentCount: result.segments.length,
+			};
+		}
+		this.editor.project.setActiveProject({
+			project: {
+				...projectWithData,
+				metadata: { ...projectWithData.metadata, updatedAt: new Date() },
+				clipforge: {
+					...projectWithData.clipforge,
+					importAnalysisByAssetId: importAnalysis,
+				},
+			},
+		});
+		this.editor.save.markDirty();
+
+		return {
+			analyzed: importResults.length,
+			results: importResults.map((r) => ({
+				assetId: r.assetId,
+				sceneCutCount: r.sceneCutCount,
+				contentType: r.contentType,
+			})),
+		};
+	}
+
+	/**
+	 * Select the best music track from the bundled library for the current project.
+	 */
+	selectMusicForBrief({
+		brief,
+	}: {
+		brief: CreativeBrief;
+	}): MusicSelectionResult | null {
+		return selectBestMusicTrack({
+			musicLibrary: BUNDLED_MUSIC,
+			brief,
+		});
+	}
+
+	/**
+	 * Generate a thumbnail recommendation from the current footage intelligence.
+	 */
+	generateThumbnailRecommendation(): ThumbnailRecommendation | null {
+		const footageReport = this.getSceneFootageIntelligence();
+		if (!footageReport) {
+			return null;
+		}
+		const activeProject = this.editor.project.getActive();
+		return selectBestThumbnail({
+			footageReport,
+			totalDurationS: activeProject.metadata.duration ?? 0,
+		});
 	}
 
 	getTrendSoundReferences(): TrendSoundReference[] {

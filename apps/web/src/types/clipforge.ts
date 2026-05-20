@@ -259,7 +259,9 @@ export type DraftBuildStepKind =
 	| "insert-overlay"
 	| "auto-montage"
 	| "apply-version-pack"
-	| "apply-safe-layout";
+	| "apply-safe-layout"
+	| "select-music"
+	| "apply-thumbnail-hint";
 
 export interface DraftBuildStep {
 	kind: DraftBuildStepKind;
@@ -1156,6 +1158,33 @@ export interface ClipForgeProjectData {
 	chatMemory: ClipForgeChatMemory;
 	opsAudit: TimelineDiffAuditEntry[];
 	cloudProjectId?: string | null;
+	importAnalysisByAssetId?: Record<string, ImportAnalysisSnapshot>;
+	lastThumbnailRecommendation?: ThumbnailRecommendationSnapshot | null;
+	lastMusicSelection?: MusicSelectionSnapshot | null;
+}
+
+export interface ImportAnalysisSnapshot {
+	analyzedAt: string;
+	sceneCutCount: number;
+	activityLevel: "low" | "medium" | "high";
+	contentType: "talking-head" | "montage" | "mixed" | "unknown";
+	hasSpeech: boolean;
+	segmentCount: number;
+}
+
+export interface ThumbnailRecommendationSnapshot {
+	generatedAt: string;
+	primaryTimeS: number;
+	primaryElementId: string;
+	primaryScore: number;
+	alternativeCount: number;
+}
+
+export interface MusicSelectionSnapshot {
+	selectedAt: string;
+	trackId: string;
+	trackLabel: string;
+	score: number;
 }
 
 export interface SerializedClipForgeProjectData
