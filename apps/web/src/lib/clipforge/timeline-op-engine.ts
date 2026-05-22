@@ -977,10 +977,9 @@ function applySetSpeedRampOp({
 	const element = tracks[location.trackIndex].elements[location.elementIndex];
 	if (element.type !== "video") return;
 
-	// Clamp ramp window to element bounds
-	const elementDurationMs = element.duration * 1000;
-	const rampStart = clamp(op.ramp_start_ms, 0, elementDurationMs);
-	const rampEnd = clamp(op.ramp_end_ms, rampStart, elementDurationMs);
+	// Clamp ramp window to element bounds (element.duration is in ms)
+	const rampStart = clamp(op.ramp_start_ms, 0, element.duration);
+	const rampEnd = clamp(op.ramp_end_ms, rampStart, element.duration);
 	if (rampEnd - rampStart < 50) return; // Ramp too short
 
 	// Clamp speed values to safe range
@@ -1078,9 +1077,10 @@ function applyExtractHighlightOp({
 	const element = tracks[location.trackIndex].elements[location.elementIndex];
 	if (element.type !== "video" && element.type !== "audio") return;
 
-	const elementDurationS = element.duration;
-	const targetS = Math.min(op.target_duration_s, elementDurationS);
-	if (targetS <= 0 || targetS >= elementDurationS) return;
+	// element.duration is in ms; convert target from seconds to ms
+	const elementDurationMs = element.duration;
+	const targetMs = op.target_duration_s * 1000;
+	if (targetMs <= 0 || targetMs >= elementDurationMs) return;
 
 	// Analyze media metadata to find the best highlight region
 	const clipforgeData = project.clipforge;
@@ -1089,20 +1089,19 @@ function applyExtractHighlightOp({
 		? clipforgeData.mediaMetadataById[mediaId]
 		: null;
 
-	let bestStartS = 0;
+	let bestStartMs = 0;
 
 	if (metadata && metadata.words.length > 0 && op.strategy !== "visual-peaks") {
 		// Speech-density strategy: find the densest speech window
-		const windowMs = targetS * 1000;
 		const elementStartMs = element.trimStart;
-		const elementEndMs = element.trimStart + element.duration * 1000;
+		const elementEndMs = element.trimStart + elementDurationMs;
 		let maxWordCount = 0;
 
 		for (const word of metadata.words) {
 			if (word.start_ms < elementStartMs || word.end_ms > elementEndMs) continue;
 
 			const windowStart = word.start_ms;
-			const windowEnd = windowStart + windowMs;
+			const windowEnd = windowStart + targetMs;
 			if (windowEnd > elementEndMs) break;
 
 			const count = metadata.words.filter(
@@ -1110,34 +1109,34 @@ function applyExtractHighlightOp({
 			).length;
 			if (count > maxWordCount) {
 				maxWordCount = count;
-				bestStartS = (windowStart - elementStartMs) / 1000;
+				bestStartMs = windowStart - elementStartMs;
 			}
 		}
 	} else {
 		// Visual-peaks / fallback: bias toward early content (hook region)
 		// Place highlight starting at 10% into the clip
-		bestStartS = Math.min(elementDurationS * 0.1, elementDurationS - targetS);
+		bestStartMs = Math.min(elementDurationMs * 0.1, elementDurationMs - targetMs);
 	}
 
 	// Clamp best start
-	bestStartS = clamp(bestStartS, 0, elementDurationS - targetS);
+	bestStartMs = clamp(bestStartMs, 0, elementDurationMs - targetMs);
 
 	if (op.keep_original) {
 		// Duplicate the highlight as a new element
 		const highlightElement: TimelineElement = {
 			...element,
 			id: generateUUID(),
-			startTime: element.startTime + elementDurationS,
-			trimStart: element.trimStart + bestStartS * 1000,
-			duration: targetS,
-			trimEnd: element.trimEnd + (elementDurationS - bestStartS - targetS) * 1000,
+			startTime: element.startTime + elementDurationMs,
+			trimStart: element.trimStart + bestStartMs,
+			duration: targetMs,
+			trimEnd: element.trimEnd + (elementDurationMs - bestStartMs - targetMs),
 		};
 		(tracks[location.trackIndex].elements as TimelineElement[]).push(highlightElement);
 	} else {
 		// Trim the original to the highlight region
-		element.trimStart += bestStartS * 1000;
-		element.duration = targetS;
-		element.trimEnd += (elementDurationS - bestStartS - targetS) * 1000;
+		element.trimStart += bestStartMs;
+		element.duration = targetMs;
+		element.trimEnd += (elementDurationMs - bestStartMs - targetMs);
 	}
 }
 
