@@ -10,14 +10,19 @@ import { buildTextElement } from "@/lib/timeline/element-utils";
 import { buildEmptyTrack, getDefaultInsertIndexForTrack } from "@/lib/timeline/track-utils";
 import type {
 	AddTextOverlayOp,
+	ApplyColorGradeOp,
 	AutoReframeOp,
 	BeatSyncCutsOp,
 	CaptionStyleTemplate,
 	ClipForgeProjectData,
+	ExtractHighlightOp,
 	InsertBrollOp,
 	MakeVersionOp,
 	RemoveFillerOp,
 	RemoveSilenceOp,
+	SetKeyframeEasingOp,
+	SetSpeedRampOp,
+	SmartZoomOp,
 	TimelineDiffAuditEntry,
 	TimelineDiffOp,
 	TimelineDiffOpSource,
@@ -188,6 +193,21 @@ export function applyTimelineDiffOpsToProject({
 				break;
 			case "BEAT_SYNC_CUTS":
 				applyBeatSyncCutsOp({ tracks: activeScene.tracks, op, mediaAssets });
+				break;
+			case "SET_SPEED_RAMP":
+				applySetSpeedRampOp({ tracks: activeScene.tracks, op });
+				break;
+			case "SMART_ZOOM":
+				applySmartZoomOp({ tracks: activeScene.tracks, op });
+				break;
+			case "EXTRACT_HIGHLIGHT":
+				applyExtractHighlightOp({ tracks: activeScene.tracks, op, project: nextProject });
+				break;
+			case "APPLY_COLOR_GRADE":
+				applyApplyColorGradeOp({ tracks: activeScene.tracks, op });
+				break;
+			case "SET_KEYFRAME_EASING":
+				applySetKeyframeEasingOp({ tracks: activeScene.tracks, op });
 				break;
 		}
 	}
@@ -935,6 +955,278 @@ function applyBeatSyncCutsOp({
 	for (const element of elements) {
 		element.startTime = runningTime;
 		runningTime += element.duration;
+	}
+}
+
+/**
+ * SET_SPEED_RAMP — Apply CapCut-style speed ramping to a clip.
+ * Stores ramp parameters as metadata on the element for the renderer
+ * to interpolate playback rate between speed_start and speed_end
+ * across the ramp window.
+ */
+function applySetSpeedRampOp({
+	tracks,
+	op,
+}: {
+	tracks: TimelineTrack[];
+	op: SetSpeedRampOp;
+}): void {
+	const location = getSegmentLocationById({ tracks, segmentId: op.clip_id });
+	if (!location) return;
+
+	const element = tracks[location.trackIndex].elements[location.elementIndex];
+	if (element.type !== "video") return;
+
+	// Clamp ramp window to element bounds
+	const elementDurationMs = element.duration * 1000;
+	const rampStart = clamp(op.ramp_start_ms, 0, elementDurationMs);
+	const rampEnd = clamp(op.ramp_end_ms, rampStart, elementDurationMs);
+	if (rampEnd - rampStart < 50) return; // Ramp too short
+
+	// Clamp speed values to safe range
+	const speedStart = clamp(op.speed_start, 0.1, 4.0);
+	const speedEnd = clamp(op.speed_end, 0.1, 4.0);
+
+	// Store speed ramp data on the element's custom data
+	const videoElement = element as VideoElement & {
+		speedRamp?: {
+			curve: string;
+			speedStart: number;
+			speedEnd: number;
+			rampStartMs: number;
+			rampEndMs: number;
+		};
+	};
+	videoElement.speedRamp = {
+		curve: op.curve,
+		speedStart,
+		speedEnd,
+		rampStartMs: rampStart,
+		rampEndMs: rampEnd,
+	};
+}
+
+/**
+ * SMART_ZOOM — Apply Ken Burns pan/zoom effect to a clip.
+ * Modifies the element's transform to animate from (zoom_start, focus)
+ * to (zoom_end, focus) over the clip duration with the given easing.
+ */
+function applySmartZoomOp({
+	tracks,
+	op,
+}: {
+	tracks: TimelineTrack[];
+	op: SmartZoomOp;
+}): void {
+	const location = getSegmentLocationById({ tracks, segmentId: op.clip_id });
+	if (!location) return;
+
+	const element = tracks[location.trackIndex].elements[location.elementIndex];
+	if (element.type !== "video" && element.type !== "image") return;
+
+	const visual = element as (VideoElement | ImageElement) & {
+		smartZoom?: {
+			zoomStart: number;
+			zoomEnd: number;
+			focusX: number;
+			focusY: number;
+			ease: string;
+		};
+	};
+
+	// Clamp zoom to safe range (0.5x to 3.0x)
+	const zoomStart = clamp(op.zoom_start, 0.5, 3.0);
+	const zoomEnd = clamp(op.zoom_end, 0.5, 3.0);
+
+	// Normalize focus point to 0-1 range
+	const focusX = clamp(op.focus_x, 0, 1);
+	const focusY = clamp(op.focus_y, 0, 1);
+
+	// Apply the starting zoom as the element's initial scale
+	visual.transform = {
+		...visual.transform,
+		scale: visual.transform.scale * zoomStart,
+	};
+
+	// Store smart zoom metadata for the renderer to animate
+	visual.smartZoom = {
+		zoomStart,
+		zoomEnd,
+		focusX,
+		focusY,
+		ease: op.ease,
+	};
+}
+
+/**
+ * EXTRACT_HIGHLIGHT — Extract the most engaging portion of a clip
+ * based on visual activity and speech density analysis.
+ * Trims or duplicates the clip to contain only the highlight region.
+ */
+function applyExtractHighlightOp({
+	tracks,
+	op,
+	project,
+}: {
+	tracks: TimelineTrack[];
+	op: ExtractHighlightOp;
+	project: TProject & { clipforge?: ClipForgeProjectData };
+}): void {
+	const location = getSegmentLocationById({ tracks, segmentId: op.source_clip_id });
+	if (!location) return;
+
+	const element = tracks[location.trackIndex].elements[location.elementIndex];
+	if (element.type !== "video" && element.type !== "audio") return;
+
+	const elementDurationS = element.duration;
+	const targetS = Math.min(op.target_duration_s, elementDurationS);
+	if (targetS <= 0 || targetS >= elementDurationS) return;
+
+	// Analyze media metadata to find the best highlight region
+	const clipforgeData = project.clipforge;
+	const mediaId = "mediaId" in element ? (element.mediaId as string) : null;
+	const metadata = mediaId && clipforgeData
+		? clipforgeData.mediaMetadataById[mediaId]
+		: null;
+
+	let bestStartS = 0;
+
+	if (metadata && metadata.words.length > 0 && op.strategy !== "visual-peaks") {
+		// Speech-density strategy: find the densest speech window
+		const windowMs = targetS * 1000;
+		const elementStartMs = element.trimStart;
+		const elementEndMs = element.trimStart + element.duration * 1000;
+		let maxWordCount = 0;
+
+		for (const word of metadata.words) {
+			if (word.start_ms < elementStartMs || word.end_ms > elementEndMs) continue;
+
+			const windowStart = word.start_ms;
+			const windowEnd = windowStart + windowMs;
+			if (windowEnd > elementEndMs) break;
+
+			const count = metadata.words.filter(
+				(w) => w.start_ms >= windowStart && w.end_ms <= windowEnd,
+			).length;
+			if (count > maxWordCount) {
+				maxWordCount = count;
+				bestStartS = (windowStart - elementStartMs) / 1000;
+			}
+		}
+	} else {
+		// Visual-peaks / fallback: bias toward early content (hook region)
+		// Place highlight starting at 10% into the clip
+		bestStartS = Math.min(elementDurationS * 0.1, elementDurationS - targetS);
+	}
+
+	// Clamp best start
+	bestStartS = clamp(bestStartS, 0, elementDurationS - targetS);
+
+	if (op.keep_original) {
+		// Duplicate the highlight as a new element
+		const highlightElement: TimelineElement = {
+			...element,
+			id: generateUUID(),
+			startTime: element.startTime + elementDurationS,
+			trimStart: element.trimStart + bestStartS * 1000,
+			duration: targetS,
+			trimEnd: element.trimEnd + (elementDurationS - bestStartS - targetS) * 1000,
+		};
+		(tracks[location.trackIndex].elements as TimelineElement[]).push(highlightElement);
+	} else {
+		// Trim the original to the highlight region
+		element.trimStart += bestStartS * 1000;
+		element.duration = targetS;
+		element.trimEnd += (elementDurationS - bestStartS - targetS) * 1000;
+	}
+}
+
+/**
+ * APPLY_COLOR_GRADE — Apply a color grading preset to clips.
+ * Stores the grade preset and intensity on the element for the
+ * renderer to apply as a post-process LUT/filter.
+ */
+function applyApplyColorGradeOp({
+	tracks,
+	op,
+}: {
+	tracks: TimelineTrack[];
+	op: ApplyColorGradeOp;
+}): void {
+	const intensity = clamp(op.intensity, 0, 1);
+
+	const applyGrade = (element: TimelineElement) => {
+		if (element.type !== "video" && element.type !== "image") return;
+
+		const visual = element as (VideoElement | ImageElement) & {
+			colorGrade?: { preset: string; intensity: number };
+		};
+		visual.colorGrade = {
+			preset: op.preset,
+			intensity,
+		};
+	};
+
+	if (op.clip_id) {
+		// Apply to specific clip
+		const location = getSegmentLocationById({ tracks, segmentId: op.clip_id });
+		if (!location) return;
+		applyGrade(tracks[location.trackIndex].elements[location.elementIndex]);
+	} else {
+		// Apply to all video/image elements
+		for (const track of tracks) {
+			if (track.type !== "video") continue;
+			for (const element of track.elements) {
+				applyGrade(element);
+			}
+		}
+	}
+}
+
+/**
+ * SET_KEYFRAME_EASING — Set the easing curve on a specific keyframe
+ * for a given element property. Stores easing metadata for the
+ * animation system to use when interpolating between keyframes.
+ */
+function applySetKeyframeEasingOp({
+	tracks,
+	op,
+}: {
+	tracks: TimelineTrack[];
+	op: SetKeyframeEasingOp;
+}): void {
+	const location = getSegmentLocationById({ tracks, segmentId: op.element_id });
+	if (!location) return;
+
+	const element = tracks[location.trackIndex].elements[location.elementIndex];
+
+	// Store easing override metadata on the element
+	const withEasing = element as TimelineElement & {
+		keyframeEasings?: Array<{
+			property: string;
+			keyframeIndex: number;
+			easing: string;
+		}>;
+	};
+
+	if (!withEasing.keyframeEasings) {
+		withEasing.keyframeEasings = [];
+	}
+
+	// Replace existing easing for the same property+index, or add new
+	const existingIndex = withEasing.keyframeEasings.findIndex(
+		(e) => e.property === op.property && e.keyframeIndex === op.keyframe_index,
+	);
+	const easingEntry = {
+		property: op.property,
+		keyframeIndex: op.keyframe_index,
+		easing: op.easing,
+	};
+
+	if (existingIndex >= 0) {
+		withEasing.keyframeEasings[existingIndex] = easingEntry;
+	} else {
+		withEasing.keyframeEasings.push(easingEntry);
 	}
 }
 

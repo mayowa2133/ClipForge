@@ -50,12 +50,51 @@ The projectSummary contains rich signals. Use them:
 - imported_audio_assets / available_music_assets: use asset_id for BEAT_SYNC_CUTS source_asset_id
 - caption_style_id: tells you what caption style is currently active
 
+### Speed ramps and motion
+Speed ramps create CapCut-style slow-mo/fast-mo transitions within a clip:
+- "slow motion" → SET_SPEED_RAMP with speed_end 0.3-0.5, curve "ease-in"
+- "flash ramp" / "speed flash" → SET_SPEED_RAMP with curve "flash", fast start to slow then fast again
+- "dramatic slow-mo" → SET_SPEED_RAMP speed_start 1.0, speed_end 0.2, curve "ease-in-out"
+- Speed values: 0.1 (very slow) to 4.0 (4x fast). Normal = 1.0.
+
+### Smart zoom and Ken Burns
+SMART_ZOOM adds cinematic pan/zoom effects:
+- "zoom in" → zoom_start 1.0, zoom_end 1.3-1.5, ease "ease-in"
+- "zoom out" / "reveal" → zoom_start 1.4, zoom_end 1.0, ease "ease-out"
+- "ken burns" → slow zoom with easing, good for talking heads
+- "dramatic zoom" → zoom_start 1.0, zoom_end 2.0, ease "ease-in-out"
+- focus_x/focus_y (0-1): where to center the zoom. 0.5/0.5 = center, 0.5/0.3 = face area
+
+### AI highlight extraction
+EXTRACT_HIGHLIGHT finds the most engaging portion of a long clip:
+- "best 15 seconds" → target_duration_s 15, strategy "combined"
+- "extract the talking" → strategy "speech-density"
+- "extract the most visual part" → strategy "visual-peaks"
+- keep_original: true to keep original + append highlight, false to replace
+
+### Color grading
+APPLY_COLOR_GRADE applies cinematic LUT/color profiles:
+- Presets: warm-vintage, cool-cinematic, vibrant-social, desaturated-film, golden-hour, moody-dark
+- "warm" / "vintage" → warm-vintage, "cinematic" / "film look" → cool-cinematic
+- "vibrant" / "poppy" → vibrant-social, "moody" / "dark" → moody-dark
+- "golden hour" / "sunset" → golden-hour, "desaturated" / "muted" → desaturated-film
+- intensity 0-1: how strong the grade is. 0.7-0.85 is typical. clip_id null = apply to all.
+
+### Keyframe easing
+SET_KEYFRAME_EASING controls animation interpolation:
+- "smooth" → ease-in-out, "snappy" → ease-out, "bouncy" → bounce, "organic" → spring
+- Properties: position, scale, rotation, opacity
+- Use on text overlays and visual elements to make animations feel polished
+
 ### Multi-op creative recipes
 Complex creative requests need multiple coordinated ops:
-- "make it viral ready" → [REMOVE_SILENCE, REMOVE_FILLER, MAKE_VERSION(30s, 0.75), SET_CAPTION_STYLE(bold-center)]
+- "make it viral ready" → [REMOVE_SILENCE, REMOVE_FILLER, MAKE_VERSION(30s, 0.75), SET_CAPTION_STYLE(bold-center), APPLY_COLOR_GRADE(vibrant-social)]
 - "clean it up for youtube" → [REMOVE_FILLER, REMOVE_SILENCE(gentle), AUTO_REFRAME(16:9), SET_CAPTION_STYLE(clean-bottom)]
 - "tighten the edit" → [REMOVE_SILENCE(aggressive), MAKE_VERSION(shorter, 0.7)]
 - "match the reference style" → use reference_analysis_snapshot to pick caption style, pacing, and reframe target
+- "cinematic feel" → [APPLY_COLOR_GRADE(cool-cinematic), SMART_ZOOM(slow zoom), SET_SPEED_RAMP(ease-in-out on key moment)]
+- "make it dramatic" → [APPLY_COLOR_GRADE(moody-dark), SET_SPEED_RAMP(slow-mo on payoff), SMART_ZOOM(zoom in on hook)]
+- "extract and polish" → [EXTRACT_HIGHLIGHT(best portion), APPLY_COLOR_GRADE, REMOVE_FILLER, SET_CAPTION_STYLE]
 
 ### Autonomous pipeline awareness
 The project may have been processed by the full autonomous pipeline. Signals:

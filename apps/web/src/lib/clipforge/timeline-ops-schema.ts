@@ -17,6 +17,11 @@ export const ALLOWED_TIMELINE_OP_TYPES = new Set<TimelineDiffOp["type"]>([
 	"MAKE_VERSION",
 	"AUTO_REFRAME",
 	"BEAT_SYNC_CUTS",
+	"SET_SPEED_RAMP",
+	"SMART_ZOOM",
+	"EXTRACT_HIGHLIGHT",
+	"APPLY_COLOR_GRADE",
+	"SET_KEYFRAME_EASING",
 ]);
 
 export const ALLOWED_ASPECT_RATIO_PRESETS = new Set(["9:16", "1:1", "16:9"]);
@@ -30,6 +35,46 @@ export const ALLOWED_TEXT_OVERLAY_STYLE_IDS = new Set([
 	"bold-center",
 	"overlay-top",
 	"overlay-center",
+]);
+
+export const ALLOWED_SPEED_RAMP_CURVES = new Set([
+	"ease-in",
+	"ease-out",
+	"ease-in-out",
+	"flash",
+]);
+export const ALLOWED_SMART_ZOOM_EASINGS = new Set([
+	"linear",
+	"ease-in",
+	"ease-out",
+	"ease-in-out",
+]);
+export const ALLOWED_HIGHLIGHT_STRATEGIES = new Set([
+	"visual-peaks",
+	"speech-density",
+	"combined",
+]);
+export const ALLOWED_COLOR_GRADE_PRESETS = new Set([
+	"warm-vintage",
+	"cool-cinematic",
+	"vibrant-social",
+	"desaturated-film",
+	"golden-hour",
+	"moody-dark",
+]);
+export const ALLOWED_KEYFRAME_EASING_TYPES = new Set([
+	"linear",
+	"ease-in",
+	"ease-out",
+	"ease-in-out",
+	"spring",
+	"bounce",
+]);
+export const ALLOWED_KEYFRAME_PROPERTIES = new Set([
+	"position",
+	"scale",
+	"rotation",
+	"opacity",
 ]);
 
 export function isKnownTimelineOpType(type: unknown): type is TimelineDiffOp["type"] {

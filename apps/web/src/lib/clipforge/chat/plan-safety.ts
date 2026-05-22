@@ -265,7 +265,7 @@ function normalizeTrimClipOp({
 		state,
 		opIndex,
 		operation: "trim",
-		currentSegmentId: "clip_id" in op ? op.clip_id : "",
+		currentSegmentId: "clip_id" in op ? (op.clip_id ?? "") : "",
 		allowedKinds: ["video"],
 	});
 	if (target.clarification) return { op: null, clarification: target.clarification };

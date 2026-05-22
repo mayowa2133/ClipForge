@@ -11,7 +11,8 @@ Carry-over like "it" applies only within the same request.
 If the target is ambiguous, output [].
 Allowed op types:
 REMOVE_SILENCE, REMOVE_FILLER, TRIM_CLIP, CUT_RANGE, ADD_TEXT_OVERLAY, MOVE_SEGMENT, SWAP_SEGMENTS, DELETE_SEGMENT,
-DUPLICATE_SEGMENT, INSERT_BROLL, SET_ASPECT_RATIO, SET_CAPTION_STYLE, FIX_CAPTION_TEXT, MAKE_VERSION, AUTO_REFRAME, BEAT_SYNC_CUTS
+DUPLICATE_SEGMENT, INSERT_BROLL, SET_ASPECT_RATIO, SET_CAPTION_STYLE, FIX_CAPTION_TEXT, MAKE_VERSION, AUTO_REFRAME, BEAT_SYNC_CUTS,
+SET_SPEED_RAMP, SMART_ZOOM, EXTRACT_HIGHLIGHT, APPLY_COLOR_GRADE, SET_KEYFRAME_EASING
 
 Examples:
 User: "make it faster"
@@ -114,5 +115,47 @@ User: "snap cuts to downbeats of the music track"
 Ops: [{"type":"BEAT_SYNC_CUTS","source_asset_id":"music_1","strategy":"on-downbeat"}]
 
 User: "add a cinematic zoom effect"
-Ops: []
+Ops: [{"type":"SMART_ZOOM","clip_id":"seg_1","zoom_start":1.0,"zoom_end":1.3,"focus_x":0.5,"focus_y":0.5,"ease":"ease-in-out"}]
+
+User: "slow mo the first clip"
+Ops: [{"type":"SET_SPEED_RAMP","clip_id":"seg_1","curve":"ease-in","speed_start":1.0,"speed_end":0.3,"ramp_start_ms":0,"ramp_end_ms":2000}]
+
+User: "add a speed ramp, fast to slow"
+Ops: [{"type":"SET_SPEED_RAMP","clip_id":"seg_1","curve":"ease-out","speed_start":2.0,"speed_end":0.5,"ramp_start_ms":0,"ramp_end_ms":3000}]
+
+User: "flash speed ramp on the selected clip"
+Ops: [{"type":"SET_SPEED_RAMP","clip_id":"selected_seg","curve":"flash","speed_start":0.3,"speed_end":2.5,"ramp_start_ms":500,"ramp_end_ms":1500}]
+
+User: "zoom into the center of the second clip"
+Ops: [{"type":"SMART_ZOOM","clip_id":"seg_2","zoom_start":1.0,"zoom_end":1.5,"focus_x":0.5,"focus_y":0.5,"ease":"ease-in"}]
+
+User: "ken burns on this clip, slow zoom out"
+Ops: [{"type":"SMART_ZOOM","clip_id":"selected_seg","zoom_start":1.4,"zoom_end":1.0,"focus_x":0.5,"focus_y":0.4,"ease":"ease-in-out"}]
+
+User: "extract a 15 second highlight from the first clip"
+Ops: [{"type":"EXTRACT_HIGHLIGHT","source_clip_id":"seg_1","target_duration_s":15,"strategy":"combined","keep_original":false}]
+
+User: "pull the best 10 seconds from this clip and keep the original"
+Ops: [{"type":"EXTRACT_HIGHLIGHT","source_clip_id":"selected_seg","target_duration_s":10,"strategy":"speech-density","keep_original":true}]
+
+User: "make it look warm and vintage"
+Ops: [{"type":"APPLY_COLOR_GRADE","preset":"warm-vintage","intensity":0.8,"clip_id":null}]
+
+User: "add a cinematic color grade"
+Ops: [{"type":"APPLY_COLOR_GRADE","preset":"cool-cinematic","intensity":0.7,"clip_id":null}]
+
+User: "apply golden hour look to this clip"
+Ops: [{"type":"APPLY_COLOR_GRADE","preset":"golden-hour","intensity":0.75,"clip_id":"selected_seg"}]
+
+User: "make it moody and dark"
+Ops: [{"type":"APPLY_COLOR_GRADE","preset":"moody-dark","intensity":0.85,"clip_id":null}]
+
+User: "set the scale easing to ease-out on element abc"
+Ops: [{"type":"SET_KEYFRAME_EASING","element_id":"abc","property":"scale","easing":"ease-out","keyframe_index":0}]
+
+User: "add bounce easing to the position animation"
+Ops: [{"type":"SET_KEYFRAME_EASING","element_id":"selected_seg","property":"position","easing":"bounce","keyframe_index":0}]
+
+User: "spring easing on the opacity of this element"
+Ops: [{"type":"SET_KEYFRAME_EASING","element_id":"selected_seg","property":"opacity","easing":"spring","keyframe_index":0}]
 `.trim();

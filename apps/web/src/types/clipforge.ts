@@ -611,7 +611,12 @@ export interface TimelineDiffBaseOp {
 		| "FIX_CAPTION_TEXT"
 		| "MAKE_VERSION"
 		| "AUTO_REFRAME"
-		| "BEAT_SYNC_CUTS";
+		| "BEAT_SYNC_CUTS"
+		| "SET_SPEED_RAMP"
+		| "SMART_ZOOM"
+		| "EXTRACT_HIGHLIGHT"
+		| "APPLY_COLOR_GRADE"
+		| "SET_KEYFRAME_EASING";
 }
 
 export interface RemoveSilenceOp extends TimelineDiffBaseOp {
@@ -730,6 +735,73 @@ export interface BeatSyncCutsOp extends TimelineDiffBaseOp {
 	strategy: BeatSyncStrategy;
 }
 
+export type SpeedRampCurve = "ease-in" | "ease-out" | "ease-in-out" | "flash";
+
+export interface SetSpeedRampOp extends TimelineDiffBaseOp {
+	type: "SET_SPEED_RAMP";
+	clip_id: string;
+	curve: SpeedRampCurve;
+	speed_start: number;
+	speed_end: number;
+	ramp_start_ms: number;
+	ramp_end_ms: number;
+}
+
+export type SmartZoomEasing = "linear" | "ease-in" | "ease-out" | "ease-in-out";
+
+export interface SmartZoomOp extends TimelineDiffBaseOp {
+	type: "SMART_ZOOM";
+	clip_id: string;
+	zoom_start: number;
+	zoom_end: number;
+	focus_x: number;
+	focus_y: number;
+	ease: SmartZoomEasing;
+}
+
+export type HighlightExtractionStrategy = "visual-peaks" | "speech-density" | "combined";
+
+export interface ExtractHighlightOp extends TimelineDiffBaseOp {
+	type: "EXTRACT_HIGHLIGHT";
+	source_clip_id: string;
+	target_duration_s: number;
+	strategy: HighlightExtractionStrategy;
+	keep_original: boolean;
+}
+
+export type ColorGradePreset =
+	| "warm-vintage"
+	| "cool-cinematic"
+	| "vibrant-social"
+	| "desaturated-film"
+	| "golden-hour"
+	| "moody-dark";
+
+export interface ApplyColorGradeOp extends TimelineDiffBaseOp {
+	type: "APPLY_COLOR_GRADE";
+	preset: ColorGradePreset;
+	intensity: number;
+	clip_id: string | null;
+}
+
+export type KeyframeEasingType =
+	| "linear"
+	| "ease-in"
+	| "ease-out"
+	| "ease-in-out"
+	| "spring"
+	| "bounce";
+
+export type KeyframeProperty = "position" | "scale" | "rotation" | "opacity";
+
+export interface SetKeyframeEasingOp extends TimelineDiffBaseOp {
+	type: "SET_KEYFRAME_EASING";
+	element_id: string;
+	property: KeyframeProperty;
+	easing: KeyframeEasingType;
+	keyframe_index: number;
+}
+
 export type TimelineDiffOp =
 	| RemoveSilenceOp
 	| RemoveFillerOp
@@ -746,7 +818,12 @@ export type TimelineDiffOp =
 	| FixCaptionTextOp
 	| MakeVersionOp
 	| AutoReframeOp
-	| BeatSyncCutsOp;
+	| BeatSyncCutsOp
+	| SetSpeedRampOp
+	| SmartZoomOp
+	| ExtractHighlightOp
+	| ApplyColorGradeOp
+	| SetKeyframeEasingOp;
 
 export interface TimelineOpEditorCommand {
 	kind: "timeline-op";

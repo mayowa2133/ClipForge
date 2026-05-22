@@ -1,8 +1,10 @@
 import { calculateTotalDuration } from "@/lib/timeline";
 import type {
 	AddTextOverlayOp,
+	ApplyColorGradeOp,
 	AutoReframeOp,
 	BeatSyncCutsOp,
+	ExtractHighlightOp,
 	FixCaptionTextOp,
 	InsertBrollOp,
 	MakeVersionOp,
@@ -10,6 +12,9 @@ import type {
 	RemoveSilenceOp,
 	SetAspectRatioOp,
 	SetCaptionStyleOp,
+	SetKeyframeEasingOp,
+	SetSpeedRampOp,
+	SmartZoomOp,
 	CutRangeOp,
 	DeleteSegmentOp,
 	DuplicateSegmentOp,
@@ -26,8 +31,14 @@ import {
 	ALLOWED_BROLL_FIT_MODES,
 	ALLOWED_BROLL_LANES,
 	ALLOWED_CAPTION_POSITIONS,
+	ALLOWED_COLOR_GRADE_PRESETS,
 	ALLOWED_HIGHLIGHT_MODES,
+	ALLOWED_HIGHLIGHT_STRATEGIES,
+	ALLOWED_KEYFRAME_EASING_TYPES,
+	ALLOWED_KEYFRAME_PROPERTIES,
 	ALLOWED_OVERLAY_TEXT_POSITIONS,
+	ALLOWED_SMART_ZOOM_EASINGS,
+	ALLOWED_SPEED_RAMP_CURVES,
 	ALLOWED_TEXT_OVERLAY_STYLE_IDS,
 	isKnownTimelineOpType,
 } from "./timeline-ops-schema";
@@ -189,6 +200,16 @@ function validateSingleOp({
 			return validateAutoReframeOp({ opIndex, candidate });
 		case "BEAT_SYNC_CUTS":
 			return validateBeatSyncCutsOp({ opIndex, candidate, mediaAssetLookup });
+		case "SET_SPEED_RAMP":
+			return validateSetSpeedRampOp({ opIndex, candidate, segmentLookup });
+		case "SMART_ZOOM":
+			return validateSmartZoomOp({ opIndex, candidate, segmentLookup });
+		case "EXTRACT_HIGHLIGHT":
+			return validateExtractHighlightOp({ opIndex, candidate, segmentLookup });
+		case "APPLY_COLOR_GRADE":
+			return validateApplyColorGradeOp({ opIndex, candidate });
+		case "SET_KEYFRAME_EASING":
+			return validateSetKeyframeEasingOp({ opIndex, candidate, segmentLookup });
 	}
 }
 
@@ -1117,6 +1138,377 @@ function validateBeatSyncCutsOp({
 		type: "BEAT_SYNC_CUTS",
 		source_asset_id: candidate.source_asset_id,
 		strategy: strategy as BeatSyncCutsOp["strategy"],
+	};
+	return { ok: true, op };
+}
+
+function validateSetSpeedRampOp({
+	opIndex,
+	candidate,
+	segmentLookup,
+}: {
+	opIndex: number;
+	candidate: Record<string, unknown>;
+	segmentLookup: Map<string, SegmentLocation>;
+}): { ok: true; op: TimelineDiffOp } | { ok: false; errors: TimelineOpsValidationError[] } {
+	if (
+		typeof candidate.clip_id !== "string" ||
+		!isFiniteNumber(candidate.speed_start) ||
+		!isFiniteNumber(candidate.speed_end) ||
+		!isFiniteNumber(candidate.ramp_start_ms) ||
+		!isFiniteNumber(candidate.ramp_end_ms)
+	) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_speed_ramp",
+					message:
+						"SET_SPEED_RAMP requires clip_id, speed_start, speed_end, ramp_start_ms, and ramp_end_ms.",
+				},
+			],
+		};
+	}
+
+	if (!segmentLookup.has(candidate.clip_id)) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "clip_not_found",
+					message: `SET_SPEED_RAMP clip_id not found: ${candidate.clip_id}`,
+				},
+			],
+		};
+	}
+
+	if (candidate.speed_start < 0.1 || candidate.speed_start > 4.0 ||
+		candidate.speed_end < 0.1 || candidate.speed_end > 4.0) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_speed_range",
+					message: "SET_SPEED_RAMP speed values must be between 0.1 and 4.0.",
+				},
+			],
+		};
+	}
+
+	if (candidate.ramp_start_ms < 0 || candidate.ramp_end_ms <= candidate.ramp_start_ms) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_ramp_range",
+					message: "SET_SPEED_RAMP requires ramp_start_ms>=0 and ramp_end_ms>ramp_start_ms.",
+				},
+			],
+		};
+	}
+
+	const curve =
+		typeof candidate.curve === "string" && ALLOWED_SPEED_RAMP_CURVES.has(candidate.curve)
+			? candidate.curve
+			: "ease-in-out";
+
+	const op: SetSpeedRampOp = {
+		type: "SET_SPEED_RAMP",
+		clip_id: candidate.clip_id,
+		curve: curve as SetSpeedRampOp["curve"],
+		speed_start: candidate.speed_start,
+		speed_end: candidate.speed_end,
+		ramp_start_ms: candidate.ramp_start_ms,
+		ramp_end_ms: candidate.ramp_end_ms,
+	};
+	return { ok: true, op };
+}
+
+function validateSmartZoomOp({
+	opIndex,
+	candidate,
+	segmentLookup,
+}: {
+	opIndex: number;
+	candidate: Record<string, unknown>;
+	segmentLookup: Map<string, SegmentLocation>;
+}): { ok: true; op: TimelineDiffOp } | { ok: false; errors: TimelineOpsValidationError[] } {
+	if (
+		typeof candidate.clip_id !== "string" ||
+		!isFiniteNumber(candidate.zoom_start) ||
+		!isFiniteNumber(candidate.zoom_end) ||
+		!isFiniteNumber(candidate.focus_x) ||
+		!isFiniteNumber(candidate.focus_y)
+	) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_smart_zoom",
+					message:
+						"SMART_ZOOM requires clip_id, zoom_start, zoom_end, focus_x, and focus_y.",
+				},
+			],
+		};
+	}
+
+	if (!segmentLookup.has(candidate.clip_id)) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "clip_not_found",
+					message: `SMART_ZOOM clip_id not found: ${candidate.clip_id}`,
+				},
+			],
+		};
+	}
+
+	if (candidate.zoom_start < 0.5 || candidate.zoom_start > 3.0 ||
+		candidate.zoom_end < 0.5 || candidate.zoom_end > 3.0) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_zoom_range",
+					message: "SMART_ZOOM zoom values must be between 0.5 and 3.0.",
+				},
+			],
+		};
+	}
+
+	if (candidate.focus_x < 0 || candidate.focus_x > 1 ||
+		candidate.focus_y < 0 || candidate.focus_y > 1) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_focus_point",
+					message: "SMART_ZOOM focus_x and focus_y must be between 0 and 1.",
+				},
+			],
+		};
+	}
+
+	const ease =
+		typeof candidate.ease === "string" && ALLOWED_SMART_ZOOM_EASINGS.has(candidate.ease)
+			? candidate.ease
+			: "ease-in-out";
+
+	const op: SmartZoomOp = {
+		type: "SMART_ZOOM",
+		clip_id: candidate.clip_id,
+		zoom_start: candidate.zoom_start,
+		zoom_end: candidate.zoom_end,
+		focus_x: candidate.focus_x,
+		focus_y: candidate.focus_y,
+		ease: ease as SmartZoomOp["ease"],
+	};
+	return { ok: true, op };
+}
+
+function validateExtractHighlightOp({
+	opIndex,
+	candidate,
+	segmentLookup,
+}: {
+	opIndex: number;
+	candidate: Record<string, unknown>;
+	segmentLookup: Map<string, SegmentLocation>;
+}): { ok: true; op: TimelineDiffOp } | { ok: false; errors: TimelineOpsValidationError[] } {
+	if (
+		typeof candidate.source_clip_id !== "string" ||
+		!isFiniteNumber(candidate.target_duration_s) ||
+		candidate.target_duration_s <= 0
+	) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_extract_highlight",
+					message:
+						"EXTRACT_HIGHLIGHT requires source_clip_id and target_duration_s>0.",
+				},
+			],
+		};
+	}
+
+	if (!segmentLookup.has(candidate.source_clip_id)) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "clip_not_found",
+					message: `EXTRACT_HIGHLIGHT source_clip_id not found: ${candidate.source_clip_id}`,
+				},
+			],
+		};
+	}
+
+	const strategy =
+		typeof candidate.strategy === "string" &&
+		ALLOWED_HIGHLIGHT_STRATEGIES.has(candidate.strategy)
+			? candidate.strategy
+			: "combined";
+
+	const keepOriginal =
+		typeof candidate.keep_original === "boolean" ? candidate.keep_original : false;
+
+	const op: ExtractHighlightOp = {
+		type: "EXTRACT_HIGHLIGHT",
+		source_clip_id: candidate.source_clip_id,
+		target_duration_s: candidate.target_duration_s,
+		strategy: strategy as ExtractHighlightOp["strategy"],
+		keep_original: keepOriginal,
+	};
+	return { ok: true, op };
+}
+
+function validateApplyColorGradeOp({
+	opIndex,
+	candidate,
+}: {
+	opIndex: number;
+	candidate: Record<string, unknown>;
+}): { ok: true; op: TimelineDiffOp } | { ok: false; errors: TimelineOpsValidationError[] } {
+	if (
+		typeof candidate.preset !== "string" ||
+		!ALLOWED_COLOR_GRADE_PRESETS.has(candidate.preset)
+	) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_color_grade_preset",
+					message:
+						"APPLY_COLOR_GRADE preset must be one of warm-vintage, cool-cinematic, vibrant-social, desaturated-film, golden-hour, moody-dark.",
+				},
+			],
+		};
+	}
+
+	if (!isFiniteNumber(candidate.intensity) || candidate.intensity < 0 || candidate.intensity > 1) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_color_grade_intensity",
+					message: "APPLY_COLOR_GRADE intensity must be between 0 and 1.",
+				},
+			],
+		};
+	}
+
+	if (candidate.clip_id !== null && typeof candidate.clip_id !== "string") {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_color_grade_clip_id",
+					message: "APPLY_COLOR_GRADE clip_id must be a string or null.",
+				},
+			],
+		};
+	}
+
+	const op: ApplyColorGradeOp = {
+		type: "APPLY_COLOR_GRADE",
+		preset: candidate.preset as ApplyColorGradeOp["preset"],
+		intensity: candidate.intensity,
+		clip_id: (candidate.clip_id as string) ?? null,
+	};
+	return { ok: true, op };
+}
+
+function validateSetKeyframeEasingOp({
+	opIndex,
+	candidate,
+	segmentLookup,
+}: {
+	opIndex: number;
+	candidate: Record<string, unknown>;
+	segmentLookup: Map<string, SegmentLocation>;
+}): { ok: true; op: TimelineDiffOp } | { ok: false; errors: TimelineOpsValidationError[] } {
+	if (
+		typeof candidate.element_id !== "string" ||
+		typeof candidate.property !== "string" ||
+		typeof candidate.easing !== "string" ||
+		!isFiniteNumber(candidate.keyframe_index) ||
+		candidate.keyframe_index < 0
+	) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_keyframe_easing",
+					message:
+						"SET_KEYFRAME_EASING requires element_id, property, easing, and keyframe_index>=0.",
+				},
+			],
+		};
+	}
+
+	if (!segmentLookup.has(candidate.element_id)) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "element_not_found",
+					message: `SET_KEYFRAME_EASING element_id not found: ${candidate.element_id}`,
+				},
+			],
+		};
+	}
+
+	if (!ALLOWED_KEYFRAME_PROPERTIES.has(candidate.property)) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_keyframe_property",
+					message:
+						"SET_KEYFRAME_EASING property must be position, scale, rotation, or opacity.",
+				},
+			],
+		};
+	}
+
+	if (!ALLOWED_KEYFRAME_EASING_TYPES.has(candidate.easing)) {
+		return {
+			ok: false,
+			errors: [
+				{
+					opIndex,
+					code: "invalid_easing_type",
+					message:
+						"SET_KEYFRAME_EASING easing must be linear, ease-in, ease-out, ease-in-out, spring, or bounce.",
+				},
+			],
+		};
+	}
+
+	const op: SetKeyframeEasingOp = {
+		type: "SET_KEYFRAME_EASING",
+		element_id: candidate.element_id,
+		property: candidate.property as SetKeyframeEasingOp["property"],
+		easing: candidate.easing as SetKeyframeEasingOp["easing"],
+		keyframe_index: Math.floor(candidate.keyframe_index),
 	};
 	return { ok: true, op };
 }
