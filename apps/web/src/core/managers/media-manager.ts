@@ -13,6 +13,7 @@ import {
 } from "@/lib/media/media-compatibility";
 import { analyzeBeatGridFromFile } from "@/lib/media/beat-analysis";
 import { analyzeVisualActivityFromFile } from "@/lib/media/visual-analysis";
+import { analyzeGazePatternsFromFile } from "@/lib/media/gaze-analysis";
 import { generateFreezeFrameFile } from "@/lib/media/processing";
 import { buildImportedMusicRights } from "@/lib/library/music-rights";
 
@@ -571,6 +572,62 @@ export class MediaManager {
 			compatibility: nextAsset.compatibility,
 			beatAnalysis: nextAsset.beatAnalysis,
 			visualAnalysis: nextAsset.visualAnalysis,
+			derived: nextAsset.derived,
+		};
+		await storageService.saveMediaAssetMetadata({
+			projectId,
+			metadata,
+		});
+
+		return nextAsset;
+	}
+
+	async analyzeGazePatterns({
+		mediaId,
+	}: {
+		mediaId: string;
+	}): Promise<MediaAsset | null> {
+		const projectId =
+			this.currentProjectId ?? this.editor.project.getActive()?.metadata.id ?? null;
+		if (!projectId) {
+			throw new Error("Open a project before analyzing footage.");
+		}
+
+		const index = this.assets.findIndex((asset) => asset.id === mediaId);
+		if (index < 0) {
+			throw new Error("Video asset not found.");
+		}
+
+		const asset = this.assets[index] as MediaAsset;
+		if (asset.type !== "video") {
+			throw new Error("Gaze analysis currently supports imported video assets.");
+		}
+
+		const gazeAnalysis = await analyzeGazePatternsFromFile({ file: asset.file });
+		const nextAsset: MediaAsset = {
+			...asset,
+			gazeAnalysis,
+		};
+		this.assets[index] = nextAsset;
+		this.notify();
+
+		const metadata: MediaAssetData = {
+			id: nextAsset.id,
+			name: nextAsset.name,
+			type: nextAsset.type,
+			size: nextAsset.file.size,
+			lastModified: nextAsset.file.lastModified,
+			width: nextAsset.width,
+			height: nextAsset.height,
+			duration: nextAsset.duration,
+			fps: nextAsset.fps,
+			thumbnailUrl: nextAsset.thumbnailUrl,
+			ephemeral: nextAsset.ephemeral,
+			mimeType: nextAsset.mimeType ?? nextAsset.file.type ?? "",
+			compatibility: nextAsset.compatibility,
+			beatAnalysis: nextAsset.beatAnalysis,
+			visualAnalysis: nextAsset.visualAnalysis,
+			gazeAnalysis: nextAsset.gazeAnalysis,
 			derived: nextAsset.derived,
 		};
 		await storageService.saveMediaAssetMetadata({

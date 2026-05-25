@@ -32,6 +32,25 @@ export interface MediaVisualAnalysis {
 	version: 1;
 }
 
+export type GazeCategory = "camera" | "off-camera" | "no-face";
+
+export interface MediaGazeWindow {
+	startTime: number;
+	endTime: number;
+	gazeScore: number;
+	category: GazeCategory;
+	confidence: number;
+}
+
+export interface MediaGazeAnalysis {
+	windows: MediaGazeWindow[];
+	cameraLookRatio: number;
+	avgGazeScore: number;
+	samplingIntervalMs: number;
+	analyzedAt: string | null;
+	version: 1;
+}
+
 export type MusicSourceType =
 	| "bundled"
 	| "user-imported"

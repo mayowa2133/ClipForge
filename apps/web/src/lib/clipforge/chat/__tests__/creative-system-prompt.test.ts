@@ -141,6 +141,9 @@ describe("buildCreativeSystemPrompt", () => {
 					beat_marker_count: 32,
 					scene_cut_count: 0,
 					activity_window_count: 0,
+					gaze_window_count: 0,
+					camera_look_ratio: null,
+					gaze_windows: [],
 				},
 			],
 		});

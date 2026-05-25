@@ -1492,3 +1492,86 @@ describe("HeuristicChatOpsProvider", () => {
 		]);
 	});
 });
+
+describe("planGazeCutClause", () => {
+	const gazeMarker = {
+		asset_id: "clip-1",
+		name: "interview.mp4",
+		beat_marker_count: 0,
+		scene_cut_count: 0,
+		activity_window_count: 0,
+		gaze_window_count: 4,
+		camera_look_ratio: 0.55,
+		gaze_windows: [
+			{ start_s: 0, end_s: 2, category: "camera" as const, confidence: 0.8 },
+			{ start_s: 2, end_s: 4, category: "off-camera" as const, confidence: 0.75 },
+			{ start_s: 4, end_s: 6, category: "off-camera" as const, confidence: 0.7 },
+			{ start_s: 6, end_s: 8, category: "camera" as const, confidence: 0.8 },
+		],
+	};
+
+	test("cuts the off-camera window after a transcript phrase", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		// "bro" ends at 1450ms (1.45s) — the first off-camera window after 1.45s
+		// is [2s, 4s], then extended through consecutive [4s, 6s] → merged [2s, 6s]
+		const result = await proposeWithSummary({
+			provider,
+			userText: "cut where I'm looking down after I say 'bro'",
+			projectSummary: buildSummary({ media_analysis_markers: [gazeMarker] }),
+		});
+
+		expect(result.ops).toEqual([
+			{
+				type: "CUT_RANGE",
+				start_ms: 2000,
+				end_ms: 6000,
+			},
+		]);
+	});
+
+	test("returns no ops when phrase is not in transcript", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await proposeWithSummary({
+			provider,
+			userText: "cut where I'm looking away after I say 'nonexistent phrase'",
+			projectSummary: buildSummary({ media_analysis_markers: [gazeMarker] }),
+		});
+		expect(result.ops).toEqual([]);
+	});
+
+	test("returns no ops when no gaze analysis is available", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await propose({
+			provider,
+			userText: "cut where I'm looking down after I say 'bro'",
+		});
+		expect(result.ops).toEqual([]);
+	});
+
+	test("returns no ops when there is no off-camera window after the phrase", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		// "welcome" ends at 1900ms (1.9s); only on-camera windows exist after that point
+		const result = await proposeWithSummary({
+			provider,
+			userText: "cut where I'm still looking away after I say 'welcome'",
+			projectSummary: buildSummary({
+				media_analysis_markers: [
+					{
+						asset_id: "clip-1",
+						name: "interview.mp4",
+						beat_marker_count: 0,
+						scene_cut_count: 0,
+						activity_window_count: 0,
+						gaze_window_count: 2,
+						camera_look_ratio: 0.9,
+						gaze_windows: [
+							{ start_s: 0, end_s: 1.5, category: "off-camera" as const, confidence: 0.7 },
+							{ start_s: 2, end_s: 50, category: "camera" as const, confidence: 0.85 },
+						],
+					},
+				],
+			}),
+		});
+		expect(result.ops).toEqual([]);
+	});
+});

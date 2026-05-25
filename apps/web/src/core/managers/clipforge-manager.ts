@@ -1200,7 +1200,7 @@ export class ClipForgeManager {
 				.getAssets()
 				.filter((a) => a.type === "video" && !a.ephemeral);
 
-			// Run visual analysis on any clips that lack it
+			// Run visual and gaze analysis on any clips that lack it
 			for (const asset of videoAssets) {
 				if (!asset.visualAnalysis) {
 					try {
@@ -1209,6 +1209,15 @@ export class ClipForgeManager {
 						});
 					} catch {
 						// Individual asset analysis failure is non-fatal
+					}
+				}
+				if (!asset.gazeAnalysis) {
+					try {
+						await this.editor.media.analyzeGazePatterns({
+							mediaId: asset.id,
+						});
+					} catch {
+						// Individual asset gaze analysis failure is non-fatal
 					}
 				}
 			}
@@ -1779,6 +1788,18 @@ export class ClipForgeManager {
 					// Degrade gracefully for pool setup.
 				}
 			}
+			if (!hydratedAsset.gazeAnalysis) {
+				try {
+					const analyzedAsset = await this.editor.media.analyzeGazePatterns({
+						mediaId: asset.id,
+					});
+					if (analyzedAsset?.type === "video") {
+						hydratedAsset = analyzedAsset as MediaAsset & { type: "video" };
+					}
+				} catch {
+					// Gaze analysis is optional for source matching.
+				}
+			}
 			if (!hydratedAsset.beatAnalysis) {
 				try {
 					const analyzedAsset = await this.editor.media.analyzeBeatGrid({
@@ -1935,6 +1956,16 @@ export class ClipForgeManager {
 				// Gracefully degrade when visual analysis is unavailable.
 			}
 		}
+		if (!asset.gazeAnalysis) {
+			try {
+				asset =
+					(await this.editor.media.analyzeGazePatterns({
+						mediaId: resolvedAssetId,
+					})) ?? asset;
+			} catch {
+				// Gracefully degrade when gaze analysis is unavailable.
+			}
+		}
 		if (!asset.beatAnalysis) {
 			try {
 				asset =
@@ -2070,6 +2101,13 @@ export class ClipForgeManager {
 				.find((candidate) => candidate.id === mediaId);
 			if (asset?.type === "video" && !asset.visualAnalysis) {
 				await this.editor.media.analyzeVisualActivity({ mediaId });
+			}
+			if (asset?.type === "video" && !asset.gazeAnalysis) {
+				try {
+					await this.editor.media.analyzeGazePatterns({ mediaId });
+				} catch {
+					// Non-fatal
+				}
 			}
 		}
 

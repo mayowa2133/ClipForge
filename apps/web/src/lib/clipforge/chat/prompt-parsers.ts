@@ -14,6 +14,12 @@ export interface ParsedPhraseCutRequest {
 	occurrence: number;
 }
 
+export interface ParsedGazeCutRequest {
+	/** Transcript phrase after which the gaze cut should be applied. */
+	afterPhrase: string;
+	occurrence: number;
+}
+
 export interface ParsedPhraseBrollRequest {
 	assetName: string;
 	phrase: string;
@@ -443,4 +449,40 @@ export function parseSegmentReferenceText({
 	}
 
 	return null;
+}
+
+/**
+ * Parse a request to cut/trim the section where the speaker is looking away
+ * (down, off-camera, etc.) after they say a specific phrase.
+ *
+ * Matches patterns like:
+ *   "cut where I'm looking down after I say 'X'"
+ *   "remove the part where I'm still looking away after 'X'"
+ *   "trim where I'm still looking down after saying 'X'"
+ */
+export function parseGazeCutRequest({
+	text,
+}: {
+	text: string;
+}): ParsedGazeCutRequest | null {
+	// Must mention gaze-direction behaviour
+	const hasGazeSignal =
+		/\b(?:looking\s+(?:down|away|off[- ]?camera|off\s+camera)|not\s+looking\s+(?:at\s+(?:the\s+)?camera|up)|still\s+looking\s+(?:down|away))\b/i.test(
+			text,
+		);
+	if (!hasGazeSignal) return null;
+
+	// Must reference a phrase with quotes
+	const phraseMatch = text.match(/["']([^"']+)["']/);
+	if (!phraseMatch) return null;
+
+	// Must have "after" reference to a phrase
+	const hasAfterSignal =
+		/\bafter\s+(?:i\s+)?(?:say|said|saying)\b|\bafter\s+["']/i.test(text);
+	if (!hasAfterSignal) return null;
+
+	return {
+		afterPhrase: phraseMatch[1].trim(),
+		occurrence: parseOrdinalOccurrence({ text: text.toLowerCase() }),
+	};
 }

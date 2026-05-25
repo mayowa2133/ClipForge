@@ -2,6 +2,7 @@ import {
 	findPhraseOccurrences,
 	resolvePhraseWindow,
 } from "@/lib/clipforge/phrase-resolution";
+import { findOffCameraSpanAfter } from "@/lib/media/gaze-analysis";
 import { resolveMediaAssetByName } from "@/lib/clipforge/media-resolver";
 import {
 	createEmptyResolutionState,
@@ -30,6 +31,7 @@ import {
 	parseDeleteSegmentRequest,
 	parseDuplicateSegmentRequest,
 	parseFixCaptionTextRequest,
+	parseGazeCutRequest,
 	parseMoveSegmentRequest,
 	parsePhraseBrollRequest,
 	parsePhraseCutRequest,
@@ -734,6 +736,7 @@ function planDirectCommandClause({
 		planCaptionToneClause,
 		planSeparateAudioClause,
 		planFreezeFrameClause,
+		planGazeCutClause,
 		planFinishingLookClause,
 		planEffectClause,
 		planOverlayPresetClause,
@@ -2096,6 +2099,80 @@ function planFreezeFrameClause(args: DirectPlannerArgs): DirectPlanResult {
 			},
 		],
 		state: updateResolutionStateFromSegment(args.state, target.segment),
+		clarification: null,
+	};
+}
+
+/**
+ * Handle requests like "cut where I'm looking down after I say 'X'".
+ * Uses gaze analysis windows stored in media_analysis_markers and
+ * cross-references them with transcript timestamps to find the exact span.
+ */
+function planGazeCutClause(args: DirectPlannerArgs): DirectPlanResult {
+	const { clause, projectSummary, state } = args;
+	const request = parseGazeCutRequest({ text: clause });
+	if (!request) return emptyDirectPlan({ state });
+
+	// Locate the phrase in the timeline transcript
+	const phraseMatches = findPhraseOccurrences({
+		projectSummary,
+		phrase: request.afterPhrase,
+	});
+	const phraseMatch = phraseMatches.find(
+		(m) => m.occurrence === request.occurrence,
+	);
+	if (!phraseMatch) {
+		// Phrase not found in transcript — bail out so the LLM can handle it
+		return emptyDirectPlan({ state });
+	}
+
+	// Find the first asset that has gaze analysis data
+	const markerWithGaze = projectSummary.media_analysis_markers.find(
+		(marker) => marker.gaze_window_count > 0 && marker.gaze_windows.length > 0,
+	);
+	if (!markerWithGaze) return emptyDirectPlan({ state });
+
+	// Convert phrase end time (ms) to seconds for gaze window comparison
+	const afterSeconds = phraseMatch.end_ms / 1000;
+
+	// Rebuild a minimal MediaGazeAnalysis-compatible structure from the summary
+	const span = findOffCameraSpanAfter({
+		gazeAnalysis: {
+			windows: markerWithGaze.gaze_windows.map((w) => ({
+				startTime: w.start_s,
+				endTime: w.end_s,
+				gazeScore: w.category === "camera" ? 1 : 0,
+				category: w.category,
+				confidence: w.confidence,
+			})),
+			cameraLookRatio: markerWithGaze.camera_look_ratio ?? 0,
+			avgGazeScore: 0,
+			samplingIntervalMs: 500,
+			analyzedAt: null,
+			version: 1,
+		},
+		afterSeconds,
+		minConfidence: 0.35,
+	});
+
+	if (!span) return emptyDirectPlan({ state });
+
+	const startMs = Math.round(span.startTime * 1000);
+	const endMs = Math.round(span.endTime * 1000);
+	const totalMs = Math.round(projectSummary.total_duration_s * 1000);
+
+	if (endMs <= startMs || startMs >= totalMs) return emptyDirectPlan({ state });
+
+	return {
+		ops: [
+			{
+				type: "CUT_RANGE",
+				start_ms: startMs,
+				end_ms: Math.min(endMs, totalMs),
+			},
+		],
+		commands: [],
+		state,
 		clarification: null,
 	};
 }

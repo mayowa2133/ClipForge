@@ -23,6 +23,7 @@ import type {
 } from "@/types/templates";
 import type {
 	ChatSegmentKind,
+	ProjectGazeWindowSummary,
 	ProjectMediaAnalysisMarkerSummary,
 	ProjectSceneSummary,
 	ProjectSegmentSummary,
@@ -594,20 +595,36 @@ function buildMediaAnalysisMarkers({
 }): ProjectMediaAnalysisMarkerSummary[] {
 	return mediaAssets
 		.filter((asset) => !asset.ephemeral)
-			.map((asset) => ({
+		.map((asset) => {
+			const gazeWindows: ProjectGazeWindowSummary[] =
+				asset.gazeAnalysis?.windows
+					.filter((w) => w.category !== "no-face" && w.confidence >= 0.35)
+					.map((w) => ({
+						start_s: w.startTime,
+						end_s: w.endTime,
+						category: w.category as "camera" | "off-camera",
+						confidence: w.confidence,
+					})) ?? [];
+
+			return {
 				asset_id: asset.id,
 				name: asset.name,
 				beat_marker_count: asset.beatAnalysis?.beats.length ?? 0,
 				scene_cut_count: asset.visualAnalysis?.sceneCuts.length ?? 0,
 				activity_window_count: asset.visualAnalysis?.activityWindows.length ?? 0,
-			}))
-			.filter(
-				(marker) =>
-					marker.beat_marker_count > 0 ||
-					marker.scene_cut_count > 0 ||
-					marker.activity_window_count > 0,
-			)
-			.sort((left, right) => left.name.localeCompare(right.name));
+				gaze_window_count: gazeWindows.length,
+				camera_look_ratio: asset.gazeAnalysis?.cameraLookRatio ?? null,
+				gaze_windows: gazeWindows,
+			};
+		})
+		.filter(
+			(marker) =>
+				marker.beat_marker_count > 0 ||
+				marker.scene_cut_count > 0 ||
+				marker.activity_window_count > 0 ||
+				marker.gaze_window_count > 0,
+		)
+		.sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function rankTimelineWords({

@@ -46,9 +46,17 @@ The projectSummary contains rich signals. Use them:
 - pause_stats.total_pause_ms: if > 20% of duration, REMOVE_SILENCE is likely needed
 - segments: look at ordinals to identify "the first clip", "the third segment" etc.
 - timeline_words: search for quoted phrases to find timestamps for CUT_RANGE or INSERT_BROLL
-- media_analysis_markers: if beat_marker_count > 0, BEAT_SYNC_CUTS is available
+- media_analysis_markers: if beat_marker_count > 0, BEAT_SYNC_CUTS is available; if gaze_window_count > 0, gaze-based cuts are available — gaze_windows contains time spans with category "camera" or "off-camera" and confidence scores
 - imported_audio_assets / available_music_assets: use asset_id for BEAT_SYNC_CUTS source_asset_id
 - caption_style_id: tells you what caption style is currently active
+
+### Gaze-based cuts (visual engagement editing)
+When gaze_window_count > 0 in media_analysis_markers, you can respond to requests about where the speaker is looking:
+- "cut where I'm looking down after I say 'X'" → CUT_RANGE: find timeline_words match for 'X', then use gaze_windows to find the first off-camera window after that timestamp
+- "remove the part where I'm still looking away after 'X'" → same approach, gaze-based CUT_RANGE
+- gaze_windows entries: {start_s, end_s, category: "camera"|"off-camera", confidence}
+- Only use off-camera windows with confidence ≥ 0.35 — low-confidence windows may be b-roll or text frames
+- If no gaze data is available, explain that gaze analysis needs to run on the video first
 
 ### Speed ramps and motion
 Speed ramps create CapCut-style slow-mo/fast-mo transitions within a clip:
@@ -221,6 +229,28 @@ function buildProjectSignals({
 	);
 	if (hasBeats) {
 		signals.push("- Beat markers available — BEAT_SYNC_CUTS is possible");
+	}
+
+	// Gaze analysis availability
+	const gazeMarkers = (projectSummary.media_analysis_markers ?? []).filter(
+		(m) => m.gaze_window_count > 0,
+	);
+	if (gazeMarkers.length > 0) {
+		const avgCameraRatio =
+			gazeMarkers
+				.map((m) => m.camera_look_ratio ?? 0)
+				.reduce((sum, r) => sum + r, 0) / gazeMarkers.length;
+		const offCameraWindows = gazeMarkers.flatMap((m) =>
+			m.gaze_windows.filter((w) => w.category === "off-camera"),
+		);
+		signals.push(
+			`- Gaze analysis available — ${Math.round(avgCameraRatio * 100)}% on-camera engagement across ${gazeMarkers.length} asset(s)`,
+		);
+		if (offCameraWindows.length > 0) {
+			signals.push(
+				`- ${offCameraWindows.length} off-camera window(s) detected — gaze-based CUT_RANGE requests are supported`,
+			);
+		}
 	}
 	const musicCount =
 		(projectSummary.available_music_assets?.length ?? 0) +

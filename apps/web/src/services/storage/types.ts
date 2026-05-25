@@ -5,6 +5,7 @@ import type {
 	MusicRightsProfile,
 	MusicSourceType,
 	MediaVisualAnalysis,
+	MediaGazeAnalysis,
 	MediaType,
 } from "@/types/assets";
 import type {
@@ -41,6 +42,7 @@ export interface MediaAssetData {
 	compatibility?: MediaCompatibilitySnapshot;
 	beatAnalysis?: MediaBeatAnalysis;
 	visualAnalysis?: MediaVisualAnalysis;
+	gazeAnalysis?: MediaGazeAnalysis;
 	derived?: DerivedMediaOrigin;
 	musicSourceType?: MusicSourceType;
 	rightsProfile?: MusicRightsProfile;

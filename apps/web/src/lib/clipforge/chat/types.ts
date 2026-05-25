@@ -59,12 +59,22 @@ export interface ProjectTemplateSummary {
 	kind: "project-kit" | "scene-recipe";
 }
 
+export interface ProjectGazeWindowSummary {
+	start_s: number;
+	end_s: number;
+	category: "camera" | "off-camera";
+	confidence: number;
+}
+
 export interface ProjectMediaAnalysisMarkerSummary {
 	asset_id: string;
 	name: string;
 	beat_marker_count: number;
 	scene_cut_count: number;
 	activity_window_count: number;
+	gaze_window_count: number;
+	camera_look_ratio: number | null;
+	gaze_windows: ProjectGazeWindowSummary[];
 }
 
 export interface ProjectAudioLibraryAssetSummary {
