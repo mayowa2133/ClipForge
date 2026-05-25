@@ -7,6 +7,11 @@ let _db: ReturnType<typeof drizzle> | null = null;
 
 function getDb() {
 	if (!_db) {
+		if (!webEnv.DATABASE_URL) {
+			throw new Error(
+				"DATABASE_URL is required. Set CLIPFORGE_MODE=cloud or provide a DATABASE_URL.",
+			);
+		}
 		const client = postgres(webEnv.DATABASE_URL);
 		_db = drizzle(client, { schema });
 	}

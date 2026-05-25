@@ -44,14 +44,37 @@ export async function runWhisperCliTranscription({
 
 	const tempDir = await mkdtemp(join(tmpdir(), "clipforge-whisper-"));
 	const filePath = join(tempDir, file.name || "input-media");
-	const outputDir = join(tempDir, "out");
 
 	try {
 		await writeFile(filePath, Buffer.from(await file.arrayBuffer()));
+		return await runWhisperOnPath({ filePath, language });
+	} finally {
+		await rm(tempDir, { recursive: true, force: true });
+	}
+}
+
+/**
+ * Run Whisper CLI on a file that already exists on disk.
+ * Shared by both the API route (via runWhisperCliTranscription) and the
+ * WhisperCliTranscriptionEngine worker.
+ */
+export async function runWhisperOnPath({
+	filePath,
+	language,
+	model,
+}: {
+	filePath: string;
+	language?: string;
+	model?: string;
+}): Promise<ClipTranscriptionResult> {
+	const outputDir = await mkdtemp(join(tmpdir(), "clipforge-whisper-out-"));
+
+	try {
 		await mkdir(outputDir, { recursive: true });
 
 		const cliBin = process.env.CLIPFORGE_WHISPER_CLI_BIN || "whisper";
-		const model = process.env.CLIPFORGE_WHISPER_CLI_MODEL || "small";
+		const whisperModel =
+			model || process.env.CLIPFORGE_WHISPER_CLI_MODEL || "small";
 		const extraArgs = (process.env.CLIPFORGE_WHISPER_CLI_ARGS || "")
 			.split(/\s+/)
 			.map((value) => value.trim())
@@ -59,11 +82,13 @@ export async function runWhisperCliTranscription({
 		const args = [
 			filePath,
 			"--model",
-			model,
+			whisperModel,
 			"--output_format",
 			"json",
 			"--output_dir",
 			outputDir,
+			"--word_timestamps",
+			"True",
 			...extraArgs,
 		];
 		if (language) {
@@ -84,12 +109,12 @@ export async function runWhisperCliTranscription({
 
 		const outputFilePath = join(
 			outputDir,
-			`${basename(file.name || "input-media").replace(/\.[^.]+$/, "")}.json`,
+			`${basename(filePath).replace(/\.[^.]+$/, "")}.json`,
 		);
 		const raw = await readFile(outputFilePath, "utf8");
 		return parseWhisperCliJson({ raw });
 	} finally {
-		await rm(tempDir, { recursive: true, force: true });
+		await rm(outputDir, { recursive: true, force: true });
 	}
 }
 

@@ -4,6 +4,7 @@ import {
 	runTranscriptionWorkerLoop,
 } from "../src/lib/clipforge/production/worker/transcription-worker";
 import { ModalTranscriptionEngine } from "../src/lib/clipforge/production/worker/transcription-modal";
+import { WhisperCliTranscriptionEngine } from "../src/lib/clipforge/production/worker/transcription-whisper-cli";
 import { HttpWorkerClient } from "../src/lib/clipforge/production/worker/http-client";
 
 function readEnv(name: string): string | null {
@@ -93,8 +94,12 @@ function buildEngine(): TranscriptionEngine {
 			timeoutMs,
 		});
 	}
+	if (provider === "whisper-cli") {
+		const model = readEnv("CLIPFORGE_WHISPER_CLI_MODEL") ?? "base";
+		return new WhisperCliTranscriptionEngine({ model });
+	}
 	throw new Error(
-		`Unknown CLIPFORGE_TRANSCRIBER=${provider}. Supported: stub, modal.`,
+		`Unknown CLIPFORGE_TRANSCRIBER=${provider}. Supported: stub, modal, whisper-cli.`,
 	);
 }
 
