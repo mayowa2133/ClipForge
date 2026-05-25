@@ -472,17 +472,31 @@ export function parseGazeCutRequest({
 		);
 	if (!hasGazeSignal) return null;
 
-	// Must reference a phrase with quotes
-	const phraseMatch = text.match(/["']([^"']+)["']/);
-	if (!phraseMatch) return null;
-
 	// Must have "after" reference to a phrase
 	const hasAfterSignal =
 		/\bafter\s+(?:i\s+)?(?:say|said|saying)\b|\bafter\s+["']/i.test(text);
 	if (!hasAfterSignal) return null;
 
+	// Extract the quoted phrase. Prefer the phrase that immediately follows
+	// "say/said/saying" to avoid false matches on apostrophes in contractions
+	// (e.g. "I'm looking down after I say 'hey'" — 'I'm' has an apostrophe
+	// that would otherwise be the first match).
+	const afterSayMatch = text.match(
+		/\bafter\s+(?:i\s+)?(?:say|said|saying)\s+["']([^"']{1,80})["']/i,
+	);
+	const afterQuoteMatch = text.match(/\bafter\s+["']([^"']{1,80})["']/i);
+	// Fall back to any quoted span that's ≤ 80 chars (avoid long contraction traps)
+	const anyQuoteMatch = text.match(/["']([^"']{1,80})["']/g);
+	const lastQuote = anyQuoteMatch
+		? anyQuoteMatch[anyQuoteMatch.length - 1]?.match(/["']([^"']+)["']/)
+		: null;
+
+	const phrase =
+		(afterSayMatch?.[1] ?? afterQuoteMatch?.[1] ?? lastQuote?.[1] ?? "").trim();
+	if (!phrase) return null;
+
 	return {
-		afterPhrase: phraseMatch[1].trim(),
+		afterPhrase: phrase,
 		occurrence: parseOrdinalOccurrence({ text: text.toLowerCase() }),
 	};
 }

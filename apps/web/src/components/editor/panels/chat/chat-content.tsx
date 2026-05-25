@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { ENABLE_CLIPFORGE_CHAT } from "@/constants/feature-flags";
 import { useEditor } from "@/hooks/use-editor";
+import { parseGazeCutRequest } from "@/lib/clipforge/chat/prompt-parsers";
 import {
 	buildProjectSummary,
 	createChatOpsProvider,
@@ -239,6 +240,39 @@ export function ChatContent() {
 			const selectedSegmentIds = editor.selection
 				.getSelectedElements()
 				.map((element) => element.elementId);
+
+			// If the prompt is a gaze-cut request, ensure both gaze analysis AND
+			// transcription have run on all video assets before building the project
+			// summary. Gaze analysis is fast (< 1 s per clip); transcription is
+			// kicked off here but the planner will return a helpful clarification if
+			// it hasn't finished yet (both are idempotent).
+			if (parseGazeCutRequest({ text: prompt })) {
+				try {
+					await editor.clipforge.ensureGazeAnalysisForAllVideos();
+				} catch {
+					// Non-fatal — planner will tell user if data is missing
+				}
+				try {
+					const unindexedIds = editor.media
+						.getAssets()
+						.filter((a) => {
+							if (a.type !== "video" || a.ephemeral) return false;
+							const meta =
+								activeProject.clipforge?.mediaMetadataById?.[a.id];
+							return !meta || meta.transcriptionStatus !== "ready";
+						})
+						.map((a) => a.id);
+					if (unindexedIds.length > 0) {
+						// Fire-and-forget — don't block the planner
+						void editor.clipforge
+							.indexMediaAssets({ mediaIds: unindexedIds })
+							.catch(() => undefined);
+					}
+				} catch {
+					// Non-fatal
+				}
+			}
+
 			const projectSummary = buildProjectSummary({
 				project: activeProject,
 				mediaAssets: editor.media.getAssets(),

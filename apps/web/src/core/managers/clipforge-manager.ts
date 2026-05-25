@@ -2065,6 +2065,25 @@ export class ClipForgeManager {
 			.map((asset) => asset.id);
 	}
 
+	/**
+	 * Run gaze analysis on every non-ephemeral video asset that lacks it.
+	 * Idempotent — already-analyzed assets are skipped.
+	 * Called automatically for gaze-cut chat commands so the planner always
+	 * has gaze data available when needed.
+	 */
+	async ensureGazeAnalysisForAllVideos(): Promise<void> {
+		const videoAssets = this.editor.media
+			.getAssets()
+			.filter((a) => a.type === "video" && !a.ephemeral && !a.gazeAnalysis);
+		for (const asset of videoAssets) {
+			try {
+				await this.editor.media.analyzeGazePatterns({ mediaId: asset.id });
+			} catch {
+				// Non-fatal — individual failure does not block others
+			}
+		}
+	}
+
 	async analyzeSceneFootageIntelligence(): Promise<FootageIntelligenceReport> {
 		const activeProject = this.editor.project.getActive();
 		if (!activeProject) {

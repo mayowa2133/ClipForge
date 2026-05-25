@@ -2121,15 +2121,51 @@ function planGazeCutClause(args: DirectPlannerArgs): DirectPlanResult {
 	const phraseMatch = phraseMatches.find(
 		(m) => m.occurrence === request.occurrence,
 	);
-	if (!phraseMatch) {
-		// Phrase not found in transcript — bail out so the LLM can handle it
-		return emptyDirectPlan({ state });
-	}
-
-	// Find the first asset that has gaze analysis data
+	// Find the first asset that has gaze analysis data (check early, before transcript)
 	const markerWithGaze = projectSummary.media_analysis_markers.find(
 		(marker) => marker.gaze_window_count > 0 && marker.gaze_windows.length > 0,
 	);
+
+	if (!phraseMatch) {
+		// If gaze data exists but no transcript yet, give actionable feedback.
+		// If no gaze data either, bail so the LLM can handle the whole thing.
+		if (markerWithGaze) {
+			const hasTranscript = (projectSummary.timeline_words?.length ?? 0) > 0;
+			if (!hasTranscript) {
+				const cameraPercent = Math.round((markerWithGaze.camera_look_ratio ?? 0) * 100);
+				return {
+					ops: [],
+					commands: [],
+					state,
+					clarification: {
+						kind: "target" as const,
+						referenceLabel: "gaze_transcript",
+						prompt:
+							`Gaze analysis is ready (${markerWithGaze.gaze_window_count} windows, ${cameraPercent}% on-camera). ` +
+							`To cut after "${request.afterPhrase}", I need a transcript to find that line. ` +
+							`Transcribing will let me pin the cut to exactly when you said it.`,
+						options: [
+							{
+								id: "transcribe",
+								value: "transcribe_then_gaze_cut",
+								label: "Transcribe first, then cut",
+								text_preview: "I'll transcribe the video and then make the gaze-based cut",
+							},
+							{
+								id: "from_start",
+								value: "gaze_cut_from_start",
+								label: "Cut from the beginning instead",
+								text_preview: "Find the first off-camera window starting from 00:00",
+							},
+						],
+					},
+				};
+			}
+		}
+		// No gaze data and no transcript — bail to LLM
+		return emptyDirectPlan({ state });
+	}
+
 	if (!markerWithGaze) return emptyDirectPlan({ state });
 
 	// Convert phrase end time (ms) to seconds for gaze window comparison
