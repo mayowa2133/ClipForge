@@ -631,10 +631,16 @@ function applySetCaptionStyleOp({
 		position: op.position,
 		outline: op.outline,
 		highlight_mode: op.highlight_mode,
+		color: op.color ?? null,
+		outline_color: op.outline_color ?? null,
+		font_style: op.font_style ?? null,
+		font_weight: op.font_weight ?? null,
 	};
 
 	project.clipforge.captionStylesById[style.style_id] = style;
 	project.clipforge.activeCaptionStyleId = style.style_id;
+
+	const sizeMultiplier = project.clipforge.captionSizeMultiplier ?? 1;
 
 	for (const track of tracks) {
 		if (track.type !== "text") continue;
@@ -646,6 +652,7 @@ function applySetCaptionStyleOp({
 				element,
 				style,
 				canvasHeight: project.settings.canvasSize.height,
+				sizeMultiplier,
 			});
 			Object.assign(element, styledElement);
 		}

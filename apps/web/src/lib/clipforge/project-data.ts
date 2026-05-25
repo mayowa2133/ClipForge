@@ -63,6 +63,7 @@ export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 			recentReferenceAssemblyChoices: [],
 		},
 		opsAudit: [],
+		captionSizeMultiplier: 1,
 	};
 }
 

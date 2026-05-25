@@ -3068,6 +3068,10 @@ export class ClipForgeManager {
 					position: style.position,
 					outline: style.outline,
 					highlight_mode: style.highlight_mode,
+					color: style.color ?? null,
+					outline_color: style.outline_color ?? null,
+					font_style: style.font_style ?? null,
+					font_weight: style.font_weight ?? null,
 				},
 			],
 		});
@@ -3129,6 +3133,31 @@ export class ClipForgeManager {
 				pairingId: effectiveSoundSyncPresetId,
 				targetElementIds: captionIds,
 			});
+		}
+	}
+
+	async setCaptionSizeMultiplier({ multiplier }: { multiplier: number }): Promise<void> {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) {
+			throw new Error("No active project.");
+		}
+		const project = ensureClipForgeProjectData({ project: activeProject });
+		const clampedMultiplier = Math.max(0.5, Math.min(3, multiplier));
+
+		// Persist the multiplier in project data.
+		this.editor.project.setActiveProject({
+			project: {
+				...project,
+				metadata: { ...project.metadata, updatedAt: new Date() },
+				clipforge: { ...project.clipforge, captionSizeMultiplier: clampedMultiplier },
+			},
+		});
+		this.editor.save.markDirty();
+
+		// Re-apply the current caption style so existing captions resize immediately.
+		const activeStyleId = project.clipforge.activeCaptionStyleId;
+		if (activeStyleId) {
+			await this.applySceneCaptionStyle({ styleId: activeStyleId });
 		}
 	}
 

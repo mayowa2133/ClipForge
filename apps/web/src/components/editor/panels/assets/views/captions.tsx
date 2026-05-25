@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +51,21 @@ export function Captions() {
 	const activeStyleId = activeProject?.clipforge?.activeCaptionStyleId ?? null;
 	const activeRevealPresetId =
 		styles.find((style) => style.style_id === activeStyleId)?.reveal_preset_id ?? "none";
+	const captionSizeMultiplier = activeProject?.clipforge?.captionSizeMultiplier ?? 1;
+	const [sizeMultiplierDraft, setSizeMultiplierDraft] = useState(captionSizeMultiplier);
+
+	// Keep draft in sync when project loads
+	useEffect(() => {
+		setSizeMultiplierDraft(activeProject?.clipforge?.captionSizeMultiplier ?? 1);
+	}, [activeProject?.clipforge?.captionSizeMultiplier]);
+
+	const handleSizeMultiplierCommit = useCallback(
+		(value: number) => {
+			const clamped = Math.max(0.5, Math.min(3, value));
+			void editor.clipforge.setCaptionSizeMultiplier({ multiplier: clamped });
+		},
+		[editor.clipforge],
+	);
 	const projectDefaultStyleId =
 		activeProject?.settings.libraryDefaults?.captionStyleId ??
 		activeStyleId ??
@@ -275,6 +290,52 @@ export function Captions() {
 								))}
 							</SelectContent>
 						</Select>
+					</div>
+					<div className="mt-3 flex flex-col gap-2">
+						<div className="flex items-center justify-between">
+							<Label>Size</Label>
+							<span className="text-muted-foreground text-xs tabular-nums">
+								{Math.round(sizeMultiplierDraft * 100)}%
+							</span>
+						</div>
+						<input
+							type="range"
+							min={0.5}
+							max={2}
+							step={0.05}
+							value={sizeMultiplierDraft}
+							className="accent-primary w-full cursor-pointer"
+							onChange={(e) => {
+								const v = Number.parseFloat(e.target.value);
+								setSizeMultiplierDraft(v);
+							}}
+							onMouseUp={(e) => {
+								handleSizeMultiplierCommit(Number.parseFloat((e.target as HTMLInputElement).value));
+							}}
+							onTouchEnd={(e) => {
+								handleSizeMultiplierCommit(Number.parseFloat((e.target as HTMLInputElement).value));
+							}}
+						/>
+						<div className="flex justify-between">
+							{[0.75, 1, 1.25, 1.5, 2].map((preset) => (
+								<button
+									key={preset}
+									type="button"
+									onClick={() => {
+										setSizeMultiplierDraft(preset);
+										handleSizeMultiplierCommit(preset);
+									}}
+									className={cn(
+										"text-muted-foreground rounded px-1.5 py-0.5 text-xs transition-colors",
+										Math.abs(sizeMultiplierDraft - preset) < 0.03
+											? "bg-primary/10 text-primary font-medium"
+											: "hover:bg-accent",
+									)}
+								>
+									{preset === 1 ? "S" : preset === 1.25 ? "M" : preset === 1.5 ? "L" : preset === 2 ? "XL" : "XS"}
+								</button>
+							))}
+						</div>
 					</div>
 					{captions.length === 0 ? (
 						<p className="text-muted-foreground mt-3 text-xs">

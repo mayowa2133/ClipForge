@@ -78,6 +78,14 @@ export interface CaptionStyleTemplate {
 	highlight_mode: CaptionHighlightMode;
 	reveal_preset_id?: CaptionRevealPresetId | null;
 	sound_sync_preset_id?: AnimationSfxPresetId | null;
+	/** Text fill colour (default #ffffff) */
+	color?: string | null;
+	/** Background / outline box colour (default #000000 when outline=true) */
+	outline_color?: string | null;
+	/** Font style override */
+	font_style?: "normal" | "italic" | null;
+	/** Font weight override */
+	font_weight?: "normal" | "bold" | null;
 }
 
 export interface CaptionSegmentView {
@@ -704,6 +712,10 @@ export interface SetCaptionStyleOp extends TimelineDiffBaseOp {
 	position: CaptionPosition;
 	outline: boolean;
 	highlight_mode: CaptionHighlightMode;
+	color?: string | null;
+	outline_color?: string | null;
+	font_style?: "normal" | "italic" | null;
+	font_weight?: "normal" | "bold" | null;
 }
 
 export interface FixCaptionTextOp extends TimelineDiffBaseOp {
@@ -1238,6 +1250,8 @@ export interface ClipForgeProjectData {
 	importAnalysisByAssetId?: Record<string, ImportAnalysisSnapshot>;
 	lastThumbnailRecommendation?: ThumbnailRecommendationSnapshot | null;
 	lastMusicSelection?: MusicSelectionSnapshot | null;
+	/** Global font-size multiplier applied on top of each style's base size (default 1). */
+	captionSizeMultiplier?: number | null;
 }
 
 export interface ImportAnalysisSnapshot {

@@ -240,26 +240,32 @@ export function applyCaptionStyleToTextElement({
 	element,
 	style,
 	canvasHeight,
+	sizeMultiplier = 1,
 }: {
 	element: TextElement;
 	style: CaptionStyleTemplate;
 	canvasHeight: number;
+	sizeMultiplier?: number;
 }): TextElement {
 	const positionY =
 		style.position === "bottom" ? Math.round(canvasHeight * 0.35) : 0;
+	const effectiveSize = Math.round(style.size * Math.max(0.5, Math.min(3, sizeMultiplier)));
+	const bgColor = style.outline ? (style.outline_color ?? "#000000") : "transparent";
 	return {
 		...element,
 		role: "caption",
 		fontFamily: style.font,
-		fontSize: style.size,
-		fontWeight:
-			style.style_id === "bold-center" || style.position === "center"
-				? "bold"
-				: "normal",
+		fontSize: effectiveSize,
+		color: style.color ?? "#ffffff",
+		fontWeight: style.font_weight ?? (
+			style.style_id === "bold-center" || style.position === "center" ? "bold" : "normal"
+		),
+		fontStyle: style.font_style ?? "normal",
 		textAlign: "center",
 		background: {
 			...element.background,
-			color: style.outline ? "#000000" : "transparent",
+			color: bgColor,
+			cornerRadius: style.outline ? 8 : 0,
 			paddingX: style.outline ? 24 : 0,
 			paddingY: style.outline ? 12 : 0,
 		},
@@ -296,6 +302,7 @@ export function createCaptionTextElements({
 			});
 	const style = getCaptionTemplate({ styleId });
 	const canvasHeight = project.settings.canvasSize.height;
+	const sizeMultiplier = project.clipforge?.captionSizeMultiplier ?? 1;
 
 	return chunks.map((chunk, index) => {
 		const base: TextElement = {
@@ -312,6 +319,7 @@ export function createCaptionTextElements({
 			element: base,
 			style,
 			canvasHeight,
+			sizeMultiplier,
 		});
 	});
 }
