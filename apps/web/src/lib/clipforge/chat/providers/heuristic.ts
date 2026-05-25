@@ -921,6 +921,7 @@ function planReferenceRecreationClause(
 		/\b(recreate|recreation|replicate|make.*from raw|raw.*edited|edited version|match the reference|like the reference|make it like)\b/.test(
 			normalized,
 		) &&
+		!/\bfinish\b|\bpolish\b/.test(normalized) &&
 		(/\b(reference|example|edited|raw|source)\b/.test(normalized) ||
 			Boolean(args.projectSummary.active_reference_video));
 	if (!asksForRecreation) {

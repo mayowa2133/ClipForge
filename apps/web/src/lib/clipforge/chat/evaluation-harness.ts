@@ -738,6 +738,7 @@ function persistEvaluationMemory({
 						case "match-reference-pacing":
 							return ["matched pacing to active reference"];
 						case "build-reference-draft":
+						case "build-reference-recreation-draft":
 							return ["built a first cut against the active reference"];
 						case "replace-with-source-match":
 							return ["swapped a reference draft section to a different source clip"];
@@ -749,24 +750,27 @@ function persistEvaluationMemory({
 				}),
 			].slice(-12),
 			assemblyIntent:
-				commands.some((command) => command.kind === "build-reference-draft") ||
+				commands.some((command) => command.kind === "build-reference-draft" || command.kind === "build-reference-recreation-draft") ||
 				commands.some((command) => command.kind === "replace-with-source-match") ||
 				commands.some((command) => command.kind === "lock-reference-match")
 					? {
 							referenceAssetId:
-								commands.find((command) => command.kind === "build-reference-draft")
+								commands.find((command) => command.kind === "build-reference-draft" || command.kind === "build-reference-recreation-draft")
 									?.reference_asset_id ??
 								clipforge.activeReferenceVideoAssetId ??
 								clipforge.chatMemory.referenceIntent?.referenceAssetId ??
 								null,
 							sourceAssetIds: commands.flatMap((command) =>
-								command.kind === "build-reference-draft"
+								command.kind === "build-reference-draft" || command.kind === "build-reference-recreation-draft"
 									? command.source_asset_ids ?? []
 									: [],
 							),
 							focusMatchIds: commands.flatMap((command) => {
 								if (command.kind === "build-reference-draft") {
 									return command.focus_match_ids ?? [];
+								}
+								if (command.kind === "build-reference-recreation-draft") {
+									return [];
 								}
 								if (command.kind === "replace-with-source-match") {
 									return [command.match_id];
@@ -1898,7 +1902,7 @@ function buildReferenceAssemblyScenarios(): EvalScenario[] {
 					expectation: {
 						kind: "plan",
 						command: {
-							commandKinds: ["build-reference-draft"],
+							commandKinds: ["build-reference-recreation-draft"],
 						},
 					},
 				},
@@ -1952,7 +1956,7 @@ function buildReferenceAssemblyScenarios(): EvalScenario[] {
 					expectation: {
 						kind: "plan",
 						command: {
-							commandKinds: ["build-reference-draft"],
+							commandKinds: ["build-reference-recreation-draft"],
 						},
 					},
 				},

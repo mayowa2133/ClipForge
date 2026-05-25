@@ -1313,9 +1313,12 @@ describe("HeuristicChatOpsProvider", () => {
 
 		expect(result.commands ?? []).toHaveLength(1);
 		expect(result.commands?.[0]).toMatchObject({
-			kind: "build-reference-draft",
+			kind: "build-reference-recreation-draft",
 			reference_asset_id: "beach-1",
 			source_asset_ids: ["gym-clip-1", "gym-clip-2", "street-clip-1"],
+			include_finish_pass: true,
+			require_transcript: true,
+			scope: "project",
 		});
 	});
 

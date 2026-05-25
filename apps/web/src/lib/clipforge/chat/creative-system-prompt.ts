@@ -216,7 +216,7 @@ function buildProjectSignals({
 	}
 
 	// Music/beat availability
-	const hasBeats = projectSummary.media_analysis_markers.some(
+	const hasBeats = (projectSummary.media_analysis_markers ?? []).some(
 		(m) => m.beat_marker_count > 0,
 	);
 	if (hasBeats) {
