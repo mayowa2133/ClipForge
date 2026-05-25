@@ -35,7 +35,7 @@ function clamp(value: number, min: number, max: number): number {
  * Returns gazeScore in [0, 1] (1 = fully on-camera) and a confidence
  * value that reflects how likely we are looking at a face at all.
  */
-function computeFrameGazeScore(
+export function computeFrameGazeScore(
 	frame: Uint8ClampedArray,
 	width: number,
 	height: number,
@@ -143,7 +143,7 @@ function classifyGaze(gazeScore: number): GazeCategory {
 	return "off-camera";
 }
 
-function buildGazeWindowsFromSamples(
+export function buildGazeWindowsFromSamples(
 	samples: Array<{ time: number; gazeScore: number; confidence: number }>,
 ): MediaGazeWindow[] {
 	if (samples.length === 0) return [];
