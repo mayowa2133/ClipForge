@@ -247,7 +247,7 @@ function buildProjectSignals({
 	}
 
 	// Recent AI actions
-	const recentActions = projectSummary.recent_ai_actions;
+	const recentActions = projectSummary.recent_ai_actions ?? [];
 	if (recentActions.length > 0) {
 		const actionTypes = recentActions
 			.map((a) => a.summary)
