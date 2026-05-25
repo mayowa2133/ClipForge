@@ -1606,6 +1606,8 @@ function formatDraftStepLabel({
 			return "Adapt layout for extra formats";
 		case "apply-polish-profile":
 			return "Apply final polish";
+		default:
+			return "Processing";
 	}
 }
 
