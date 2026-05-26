@@ -10,8 +10,12 @@ const FRAME_WIDTH = 160;
 const FRAME_HEIGHT = 160;
 const GAZE_WINDOW_SECONDS = 2;
 
-// Camera-gaze thresholds
-const CAMERA_GAZE_THRESHOLD = 0.62;
+// Camera-gaze thresholds.
+// The camera threshold is intentionally conservative (high) so that ambiguous
+// mid-range scores — e.g. slight head-tilt in a bright car interior — are
+// treated as off-camera rather than camera.  Only clearly forward-facing
+// frames with high symmetry + upper-brightness should qualify.
+const CAMERA_GAZE_THRESHOLD = 0.76;
 const OFF_CAMERA_GAZE_THRESHOLD = 0.38;
 // Minimum mean brightness in the face region — below this we have no face
 const NO_FACE_BRIGHTNESS_THRESHOLD = 0.08;
@@ -68,6 +72,13 @@ export function computeFrameGazeScore(
 			const b = frame[baseIndex + 2] ?? 0;
 			// Perceptual luminance
 			const brightness = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+
+			// Skip near-white background pixels (car ceilings, studio backdrops,
+			// windows, etc.).  These saturated pixels corrupt the upper/lower
+			// brightness ratio when they bleed into the face region — a bright
+			// ceiling directly above the subject's head can keep `upperAvg` high
+			// even when the person's head is tilted away from the camera.
+			if (brightness > 0.88) continue;
 
 			faceSum += brightness;
 			faceCount += 1;
@@ -234,7 +245,22 @@ async function sampleGazeFramesFromVideo({
 				video.addEventListener("seeked", handler, { once: true });
 			});
 
-			context.drawImage(video, 0, 0, FRAME_WIDTH, FRAME_HEIGHT);
+			// For portrait videos the face sits in the top ~40 % of the frame.
+			// Squashing the full portrait height into 160 px moves the face into
+			// rows 0–48, well above the face-region window (rows 24–104) and means
+			// the lower region measures car interior / background instead of the
+			// lower face. Fix: crop the top 55 % of a portrait frame so the face
+			// fills the canvas at the right position for the heuristic.
+			if (video.videoWidth < video.videoHeight) {
+				const srcH = Math.floor(video.videoHeight * 0.55);
+				context.drawImage(
+					video,
+					0, 0, video.videoWidth, srcH,
+					0, 0, FRAME_WIDTH, FRAME_HEIGHT,
+				);
+			} else {
+				context.drawImage(video, 0, 0, FRAME_WIDTH, FRAME_HEIGHT);
+			}
 			const frame = context.getImageData(0, 0, FRAME_WIDTH, FRAME_HEIGHT).data;
 			const { gazeScore, confidence } = computeFrameGazeScore(
 				frame,

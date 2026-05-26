@@ -241,16 +241,17 @@ export function ChatContent() {
 				.getSelectedElements()
 				.map((element) => element.elementId);
 
-			// If the prompt is a gaze-cut request, ensure both gaze analysis AND
-			// transcription have run on all video assets before building the project
-			// summary. Gaze analysis is fast (< 1 s per clip); transcription is
-			// kicked off here but the planner will return a helpful clarification if
-			// it hasn't finished yet (both are idempotent).
+			// If the prompt is a gaze-cut request, ensure gaze analysis has run on
+			// all video assets before building the project summary (fast, < a few
+			// seconds).  Transcription is started in the background — it can take
+			// minutes for long clips and blocking here would freeze the UI.  The
+			// planner returns a "need transcript" clarification on the first submit;
+			// a toast below cues the user to re-submit once transcription finishes.
 			if (parseGazeCutRequest({ text: prompt })) {
 				try {
 					await editor.clipforge.ensureGazeAnalysisForAllVideos();
 				} catch {
-					// Non-fatal — planner will tell user if data is missing
+					// Non-fatal — planner will tell user if gaze data is missing
 				}
 				try {
 					const unindexedIds = editor.media
@@ -263,9 +264,13 @@ export function ChatContent() {
 						})
 						.map((a) => a.id);
 					if (unindexedIds.length > 0) {
-						// Fire-and-forget — don't block the planner
+						// Fire-and-forget: transcription blocks for minutes on long
+						// clips — don't freeze the planner response.
 						void editor.clipforge
 							.indexMediaAssets({ mediaIds: unindexedIds })
+							.then(() => {
+								toast.info("Transcript ready — submit your gaze-cut request again to apply it.");
+							})
 							.catch(() => undefined);
 					}
 				} catch {
@@ -273,8 +278,11 @@ export function ChatContent() {
 				}
 			}
 
+			// Re-fetch the active project — gaze analysis may have mutated project
+			// state via setAssetGazeAnalysis during the await above.
+			const freshProject = editor.project.getActive() ?? activeProject;
 			const projectSummary = buildProjectSummary({
-				project: activeProject,
+				project: freshProject,
 				mediaAssets: editor.media.getAssets(),
 				playheadMs,
 				selectedSegmentIds,
@@ -1423,20 +1431,20 @@ export function ChatContent() {
 								detached voice audio, ducked music, and a 9:16 reference-safe canvas.
 							</p>
 							<div className="text-muted-foreground space-y-1 text-xs">
-								{proposedCommands.flatMap((command) =>
+								{proposedCommands.flatMap((command, commandIndex) =>
 									command.kind === "build-reference-recreation-draft"
 										? [
-												<p key="reference">
+												<p key={`reference-${commandIndex}`}>
 													Reference:{" "}
 													{referenceSummary?.active_reference_video?.name ??
 														command.reference_asset_id ??
 														"selected reference"}
 												</p>,
-												<p key="sources">
+												<p key={`sources-${commandIndex}`}>
 													Sources: {command.source_asset_ids?.length ?? 0} raw clip
 													{(command.source_asset_ids?.length ?? 0) === 1 ? "" : "s"}
 												</p>,
-												<p key="music">
+												<p key={`music-${commandIndex}`}>
 													Music:{" "}
 													{command.music_asset_id
 														? referenceSummary?.imported_audio_assets?.find(
