@@ -44,6 +44,7 @@ export function buildEmptyMediaMetadata(): ClipMediaMetadata {
 		words: [],
 		segments: [],
 		silenceRegions: [],
+		silenceAnalyzedAt: null,
 		transcriptionStatus: "idle",
 		transcriptionProvider: null,
 		transcriptionLanguage: null,

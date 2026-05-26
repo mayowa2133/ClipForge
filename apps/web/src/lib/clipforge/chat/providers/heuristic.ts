@@ -588,13 +588,23 @@ function planLegacyClause({
 			textOverlayRequest.anchor_mode === "playhead"
 				? context.playhead_ms
 				: textOverlayRequest.start_ms;
+
+		// "covering the entire video", "throughout the video", "whole video",
+		// "for the full duration" → span the entire project timeline.
+		const coversEntireVideo =
+			/\b(?:entire|whole|full|throughout|the\s+whole)\s+(?:video|clip|project|timeline|duration)\b/i.test(
+				clause,
+			) || /\bfor\s+the\s+(?:full|entire|whole)\s+(?:video|clip|duration)\b/i.test(clause);
+		const totalDurationMs = Math.round((projectSummary.total_duration_s ?? 0) * 1000);
+		const overlayEndMs = coversEntireVideo && totalDurationMs > 0
+			? totalDurationMs
+			: startMs + Math.max(250, textOverlayRequest.end_ms - textOverlayRequest.start_ms);
+
 		ops.push({
 			type: "ADD_TEXT_OVERLAY",
 			text: textOverlayRequest.text,
 			start_ms: startMs,
-			end_ms:
-				startMs +
-				Math.max(250, textOverlayRequest.end_ms - textOverlayRequest.start_ms),
+			end_ms: overlayEndMs,
 			position: textOverlayRequest.position,
 			style_id: preset.style_id,
 			font: preset.font,
@@ -737,6 +747,7 @@ function planDirectCommandClause({
 		planSeparateAudioClause,
 		planFreezeFrameClause,
 		planGazeCutClause,
+		planSilenceCutClause,
 		planFinishingLookClause,
 		planEffectClause,
 		planOverlayPresetClause,
@@ -1661,24 +1672,44 @@ function planMusicTrackClause(args: DirectPlannerArgs): DirectPlanResult {
 		inferPublishDestination({ text: normalized }) ??
 		args.projectSummary.publish_destination ??
 		"generic-export";
-	const musicChoice = chooseMusicAsset({
+
+	// Prefer imported audio assets (user's own music files) over bundled library tracks.
+	const importedMusicChoice = chooseImportedMusicAsset({
 		projectSummary: args.projectSummary,
 		text: normalized,
-		publishDestination,
-		preferMood:
-			inferMusicMood({ text: normalized }) ??
-			(normalized.includes("energetic") || normalized.includes("more energy")
-				? "energetic"
-				: normalized.includes("clean") || normalized.includes("soft")
-					? "clean"
-					: args.projectSummary.audio_mix?.audioPolishPresetId ===
-							"music-forward"
-						? "energetic"
-						: null),
 	});
+	const musicChoice =
+		importedMusicChoice ??
+		chooseMusicAsset({
+			projectSummary: args.projectSummary,
+			text: normalized,
+			publishDestination,
+			preferMood:
+				inferMusicMood({ text: normalized }) ??
+				(normalized.includes("energetic") || normalized.includes("more energy")
+					? "energetic"
+					: normalized.includes("clean") || normalized.includes("soft")
+						? "clean"
+						: args.projectSummary.audio_mix?.audioPolishPresetId ===
+								"music-forward"
+							? "energetic"
+							: null),
+		});
 	if (!musicChoice) {
 		return emptyDirectPlan({ state: args.state });
 	}
+
+	// Parse optional volume from "at 30% volume", "at 0.3 volume", "30 percent"
+	const volumeMatch = normalized.match(
+		/\bat\s+([\d.]+)\s*(?:%|percent)\b|\b([\d.]+)\s*(?:%|percent)\s*volume\b/,
+	);
+	const volumePct = volumeMatch
+		? parseFloat(volumeMatch[1] ?? volumeMatch[2] ?? "")
+		: null;
+	const volume =
+		volumePct !== null && Number.isFinite(volumePct)
+			? Math.max(0, Math.min(2, volumePct / 100))
+			: null;
 
 	return {
 		ops: [],
@@ -1692,6 +1723,7 @@ function planMusicTrackClause(args: DirectPlannerArgs): DirectPlanResult {
 				music_asset_id: musicChoice.asset_id,
 				start_ms: 0,
 				loop_to_project_end: true,
+				volume,
 				scope: "project",
 			},
 		],
@@ -2205,6 +2237,103 @@ function planGazeCutClause(args: DirectPlannerArgs): DirectPlanResult {
 				type: "CUT_RANGE",
 				start_ms: startMs,
 				end_ms: Math.min(endMs, totalMs),
+			},
+		],
+		commands: [],
+		state,
+		clarification: null,
+	};
+}
+
+/**
+ * Parse optional "leave X second(s) between clips" pad from a silence-cut
+ * request.  Returns pad_ms per-side (half of the desired gap).
+ * Examples:
+ *   "leave 1 second"  → 500  (500ms each side = 1s total gap)
+ *   "leave 2 seconds" → 1000
+ *   "0.5 second gap"  → 250
+ *   (nothing)         → 300  (default 300ms each side)
+ */
+function parseSilencePadMs(text: string): number {
+	const DEFAULT_PAD_MS = 300;
+	const m = text.match(
+		/(?:leave|keep|with|gap\s+of|padding\s+of)\s+([\d.]+)\s*(?:second|sec|s\b)/i,
+	) ?? text.match(/([\d.]+)\s*(?:second|sec|s\b)\s+(?:gap|pad|between)/i);
+	if (!m) return DEFAULT_PAD_MS;
+	const seconds = parseFloat(m[1]);
+	if (!Number.isFinite(seconds) || seconds < 0) return DEFAULT_PAD_MS;
+	// User said "leave N seconds between clips" — that's the total gap.
+	// pad_ms is applied on each side, so divide by 2.
+	return Math.round((seconds * 1000) / 2);
+}
+
+/**
+ * Detect "remove non-talking / clip silence / auto clip" requests and emit a
+ * REMOVE_SILENCE op using the pre-computed silence regions in the project
+ * metadata.
+ */
+function planSilenceCutClause(args: DirectPlannerArgs): DirectPlanResult {
+	const { clause, projectSummary, state } = args;
+	const lower = clause.toLowerCase();
+
+	// Broad intent-matching: silence removal / non-talking cuts / auto-clip.
+	// NOTE: avoid trailing \b on word stems so "non-talking", "non-speaking" etc. match.
+	const isSilenceCut =
+		/\b(?:remove|cut|clip|trim|delete|strip)\b.{0,40}(?:silence|silent|pauses?|gaps?|dead\s+air|non.?talk\w*|not\s+talk\w*|non.?speak\w*)/i.test(
+			clause,
+		) ||
+		/(?:silence|silent|pauses?|gaps?|dead\s+air|non.?talk\w*|not\s+talk\w*|non.?speak\w*).{0,40}\b(?:remove|cut|clip|trim|delete|strip)\b/i.test(
+			clause,
+		) ||
+		/\bauto[\s-]?clip\b/i.test(clause) ||
+		/\bremove\s+(?:the\s+)?pauses?\b/i.test(clause) ||
+		/\bcut\s+(?:out\s+)?(?:the\s+)?(?:dead|quiet|empty)\s+(?:air|space|parts?)\b/i.test(
+			clause,
+		);
+
+	if (!isSilenceCut) return emptyDirectPlan({ state });
+
+	const hasRegions = (projectSummary.pause_stats?.region_count ?? 0) > 0;
+
+	if (!hasRegions) {
+		// No silence data yet — planner will auto-trigger analysis before next
+		// submission, but surface a helpful message in the meantime.
+		return {
+			ops: [],
+			commands: [],
+			state,
+			clarification: {
+				kind: "target" as const,
+				referenceLabel: "silence_analysis_needed",
+				prompt:
+					"I need to scan the audio to find non-talking parts before I can cut them. " +
+					"This usually takes a few seconds. Re-submit your request and I'll have the silence map ready.",
+				options: [
+					{
+						id: "retry",
+						value: "retry_silence_cut",
+						label: "Re-submit (analysis will run first)",
+						text_preview:
+							"Analyze audio for silence, then remove non-talking segments.",
+					},
+				],
+			},
+		};
+	}
+
+	const padMs = parseSilencePadMs(lower);
+	// Silence regions shorter than 2× pad would vanish entirely — use a
+	// minimum threshold that ensures at least the pad margins are preserved.
+	const thresholdMs = Math.max(200, padMs * 2 + 100);
+	const minKeepMs = 500; // never shrink a clip below 500ms
+
+	return {
+		ops: [
+			{
+				type: "REMOVE_SILENCE",
+				threshold_ms: thresholdMs,
+				pad_ms: padMs,
+				min_keep_ms: minKeepMs,
 			},
 		],
 		commands: [],

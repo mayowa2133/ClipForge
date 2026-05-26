@@ -88,10 +88,11 @@ export function parseTextOverlayRequest({
 	const contentMatch =
 		text.match(/that says\s+["']([^"']+)["']/i) ??
 		text.match(/\bput\s+["']([^"']+)["']/i) ??
-		text.match(/\badd\s+(?:a\s+)?(?:text|caption)\s+["']([^"']+)["']/i);
+		text.match(/\badd\s+(?:a\s+|the\s+)?(?:text|caption|title|label|heading)\s+["']([^"']+)["']/i) ??
+		text.match(/\bshow\s+(?:the\s+)?(?:text|title|caption)\s+["']([^"']+)["']/i);
 	if (!contentMatch) return null;
 
-	if (!/(?:\badd\b.*\b(?:text|caption)\b|\bput\s+["'])/i.test(text)) {
+	if (!/(?:\badd\b.*\b(?:text|caption|title|label|heading)\b|\bput\s+["']|\bshow\s+(?:the\s+)?(?:text|title|caption))/i.test(text)) {
 		return null;
 	}
 

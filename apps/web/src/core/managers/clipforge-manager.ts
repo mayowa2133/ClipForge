@@ -2084,6 +2084,71 @@ export class ClipForgeManager {
 		}
 	}
 
+	/**
+	 * Analyze silence (audio activity) for a single media asset using only the
+	 * Web Audio API — no transcription required. Stores the silence regions in
+	 * the project's clipforge metadata so the planner can generate REMOVE_SILENCE
+	 * ops immediately.
+	 */
+	async analyzeSilenceForMediaAsset({
+		mediaId,
+	}: {
+		mediaId: string;
+	}): Promise<void> {
+		const asset = this.editor.media
+			.getAssets()
+			.find((a) => a.id === mediaId);
+		if (!asset || (asset.type !== "video" && asset.type !== "audio")) return;
+
+		const { samples, sampleRate } = await extractMediaAssetAudioToFloat32({
+			mediaAsset: asset,
+		});
+		const silenceRegions = detectSilenceRegions({ samples, sampleRate });
+
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) return;
+		const projectWithClipForge = ensureClipForgeProjectData({
+			project: activeProject,
+		});
+		const existing =
+			projectWithClipForge.clipforge.mediaMetadataById[mediaId] ??
+			buildEmptyMediaMetadata();
+
+		this.upsertMediaMetadata({
+			mediaId,
+			metadata: {
+				...existing,
+				silenceRegions,
+				silenceAnalyzedAt: new Date().toISOString(),
+			},
+		});
+	}
+
+	/**
+	 * Ensure silence analysis has run for every video asset that hasn't been
+	 * analyzed yet (neither via full indexing nor standalone silence analysis).
+	 */
+	async ensureSilenceAnalysisForAllVideos(): Promise<void> {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) return;
+		const cfData = activeProject.clipforge;
+
+		const videoAssets = this.editor.media
+			.getAssets()
+			.filter((a) => (a.type === "video" || a.type === "audio") && !a.ephemeral);
+
+		for (const asset of videoAssets) {
+			const meta = cfData?.mediaMetadataById[asset.id];
+			// Already analyzed if indexedAt (full index) OR silenceAnalyzedAt (audio-only) is set
+			if (meta?.indexedAt ?? meta?.silenceAnalyzedAt) continue;
+			try {
+				await this.analyzeSilenceForMediaAsset({ mediaId: asset.id });
+			} catch {
+				// Non-fatal
+			}
+		}
+	}
+
 	async analyzeSceneFootageIntelligence(): Promise<FootageIntelligenceReport> {
 		const activeProject = this.editor.project.getActive();
 		if (!activeProject) {
@@ -4621,15 +4686,24 @@ export class ClipForgeManager {
 			}
 			case "apply-music-track":
 			case "replace-music-track": {
-				const musicItem = this.resolveBundledMusicItem({
-					itemId: command.music_asset_id,
-				});
-				if (!musicItem) {
+				// Prefer user-imported audio assets over bundled library tracks.
+				const importedAudioAsset = this.editor.media
+					.getAssets()
+					.find(
+						(a) =>
+							a.id === command.music_asset_id &&
+							a.type === "audio" &&
+							!a.ephemeral,
+					);
+				const musicItem = importedAudioAsset
+					? null
+					: this.resolveBundledMusicItem({ itemId: command.music_asset_id });
+				if (!importedAudioAsset && !musicItem) {
 					return [
 						buildCommandValidationError({
 							commandIndex,
 							code: "unknown_music_asset",
-							message: "The requested bundled music track does not exist.",
+							message: "The requested music track does not exist in your library or the bundled tracks.",
 						}),
 					];
 				}
@@ -4643,7 +4717,10 @@ export class ClipForgeManager {
 					];
 				}
 				const publishDestination = this.getPreferredPublishDestination();
+				// Only check destination safety for bundled tracks — user's own audio
+				// is presumed cleared for any destination.
 				if (
+					musicItem &&
 					publishDestination &&
 					!this.isBundledAudioDestinationSafe({
 						item: musicItem,
@@ -5191,23 +5268,35 @@ export class ClipForgeManager {
 				});
 				break;
 			case "apply-music-track":
-				await this.insertBundledMusicTrack({
-					itemId: command.music_asset_id,
-					startMs: command.start_ms ?? 0,
-					volume: command.volume ?? null,
-					loopToProjectEnd: command.loop_to_project_end ?? true,
-					replaceExisting: false,
-				});
+			case "replace-music-track": {
+				const replaceExisting = command.kind === "replace-music-track";
+				const importedAudio = this.editor.media
+					.getAssets()
+					.find(
+						(a) =>
+							a.id === command.music_asset_id &&
+							a.type === "audio" &&
+							!a.ephemeral,
+					);
+				if (importedAudio) {
+					await this.insertImportedMusicTrack({
+						asset: importedAudio,
+						startMs: command.start_ms ?? 0,
+						volume: command.volume ?? null,
+						loopToProjectEnd: command.loop_to_project_end ?? true,
+						replaceExisting,
+					});
+				} else {
+					await this.insertBundledMusicTrack({
+						itemId: command.music_asset_id,
+						startMs: command.start_ms ?? 0,
+						volume: command.volume ?? null,
+						loopToProjectEnd: command.loop_to_project_end ?? true,
+						replaceExisting,
+					});
+				}
 				break;
-			case "replace-music-track":
-				await this.insertBundledMusicTrack({
-					itemId: command.music_asset_id,
-					startMs: command.start_ms ?? 0,
-					volume: command.volume ?? null,
-					loopToProjectEnd: command.loop_to_project_end ?? true,
-					replaceExisting: true,
-				});
-				break;
+			}
 			case "insert-sfx-preset":
 				await this.insertBundledSfx({
 					itemId: command.sfx_asset_id,
@@ -5556,6 +5645,63 @@ export class ClipForgeManager {
 				Math.round((asset.duration ?? item.duration) * 1000),
 			);
 			if (!loopToProjectEnd) {
+				break;
+			}
+		}
+	}
+
+	/**
+	 * Place a user-imported audio asset on the music track.  Loops to fill the
+	 * project if `loopToProjectEnd` is true — same behaviour as bundled tracks.
+	 */
+	private async insertImportedMusicTrack({
+		asset,
+		startMs,
+		volume,
+		loopToProjectEnd,
+		replaceExisting,
+	}: {
+		asset: MediaAsset;
+		startMs: number;
+		volume: number | null;
+		loopToProjectEnd: boolean;
+		replaceExisting: boolean;
+	}): Promise<void> {
+		if (replaceExisting) {
+			const existingMusic = this.getSceneAudioElementsByRole({ role: "music" });
+			if (existingMusic.length > 0) {
+				this.editor.timeline.deleteElements({ elements: existingMusic });
+			}
+		}
+
+		const assetDuration = typeof asset.duration === "number" ? asset.duration : 0;
+		const projectDurationMs = Math.max(
+			Math.round(this.editor.timeline.getTotalDuration() * 1000),
+			Math.round(assetDuration * 1000),
+		);
+		const desiredEndMs = loopToProjectEnd
+			? projectDurationMs
+			: startMs + Math.round(assetDuration * 1000);
+		const trackId = this.getOrCreateAudioTrackId();
+		let cursorMs = Math.max(0, startMs);
+
+		while (cursorMs < desiredEndMs) {
+			const element = buildUploadAudioElement({
+				mediaId: asset.id,
+				name: asset.name,
+				duration: assetDuration,
+				startTime: cursorMs / 1000,
+			});
+			element.role = "music";
+			if (typeof volume === "number") {
+				element.volume = Number(Math.max(0, Math.min(2, volume)).toFixed(3));
+			}
+			this.editor.timeline.insertElement({
+				placement: { mode: "explicit", trackId },
+				element,
+			});
+			cursorMs += Math.max(1, Math.round(assetDuration * 1000));
+			if (!loopToProjectEnd || assetDuration <= 0) {
 				break;
 			}
 		}

@@ -27,6 +27,7 @@ export async function buildClipIndex({
 		language,
 	});
 
+	const now = new Date().toISOString();
 	return {
 		words: transcript.words,
 		segments: transcript.segments,
@@ -34,6 +35,7 @@ export async function buildClipIndex({
 			samples,
 			sampleRate,
 		}),
+		silenceAnalyzedAt: now,
 		transcriptionStatus: "ready",
 		transcriptionProvider: transcript.provider,
 		transcriptionLanguage: transcript.language ?? language ?? null,
@@ -41,6 +43,6 @@ export async function buildClipIndex({
 			transcript.warnings && transcript.warnings.length > 0
 				? transcript.warnings.join(" | ")
 				: null,
-		indexedAt: new Date().toISOString(),
+		indexedAt: now,
 	};
 }

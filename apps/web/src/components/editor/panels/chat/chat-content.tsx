@@ -278,8 +278,16 @@ export function ChatContent() {
 				}
 			}
 
-			// Re-fetch the active project — gaze analysis may have mutated project
-			// state via setAssetGazeAnalysis during the await above.
+			// Ensure silence analysis has run for all video/audio assets.
+			// This is fast after first run (silenceAnalyzedAt guards re-analysis).
+			try {
+				await editor.clipforge.ensureSilenceAnalysisForAllVideos();
+			} catch {
+				// Non-fatal — planner will surface a clarification if needed
+			}
+
+			// Re-fetch the active project — gaze/silence analysis may have mutated
+			// project state during the await above.
 			const freshProject = editor.project.getActive() ?? activeProject;
 			const projectSummary = buildProjectSummary({
 				project: freshProject,

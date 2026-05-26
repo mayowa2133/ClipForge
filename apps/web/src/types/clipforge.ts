@@ -62,6 +62,8 @@ export interface ClipMediaMetadata {
 	words: TranscriptWord[];
 	segments: TranscriptSegment[];
 	silenceRegions: SilenceRegion[];
+	/** Set when silence analysis ran independently (audio-only, no transcription). */
+	silenceAnalyzedAt?: string | null;
 	transcriptionStatus: ClipForgeTranscriptionStatus;
 	transcriptionProvider: ClipForgeTranscriptionProvider | null;
 	transcriptionLanguage: string | null;
