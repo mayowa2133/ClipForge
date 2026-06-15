@@ -2209,13 +2209,28 @@ export class ClipForgeManager {
 	 * Sequential steps (mirrors CapCut creator workflow):
 	 *
 	 * 1. Places the raw video on the main video track (if not already there).
-	 * 2. Runs silence analysis (waveform energy).
+	 * 2. Runs silence analysis (waveform RMS energy on the audio — NOT Whisper
+	 *    word-gap timing; see Finding A below).
 	 * 3. Ensures transcript — triggers indexing (Whisper) if not ready, waits.
-	 * 4. Phase 1 cuts: removes every silence gap above threshold (direct CUT_RANGE).
-	 * 5. Phase 2 cuts: detects repeated / mistake takes via transcript similarity → cuts earlier take.
-	 * 6. Generates word-by-word captions on the POST-CUT timeline (timestamps auto-remap).
-	 * 7. Adds a title overlay (full post-cut duration).
-	 * 8. Adds the background music track (last — keeps speech track clean for indexing).
+	 * 4. Phase 1 cuts: removes every silence gap above threshold (direct CUT_RANGE)
+	 *    plus repeated / mistake takes via transcript similarity (cuts earlier take).
+	 * 5. Phase 2 cuts: word-level stutter removal ("only only", "that that") on the
+	 *    post-cut timeline.
+	 * 6. Phase 2b cuts: RE-TRANSCRIBES the post-cut audio and cuts repeats the first
+	 *    Whisper pass collapsed (see Finding B below).
+	 * 7. Phase 3 cuts: AI editorial pass — trims toward the target keep-ratio
+	 *    (~0.28-0.30 of raw; reference is 255s raw → 72s final).
+	 * 8. Generates word-by-word captions on the POST-CUT timeline (timestamps auto-remap).
+	 * 9. Adds a title overlay (full post-cut duration).
+	 * 10. Adds the background music track (last — keeps speech track clean for indexing).
+	 *
+	 * Two Whisper quirks drive the design (full write-up:
+	 * docs/clipforge-editing-strategy.md):
+	 *   Finding A — Whisper bundles a preceding pause INTO the next word's duration,
+	 *   so word-to-word gaps do NOT reveal pauses. Cut on audio silence, not word gaps.
+	 *   Finding B — Whisper COLLAPSES repeated/restarted speech (a line said 3× can
+	 *   appear once), so a repeat can be invisible in the first transcript. Re-
+	 *   transcribing the SHORTER post-cut audio (Phase 2b) exposes it.
 	 */
 	async executeAutoProducePipeline({
 		rawVideoAssetId,
