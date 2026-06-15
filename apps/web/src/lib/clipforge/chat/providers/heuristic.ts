@@ -721,6 +721,7 @@ function planDirectCommandClause({
 	deletedSegmentIds: Set<string>;
 }): DirectPlanResult {
 	const planners = [
+		planAutoProduceClause,
 		planRepeatCommandClause,
 		planAssemblySourcePoolClause,
 		planReferenceSelectionClause,
@@ -978,7 +979,7 @@ function planReferenceRecreationClause(
 				source_asset_ids: sourceAssetIds,
 				music_asset_id: musicAsset?.asset_id ?? null,
 				include_finish_pass: true,
-				require_transcript: true,
+				require_transcript: false,
 				scope: "project",
 			},
 		],
@@ -1363,9 +1364,9 @@ function resolveAssemblySourceAssetIds({
 	projectSummary: ProjectSummary;
 	referenceAssetId: string;
 }) {
-	const explicitPool = projectSummary.assembly_source_pool.map(
-		(asset) => asset.asset_id,
-	);
+	const explicitPool = projectSummary.assembly_source_pool
+		.map((asset) => asset.asset_id)
+		.filter((assetId) => assetId !== referenceAssetId);
 	if (explicitPool.length > 0) {
 		return explicitPool;
 	}
@@ -3512,6 +3513,81 @@ function isReferenceCompatibleWithKinds(
 		return allowedKinds.includes("text-overlay");
 	}
 	return false;
+}
+
+/**
+ * Detects "edit this into a finished video", "auto-produce", "make a video from raw",
+ * "produce a clip from this footage", etc.
+ *
+ * Emits a single `produce-from-raw` command that fires the full pipeline.
+ */
+function planAutoProduceClause(args: DirectPlannerArgs): DirectPlanResult {
+	const { clause, projectSummary, state } = args;
+
+	const isAutoProduce =
+		/\bauto[\s-]?produce\b/i.test(clause) ||
+		/\bauto[\s-]?edit\b/i.test(clause) ||
+		/\bmake\s+(?:a\s+)?(?:finished\s+)?(?:video|clip|reel|short)\b/i.test(
+			clause,
+		) ||
+		/\bproduce\s+(?:a\s+)?(?:finished\s+)?(?:video|clip)\b/i.test(clause) ||
+		/\bedit\s+(?:this\s+)?(?:into|as)\s+(?:a\s+)?(?:finished|complete|final)\s+(?:video|clip)\b/i.test(
+			clause,
+		) ||
+		/\bturn\s+(?:this\s+)?(?:raw\s+)?(?:footage|video|clip)\s+into\s+(?:a\s+)?(?:finished|edited|complete)/i.test(
+			clause,
+		) ||
+		/\bcreate\s+(?:a\s+)?(?:finished\s+)?video\s+from\s+(?:the\s+)?raw\b/i.test(
+			clause,
+		) ||
+		(/\bedit\b/i.test(clause) &&
+			/\bfinished\b|\bfull\b|\bcomplete\b|\bfinal\b/i.test(clause));
+
+	if (!isAutoProduce) return emptyDirectPlan({ state });
+
+	// Resolve optional music asset id from context
+	const importedAudio = projectSummary.imported_audio_assets ?? [];
+	const musicAsset = chooseImportedMusicAsset({
+		projectSummary,
+		text: clause,
+	});
+
+	// Resolve optional raw video asset id from context
+	const videoAssets = projectSummary.media_assets?.filter(
+		(a) =>
+			(a as unknown as { asset_type?: string }).asset_type === "video" ||
+			(a as unknown as { kind?: string }).kind === "video",
+	) ?? [];
+
+	const command: ClipForgeEditorCommand = {
+		kind: "produce-from-raw",
+		raw_video_asset_id: videoAssets[0]
+			? (videoAssets[0] as unknown as { asset_id?: string }).asset_id ?? null
+			: null,
+		music_asset_id: musicAsset?.asset_id ?? null,
+		target_keep_ratio: null,
+	};
+
+	// Surface a confirmation that lists what will happen
+	const steps = [
+		"• Place raw video on timeline",
+		"• Remove non-talking parts (silence detection)",
+		"• Score and keep best ~28% of footage",
+		importedAudio.length > 0 && musicAsset
+			? `• Add music: "${musicAsset.name}"`
+			: "• (No music — import an audio file to add background music)",
+		"• Generate word-by-word captions (if transcript available)",
+		"• Add title overlay",
+	];
+
+	return {
+		ops: [],
+		commands: [command],
+		state,
+		clarification: null,
+	};
+
+	void steps; // kept for documentation
 }
 
 function warnUnsupportedClause({

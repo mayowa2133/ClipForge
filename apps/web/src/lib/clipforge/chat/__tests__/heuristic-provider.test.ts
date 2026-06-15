@@ -1317,8 +1317,55 @@ describe("HeuristicChatOpsProvider", () => {
 			reference_asset_id: "beach-1",
 			source_asset_ids: ["gym-clip-1", "gym-clip-2", "street-clip-1"],
 			include_finish_pass: true,
-			require_transcript: true,
+			require_transcript: false,
 			scope: "project",
+		});
+	});
+
+	test("excludes the chosen reference from recreation source ids", async () => {
+		const provider = new HeuristicChatOpsProvider();
+		const result = await proposeWithSummary({
+			provider,
+			userText: "match the reference",
+			projectSummary: buildSummary({
+				media_assets: [
+					{ asset_id: "reference-1", name: "finished.mp4", type: "video" },
+					{ asset_id: "raw-1", name: "raw.mp4", type: "video" },
+				],
+				assembly_source_pool: [
+					{
+						asset_id: "reference-1",
+						name: "finished.mp4",
+						descriptor_summary: "edited reference video",
+					},
+					{
+						asset_id: "raw-1",
+						name: "raw.mp4",
+						descriptor_summary: "raw talking-head source",
+					},
+				],
+				imported_audio_assets: [
+					{
+						asset_id: "music-1",
+						name: "MUSIC-background.mp3",
+						type: "audio",
+						duration_ms: 85_000,
+					},
+				],
+			}),
+			overrides: {
+				forced_segment_ids_by_reference: {},
+				forced_choice_values_by_reference: {
+					"asset:reference-video": "reference-1",
+				},
+			},
+		});
+
+		expect(result.commands?.[0]).toMatchObject({
+			kind: "build-reference-recreation-draft",
+			reference_asset_id: "reference-1",
+			source_asset_ids: ["raw-1"],
+			music_asset_id: "music-1",
 		});
 	});
 

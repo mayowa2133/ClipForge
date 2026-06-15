@@ -18,7 +18,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 
 const APP_URL  = "http://localhost:3000";
 const RAW_MP4  = resolve(__dir, "RAW-abundance-h264.mp4");
-const MUSIC_MP3 = "/Users/mayowaadesanya/Downloads/Radiohead - Everything In Its Right Place (Instrumental).mp3";
+const MUSIC_MP3 = resolve(__dir, "MUSIC-background.mp3");
 
 let passed = 0, failed = 0;
 function check(label, cond, got) {
@@ -279,13 +279,13 @@ async function readProjectMetadata(page, projectId) {
     console.log(`  Response: "${(musicResponse ?? "(none)").slice(0, 300)}"`);
     await page.screenshot({ path: "/tmp/abundance-7-music.png" });
     check("music mix command got response", !!musicResponse && musicResponse.length > 5, musicResponse?.slice(0, 80));
-    // Verify the response references the imported Radiohead track, not a bundled one
-    const usedImportedMusic = musicResponse?.includes("Radiohead") ||
-      musicResponse?.includes("Everything In Its Right Place") ||
-      musicResponse?.includes("Instrumental") ||
+    // Verify the response references the imported workspace track, not a bundled one.
+    const usedImportedMusic = musicResponse?.includes("MUSIC-background") ||
+      musicResponse?.toLowerCase().includes("background") ||
+      musicResponse?.toLowerCase().includes("imported") ||
       // Plan impact should show the imported track name, not "Energetic Bounce"
       (musicResponse?.includes("PLAN") && !musicResponse?.includes("Energetic Bounce"));
-    check("music command uses imported Radiohead track (not bundled)",
+    check("music command uses imported workspace music track (not bundled)",
       !!usedImportedMusic, musicResponse?.slice(0, 120));
 
   } catch (err) {

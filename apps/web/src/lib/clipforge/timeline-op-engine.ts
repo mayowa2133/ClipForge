@@ -3,6 +3,7 @@ import {
 	DEFAULT_OPACITY,
 	DEFAULT_TRANSFORM,
 } from "@/constants/timeline-constants";
+import { FONT_SIZE_SCALE_REFERENCE } from "@/constants/text-constants";
 import { buildDefaultProjectVersionPack } from "@/constants/project-constants";
 import { calculateTotalDuration } from "@/lib/timeline";
 import { wouldElementOverlap } from "@/lib/timeline/element-utils";
@@ -17,6 +18,7 @@ import type {
 	ClipForgeProjectData,
 	ExtractHighlightOp,
 	InsertBrollOp,
+	CutRangeOp,
 	MakeVersionOp,
 	RemoveFillerOp,
 	RemoveSilenceOp,
@@ -123,7 +125,27 @@ export function applyTimelineDiffOpsToProject({
 		return nextProject;
 	}
 
-	for (const op of ops) {
+	// CUT_RANGE ops reference original-timeline coordinates.  Each cut shifts
+	// the timeline, invalidating subsequent coordinates.  Reorder CUT_RANGE ops
+	// to apply from the END first (reverse chronological) so earlier cuts don't
+	// shift the positions of later ones.
+	const reorderedOps = (() => {
+		const cutOps: typeof ops = [];
+		const otherOps: typeof ops = [];
+		for (const op of ops) {
+			if (op.type === "CUT_RANGE") cutOps.push(op);
+			else otherOps.push(op);
+		}
+		if (cutOps.length <= 1) return ops;
+		// Apply non-CUT ops first (they may set up state), then cuts end-to-start.
+		cutOps.sort(
+			(a, b) =>
+				(b as CutRangeOp).start_ms - (a as CutRangeOp).start_ms,
+		);
+		return [...otherOps, ...cutOps];
+	})();
+
+	for (const op of reorderedOps) {
 		switch (op.type) {
 			case "REMOVE_SILENCE":
 				applyRemoveSilenceOp({ tracks: activeScene.tracks, op, project: nextProject });
@@ -135,7 +157,12 @@ export function applyTimelineDiffOpsToProject({
 				applyTrimClipOp({ tracks: activeScene.tracks, op });
 				break;
 			case "CUT_RANGE":
-				applyCutRangeOp({ tracks: activeScene.tracks, startMs: op.start_ms, endMs: op.end_ms });
+				// applyCutRangeOp uses the same time unit as element.startTime/duration (seconds)
+				applyCutRangeOp({
+					tracks: activeScene.tracks,
+					startMs: op.start_ms / 1000,
+					endMs: op.end_ms / 1000,
+				});
 				break;
 			case "ADD_TEXT_OVERLAY":
 				applyAddTextOverlayOp({
@@ -394,9 +421,26 @@ function applyAddTextOverlayOp({
 			? -project.settings.canvasSize.height * 0.32
 			: op.position === "bottom"
 				? project.settings.canvasSize.height * 0.32
-				: 0;
-	const backgroundColor =
-		op.outline || op.background ? "#000000cc" : "transparent";
+				// "center" sits in the upper third (above a talking-head's face),
+				// matching the reference title placement (~32% from top).
+				: -project.settings.canvasSize.height * 0.18;
+
+	// Outline = text stroke (ctx.strokeText), NOT a background box.
+	// Background box is only used when op.background is explicitly true.
+	const backgroundColor = op.background ? "#000000cc" : "transparent";
+
+	// op.size is in intended output pixels. Renderer does:
+	//   scaledPx = fontSize * (canvasHeight / FONT_SIZE_SCALE_REFERENCE)
+	// So to get the intended pixel size we must convert:
+	//   fontSize = intendedPx * (FONT_SIZE_SCALE_REFERENCE / canvasHeight)
+	const canvasHeight = project.settings.canvasSize.height;
+	const fontSize = op.size * (FONT_SIZE_SCALE_REFERENCE / canvasHeight);
+
+	// Title overlays get a thin outline (~8% of font); captions use
+	// their own thicker stroke (0.25) via caption-studio.ts.
+	const strokeObj = op.outline
+		? { color: "#000000", width: fontSize * 0.08 }
+		: undefined;
 
 	const textElement = buildTextElement({
 		startTime: Math.max(0, op.start_ms / 1000),
@@ -404,14 +448,15 @@ function applyAddTextOverlayOp({
 			name: "Chat overlay",
 			content: op.text,
 			duration: Math.max(0.1, (op.end_ms - op.start_ms) / 1000),
-			fontSize: op.size,
+			fontSize,
 			fontFamily: op.font,
 			color: op.color,
+			stroke: strokeObj ?? undefined,
 			background: {
 				color: backgroundColor,
-				cornerRadius: op.outline || op.background ? 16 : 0,
-				paddingX: op.outline || op.background ? 30 : 0,
-				paddingY: op.outline || op.background ? 18 : 0,
+				cornerRadius: op.background ? 16 : 0,
+				paddingX: op.background ? 30 : 0,
+				paddingY: op.background ? 18 : 0,
 				offsetX: 0,
 				offsetY: 0,
 			},
@@ -805,11 +850,12 @@ function applyMakeVersionOp({
 	tracks: TimelineTrack[];
 	op: MakeVersionOp;
 }): void {
-	const totalDuration = calculateTotalDuration({ tracks });
-	const targetMs = op.duration_target_s * 1000;
-	if (targetMs <= 0 || targetMs >= totalDuration) return;
+	const totalDuration = calculateTotalDuration({ tracks }); // seconds
+	const targetS = op.duration_target_s;
+	if (targetS <= 0 || targetS >= totalDuration) return;
 
-	applyCutRangeOp({ tracks, startMs: targetMs, endMs: totalDuration });
+	// applyCutRangeOp works in seconds (same unit as element.startTime/duration)
+	applyCutRangeOp({ tracks, startMs: targetS, endMs: totalDuration });
 }
 
 function applyAutoReframeOp({

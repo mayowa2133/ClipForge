@@ -1,0 +1,17 @@
+{
+  "name": "_smoke-test",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "compare:reference": "node compare-reference.mjs",
+    "compare:current": "node compare-reference.mjs OUTPUT.mp4 FINISHED-reference.mov",
+    "test": "node compare-reference.mjs OUTPUT.mp4 FINISHED-reference.mov"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "playwright": "^1.60.0"
+  }
+}

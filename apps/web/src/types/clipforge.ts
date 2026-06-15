@@ -565,6 +565,18 @@ export interface ReferenceRecreationCaptionGeneration {
 	alignment_confidence: number;
 }
 
+export interface ReferenceRecreationQualityGate {
+	target_duration_delta_ms: number;
+	filled_reference_slots: number;
+	total_reference_slots: number;
+	source_coverage_ratio: number;
+	average_agent_score: number;
+	music_selected: boolean;
+	caption_review_required: boolean;
+	readiness: "ready-for-review" | "needs-review" | "blocked";
+	human_review_steps: string[];
+}
+
 export interface ReferenceRecreationPlan {
 	plan_id: string;
 	createdAt: string;
@@ -577,6 +589,7 @@ export interface ReferenceRecreationPlan {
 	caption_style: ReferenceEditCaptionStyleAnalysis;
 	caption_generation: ReferenceRecreationCaptionGeneration;
 	audio_mix: ReferenceEditAudioMixTarget;
+	quality_gate: ReferenceRecreationQualityGate;
 	crop: {
 		target_aspect_ratio: "9:16";
 		canvas_width: number;
@@ -1089,6 +1102,22 @@ export interface ClearReferenceMatchLocksEditorCommand {
 	scope?: ClipForgeCommandScope;
 }
 
+/**
+ * One-command auto-produce pipeline.
+ * Uses the creator style profile (or defaults) to turn a raw video + optional
+ * music asset into a finished edited clip without any reference video.
+ */
+export interface ProduceFromRawEditorCommand {
+	kind: "produce-from-raw";
+	/** ID of the raw video asset to use. If omitted, the first imported video is used. */
+	raw_video_asset_id?: string | null;
+	/** ID of an imported audio asset for background music. Optional. */
+	music_asset_id?: string | null;
+	/** Override the keep ratio (0–1). Defaults to creator profile or 0.28. */
+	target_keep_ratio?: number | null;
+	scope?: ClipForgeCommandScope;
+}
+
 export type ClipForgeEditorCommand =
 	| TimelineOpEditorCommand
 	| SetClipSpeedEditorCommand
@@ -1124,7 +1153,8 @@ export type ClipForgeEditorCommand =
 	| BuildReferenceDraftEditorCommand
 	| ReplaceWithSourceMatchEditorCommand
 	| LockReferenceMatchEditorCommand
-	| ClearReferenceMatchLocksEditorCommand;
+	| ClearReferenceMatchLocksEditorCommand
+	| ProduceFromRawEditorCommand;
 
 export interface ClipForgeChatMemoryStyleIntent {
 	captionStyleId?: string | null;
@@ -1254,6 +1284,51 @@ export interface ClipForgeProjectData {
 	lastMusicSelection?: MusicSelectionSnapshot | null;
 	/** Global font-size multiplier applied on top of each style's base size (default 1). */
 	captionSizeMultiplier?: number | null;
+	/**
+	 * Creator style profile — learned from a finished reference video.
+	 * Drives the one-command auto-produce pipeline.
+	 */
+	creatorProfile?: CreatorStyleProfile | null;
+}
+
+/**
+ * Creator style profile — captures a creator's editing preferences learned
+ * from an example finished video.  Stored on the project so future raw uploads
+ * can be processed automatically without a new reference.
+ */
+export interface CreatorStyleProfile {
+	version: 1;
+	learnedAt: string;
+	/** Name/ID of the asset the profile was learned from (for display). */
+	learnedFromAssetName: string | null;
+	/** Raw duration used when computing the keep ratio (seconds). */
+	rawDurationS: number;
+	/** Finished duration used when computing the keep ratio (seconds). */
+	finishedDurationS: number;
+	/**
+	 * Target proportion of raw footage to keep after content scoring.
+	 * e.g. 0.28 means keep 28 % of the raw clip.
+	 */
+	targetKeepRatio: number;
+	/** Minimum silence gap to cut (ms). */
+	silenceThresholdMs: number;
+	/** Padding to leave on each side of a silence cut (ms). */
+	silencePadMs: number;
+	/** Caption style ID. */
+	captionStyleId: string;
+	/** Caption reveal preset — e.g. "word-by-word". */
+	captionRevealPreset: string | null;
+	/** Title overlay enabled. */
+	titleEnabled: boolean;
+	/** Title text overlay position. */
+	titlePosition: "top" | "bottom" | "center";
+	/**
+	 * Background music volume (0–1).
+	 * 0.30 means music plays at 30% relative to dialogue.
+	 */
+	musicVolumeRatio: number;
+	/** Whether to loop music to fill the project duration. */
+	musicLoop: boolean;
 }
 
 export interface ImportAnalysisSnapshot {

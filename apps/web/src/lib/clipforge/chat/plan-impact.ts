@@ -908,6 +908,17 @@ function buildDirectCommandImpactCard({
 					summary.active_reference_video?.name ?? command.reference_asset_id ?? "active reference",
 				jump: null,
 			};
+		case "produce-from-raw":
+			return {
+				opIndex: commandIndex,
+				opType: command.kind,
+				kind: "auto-produce" as const,
+				title: "Auto-produce from raw",
+				detail: command.raw_video_asset_id
+					? `raw: ${command.raw_video_asset_id}`
+					: "auto-select raw video",
+				jump: null,
+			};
 	}
 }
 

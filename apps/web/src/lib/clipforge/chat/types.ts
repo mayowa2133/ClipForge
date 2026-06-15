@@ -373,6 +373,7 @@ export type ChatPlanImpactKind =
 	| "reference-audio"
 	| "reference-packaging"
 	| "reference-pacing"
+	| "auto-produce"
 	| "unknown";
 
 export interface ChatPlanImpactJumpTarget {

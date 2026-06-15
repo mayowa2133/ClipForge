@@ -39,3 +39,5 @@ export * from "./multi-version-generator";
 export * from "./transcribers/whisper-cli";
 export * from "./demo/manifest";
 export * from "./demo/create-demo-project";
+export * from "./creator-profile";
+export * from "./segment-scorer";

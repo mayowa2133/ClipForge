@@ -56,6 +56,12 @@ import {
 	analyzeImportedClips,
 	planMultiVersionDraft,
 	buildPipelineSummary,
+	buildCreatorProfileFromDurations,
+	DEFAULT_CREATOR_PROFILE,
+	extractSpeechSegments,
+	scoreSpeechSegments,
+	selectBestSegments,
+	buildCutOpsFromKeptSegments,
 } from "@/lib/clipforge";
 import type {
 	MusicSelectionResult,
@@ -71,6 +77,8 @@ import {
 	buildPlanImpactPreview,
 } from "@/lib/clipforge/chat/plan-impact";
 import { reconcileValidatorErrors } from "@/lib/clipforge/chat/validator-reconciliation";
+import { buildTimelineTranscriptWords } from "@/lib/clipforge/timeline-transcript";
+import type { TimelineTranscriptWord } from "@/lib/clipforge/timeline-transcript";
 import { ensureBundledAudioAsset } from "@/lib/library/bundled-media";
 import { BUNDLED_MUSIC, BUNDLED_SFX } from "@/lib/library/content-packs";
 import { extractMediaAssetAudioToFloat32 } from "@/lib/media/audio";
@@ -82,7 +90,7 @@ import {
 	BuildReferenceGuidedDraftCommand,
 	CaptionProjectSnapshotCommand,
 } from "@/lib/commands";
-import { buildUploadAudioElement } from "@/lib/timeline";
+import { buildUploadAudioElement, buildVideoElement } from "@/lib/timeline";
 import {
 	findAdjacentVisualIncomingTransitionTarget,
 	getAnimationSfxPairingById,
@@ -111,7 +119,9 @@ import type {
 	TimelineDiffOp,
 	CutRangeOp,
 	TimelineDiffOpSource,
+	CreatorStyleProfile,
 } from "@/types/clipforge";
+import type { CaptionLineBreakOptions } from "@/lib/clipforge/caption-generator";
 import type {
 	ExportFormat,
 	PublishDestination,
@@ -371,6 +381,10 @@ export class ClipForgeManager {
 		sourceAssetIds: string[];
 		requireTranscript: boolean;
 	}): Promise<void> {
+		if (!requireTranscript) {
+			return;
+		}
+
 		const failures: string[] = [];
 		for (const assetId of sourceAssetIds) {
 			const existing = this.getMediaMetadata({ mediaId: assetId });
@@ -1755,8 +1769,10 @@ export class ClipForgeManager {
 
 	async setAssemblySourcePool({
 		assetIds,
+		analyze = true,
 	}: {
 		assetIds: string[];
+		analyze?: boolean;
 	}): Promise<void> {
 		const activeProject = this.editor.project.getActiveOrNull();
 		if (!activeProject) {
@@ -1776,7 +1792,7 @@ export class ClipForgeManager {
 		};
 		for (const asset of validVideoAssets) {
 			let hydratedAsset: MediaAsset & { type: "video" } = asset;
-			if (!hydratedAsset.visualAnalysis) {
+			if (analyze && !hydratedAsset.visualAnalysis) {
 				try {
 					const analyzedAsset = await this.editor.media.analyzeVisualActivity({
 						mediaId: asset.id,
@@ -1788,7 +1804,7 @@ export class ClipForgeManager {
 					// Degrade gracefully for pool setup.
 				}
 			}
-			if (!hydratedAsset.gazeAnalysis) {
+			if (analyze && !hydratedAsset.gazeAnalysis) {
 				try {
 					const analyzedAsset = await this.editor.media.analyzeGazePatterns({
 						mediaId: asset.id,
@@ -1800,7 +1816,7 @@ export class ClipForgeManager {
 					// Gaze analysis is optional for source matching.
 				}
 			}
-			if (!hydratedAsset.beatAnalysis) {
+			if (analyze && !hydratedAsset.beatAnalysis) {
 				try {
 					const analyzedAsset = await this.editor.media.analyzeBeatGrid({
 						mediaId: asset.id,
@@ -2147,6 +2163,662 @@ export class ClipForgeManager {
 				// Non-fatal
 			}
 		}
+	}
+
+	/**
+	 * Learn a creator style profile from a pair of durations (raw vs finished).
+	 * Saves the profile onto the active project for use by future auto-produce runs.
+	 */
+	async learnCreatorProfileFromDurations({
+		rawDurationS,
+		finishedDurationS,
+		assetName,
+	}: {
+		rawDurationS: number;
+		finishedDurationS: number;
+		assetName: string | null;
+	}): Promise<CreatorStyleProfile> {
+		const profile = buildCreatorProfileFromDurations({
+			rawDurationS,
+			finishedDurationS,
+			assetName,
+		});
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) throw new Error("No active project.");
+		const projectWithClipForge = ensureClipForgeProjectData({ project: activeProject });
+		this.editor.project.setActiveProject({
+			project: {
+				...projectWithClipForge,
+				metadata: {
+					...projectWithClipForge.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...projectWithClipForge.clipforge,
+					creatorProfile: profile,
+				},
+			},
+		});
+		this.editor.save.markDirty();
+		return profile;
+	}
+
+	/**
+	 * One-command auto-produce pipeline.
+	 *
+	 * Sequential steps (mirrors CapCut creator workflow):
+	 *
+	 * 1. Places the raw video on the main video track (if not already there).
+	 * 2. Runs silence analysis (waveform energy).
+	 * 3. Ensures transcript — triggers indexing (Whisper) if not ready, waits.
+	 * 4. Phase 1 cuts: removes every silence gap above threshold (direct CUT_RANGE).
+	 * 5. Phase 2 cuts: detects repeated / mistake takes via transcript similarity → cuts earlier take.
+	 * 6. Generates word-by-word captions on the POST-CUT timeline (timestamps auto-remap).
+	 * 7. Adds a title overlay (full post-cut duration).
+	 * 8. Adds the background music track (last — keeps speech track clean for indexing).
+	 */
+	async executeAutoProducePipeline({
+		rawVideoAssetId,
+		musicAssetId,
+		targetKeepRatio: keepRatioOverride,
+	}: {
+		rawVideoAssetId: string | null;
+		musicAssetId: string | null;
+		targetKeepRatio: number | null;
+	}): Promise<{ appliedOps: number; summary: string }> {
+		const activeProject = this.editor.project.getActive();
+		if (!activeProject) throw new Error("No active project.");
+
+		// --- Resolve profile ---
+		const cfData = ensureClipForgeProjectData({ project: activeProject }).clipforge;
+		const profile: typeof DEFAULT_CREATOR_PROFILE & Partial<CreatorStyleProfile> =
+			cfData.creatorProfile ?? DEFAULT_CREATOR_PROFILE;
+		const targetKeepRatio = keepRatioOverride ?? profile.targetKeepRatio;
+
+		// --- Resolve raw video asset ---
+		const allAssets = this.editor.media.getAssets();
+		const rawAsset =
+			(rawVideoAssetId
+				? allAssets.find((a) => a.id === rawVideoAssetId)
+				: allAssets.find((a) => a.type === "video" && !a.ephemeral)) ?? null;
+		if (!rawAsset || rawAsset.type !== "video") {
+			throw new Error(
+				"No raw video asset found. Import a video first before running auto-produce.",
+			);
+		}
+
+		// --- Auto-detect portrait video and set canvas to 9:16 ---
+		{
+			const assetW = (rawAsset as { width?: number }).width ?? null;
+			const assetH = (rawAsset as { height?: number }).height ?? null;
+			if (assetW && assetH && assetH > assetW) {
+				const currentCanvas = activeProject.settings?.canvasSize;
+				if (!currentCanvas || currentCanvas.width > currentCanvas.height) {
+					this.applyOps({
+						ops: [{ type: "SET_ASPECT_RATIO", preset: "9:16" }],
+						source: "auto-edit",
+					});
+				}
+			}
+		}
+
+		// --- Place raw clip on main video track if timeline is empty ---
+		const existingVideoElements = this.editor.timeline
+			.getTracks()
+			.filter((t) => t.type === "video")
+			.flatMap((t) => t.elements.filter((e) => e.type === "video"));
+		if (existingVideoElements.length === 0) {
+			// Use asset duration if available; the timeline engine will
+			// update it automatically when the media loads in the browser.
+			const rawDuration =
+				typeof rawAsset.duration === "number" && rawAsset.duration > 0
+					? rawAsset.duration
+					: 300; // 5-minute placeholder — will be corrected by media load
+			const element = buildVideoElement({
+				mediaId: rawAsset.id,
+				name: rawAsset.name,
+				duration: rawDuration,
+				startTime: 0,
+			});
+			this.editor.timeline.insertElement({
+				placement: { mode: "auto", trackType: "video" },
+				element,
+			});
+		}
+
+		// --- Ensure silence analysis ---
+		await this.ensureSilenceAnalysisForAllVideos();
+
+		// --- Ensure transcript (trigger Whisper indexing if not ready) ---
+		// Must run BEFORE scoring so segment quality benefits from word-level data,
+		// and BEFORE cuts so caption timestamps are valid against the original video.
+		//
+		// The chat panel already fires indexMediaAssets() as fire-and-forget when a
+		// message is submitted.  If that worker is already in progress we WAIT for it
+		// rather than spawning a duplicate.  Hard wall: 120 s.
+		{
+			const TRANSCRIPT_TIMEOUT_MS = 120_000;
+			const POLL_INTERVAL_MS = 2_000;
+
+			const preMeta = this.getMediaMetadata({ mediaId: rawAsset.id });
+			if (!this.hasUsableMediaTranscript({ metadata: preMeta })) {
+				try {
+					if (preMeta?.transcriptionStatus === "processing") {
+						// Another indexing job is already running (chat auto-index).
+						// Poll until it finishes or we time out.
+						const deadline = Date.now() + TRANSCRIPT_TIMEOUT_MS;
+						while (Date.now() < deadline) {
+							await new Promise<void>((r) =>
+								setTimeout(r, POLL_INTERVAL_MS),
+							);
+							const fresh = this.getMediaMetadata({ mediaId: rawAsset.id });
+							if (this.hasUsableMediaTranscript({ metadata: fresh })) break;
+							if (fresh?.transcriptionStatus !== "processing") break;
+						}
+					} else {
+						// Nothing running yet — start indexing and race with timeout.
+						const timeout = new Promise<void>((resolve) =>
+							setTimeout(resolve, TRANSCRIPT_TIMEOUT_MS),
+						);
+						await Promise.race([
+							this.indexMediaAsset({ mediaId: rawAsset.id }),
+							timeout,
+						]);
+					}
+				} catch {
+					// Non-fatal: transcription unavailable (no provider configured,
+					// network error, or model not loaded).  Pipeline continues without
+					// captions — the word list stays empty and the caption block is a no-op.
+				}
+			}
+		}
+
+		// --- Collect silence regions + transcript words for this asset ---
+		// Re-read metadata AFTER both silence analysis and transcript indexing.
+		const refreshedProject = this.editor.project.getActive();
+		if (!refreshedProject) throw new Error("Project disappeared.");
+		const refreshedCfData = ensureClipForgeProjectData({
+			project: refreshedProject,
+		}).clipforge;
+		const meta = refreshedCfData.mediaMetadataById[rawAsset.id];
+		const silenceRegions = meta?.silenceRegions ?? [];
+		const transcriptWords = meta?.words ?? [];
+		const gazeAnalysis = rawAsset.gazeAnalysis ?? null;
+		const gazeWindows = (gazeAnalysis?.windows ?? []).map((w) => ({
+			startMs: Math.round(w.startTime * 1000),
+			endMs: Math.round(w.endTime * 1000),
+			score: w.gazeScore,
+		}));
+
+		// Prefer the asset's known duration; fall back to current timeline duration
+		// (covers the case where the asset duration wasn't populated at pipeline start).
+		const assetDurationS =
+			typeof rawAsset.duration === "number" && rawAsset.duration > 0
+				? rawAsset.duration
+				: this.editor.timeline.getTotalDuration();
+		const rawDurationMs = Math.round(assetDurationS * 1000);
+
+		// ──────────────────────────────────────────────────────────────────
+		// Phase 1  — Cut silence gaps + repeated/mistake takes  (CapCut steps 2-5)
+		// Silence removal AND repeat/restart/flub removal are both computed in
+		// RAW transcript coordinates and applied together as one merged batch.
+		// Running the repeat detector on the raw transcript (not the
+		// silence-fragmented timeline) keeps sentence boundaries intact, so the
+		// cuts land cleanly and never leave word stubs.  Mirrors the user's
+		// workflow: look at the waveform → split at silence/repeats → delete.
+		// ──────────────────────────────────────────────────────────────────
+		let appliedOps = 0;
+		{
+			const rawCutRanges: { start_ms: number; end_ms: number }[] = [];
+
+			// Silence regions → cut ranges (keep padMs of breath on each side).
+			if (silenceRegions.length > 0 && rawDurationMs > 0) {
+				const padMs = profile.silencePadMs ?? 150;
+				const minSilenceMs = padMs * 2 + 100;
+				for (const region of silenceRegions) {
+					const silenceDuration = region.end_ms - region.start_ms;
+					if (silenceDuration < minSilenceMs) continue;
+					const cutStart = region.start_ms + padMs;
+					const cutEnd = region.end_ms - padMs;
+					if (cutEnd <= cutStart) continue;
+					rawCutRanges.push({ start_ms: cutStart, end_ms: cutEnd });
+				}
+			}
+
+			// Repeated / restarted / flubbed sentences → cut ranges (UNBUDGETED:
+			// a mistake is always cut).  AI primary, heuristic fallback.
+			if (transcriptWords.length >= 6) {
+				let aiRepeatCuts: { start_ms: number; end_ms: number }[] | null = null;
+				try {
+					const resp = await fetch("/api/clipforge/detect-repeats", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							words: transcriptWords.map((w) => ({
+								text: w.text,
+								start_ms: w.start_ms,
+								end_ms: w.end_ms,
+							})),
+						}),
+					});
+					if (resp.ok) {
+						const data = (await resp.json()) as {
+							cuts?: { start_ms: number; end_ms: number }[];
+						};
+						aiRepeatCuts = data.cuts ?? [];
+					}
+				} catch {
+					aiRepeatCuts = null;
+				}
+				const repeatRanges =
+					aiRepeatCuts ??
+					detectRepeatTakeCuts({
+						words: transcriptWords.map((w) => ({
+							text: w.text,
+							start_ms: w.start_ms,
+							end_ms: w.end_ms,
+							segment_id: "",
+						})),
+						minSimilarity: 0.35,
+						minUtteranceWords: 3,
+					}).flatMap((op) =>
+						op.type === "CUT_RANGE"
+							? [{ start_ms: op.start_ms, end_ms: op.end_ms }]
+							: [],
+					);
+				for (const c of repeatRanges) rawCutRanges.push(c);
+			}
+
+			// Merge overlapping/adjacent ranges, then apply as one batch.  The
+			// op engine applies CUT_RANGE from the end first, so a merged raw
+			// set stays valid.
+			rawCutRanges.sort((a, b) => a.start_ms - b.start_ms);
+			const mergedCuts: { start_ms: number; end_ms: number }[] = [];
+			for (const r of rawCutRanges) {
+				const last = mergedCuts[mergedCuts.length - 1];
+				if (last && r.start_ms <= last.end_ms + 50) {
+					last.end_ms = Math.max(last.end_ms, r.end_ms);
+				} else {
+					mergedCuts.push({ ...r });
+				}
+			}
+			const cutOps: import("@/types/clipforge").TimelineDiffOp[] = mergedCuts.map(
+				(r) => ({ type: "CUT_RANGE" as const, start_ms: r.start_ms, end_ms: r.end_ms }),
+			);
+			if (cutOps.length > 0) {
+				const result = this.applyOps({ ops: cutOps, source: "auto-edit" });
+				if (result.applied) appliedOps += result.ops.length;
+			}
+		}
+
+		// ──────────────────────────────────────────────────────────────────
+		// Phase 2  — Word-level stutter removal ("only only", "that that").
+		// Repeats/restarts are handled in Phase 1; this catches single-word
+		// duplications on the post-cut timeline.
+		// ──────────────────────────────────────────────────────────────────
+		{
+			const p = this.editor.project.getActive();
+			if (p) {
+				const words = buildTimelineTranscriptWords({ project: p });
+				const stutterCuts = detectWordStutterCuts({ words });
+				if (stutterCuts.length > 0) {
+					const result = this.applyOps({
+						ops: stutterCuts,
+						source: "auto-edit",
+					});
+					if (result.applied) appliedOps += result.ops.length;
+				}
+			}
+		}
+
+		// ──────────────────────────────────────────────────────────────────
+		// Phase 3  — AI editorial pass  (close remaining duration gap)
+		// Deterministic cuts (silence + repeats/stutters) get us ~65-70%
+		// of raw. The remaining gap to target requires editorial judgment:
+		// which segments are redundant, verbose, or weak. LLM decides.
+		// Runs up to 2 passes — first pass does bulk, second pass
+		// tightens if still over.
+		// ──────────────────────────────────────────────────────────────────
+		{
+			// Target: use profile ratio against RAW duration.
+			// Reference: 255s raw → 72s final ≈ 0.28 keep ratio.
+			// Default to 0.30 (slightly generous) if no override.
+			// Phase 2b — re-transcribe the post-cut audio to catch repeats the
+			// first Whisper pass collapsed (it bundles pauses into word durations
+			// and drops repeated/restarted lines, hiding them from the
+			// transcript-remap detector).  Re-transcribing the shorter post-cut
+			// audio exposes them.  Non-fatal enhancement.
+			try {
+				appliedOps += await this.detectRepeatsByRetranscription({ rawAsset });
+			} catch {
+				/* re-transcription unavailable (no CLI/cloud transcriber) — skip */
+			}
+
+			const editorialTargetMs = Math.round(
+				rawDurationMs * (targetKeepRatio > 0 ? targetKeepRatio : 0.30),
+			);
+			const MAX_EDITORIAL_PASSES = 2;
+
+			for (let editPass = 0; editPass < MAX_EDITORIAL_PASSES; editPass++) {
+				const passProject = this.editor.project.getActive();
+				if (!passProject) break;
+
+				const currentDurationMs = Math.round(
+					this.editor.timeline.getTotalDuration() * 1000,
+				);
+
+				// Stop once we're within ~3% of target (or under a 2s overshoot).
+				// Tight threshold so the edit still tightens to the reference
+				// length after repeat removal, instead of settling several
+				// seconds long.
+				const overageRatio = currentDurationMs / editorialTargetMs;
+				if (overageRatio <= 1.03 || currentDurationMs <= editorialTargetMs + 2000) {
+					break;
+				}
+
+				const editorialWords = buildTimelineTranscriptWords({
+					project: passProject,
+				});
+
+				// Build utterances from words: group by 300ms gaps
+				const utterances = buildUtterancesFromWords(editorialWords);
+
+				if (utterances.length <= 2) break;
+
+				try {
+					const editorialResp = await fetch("/api/clipforge/editorial-cut", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							utterances,
+							currentDurationMs,
+							targetDurationMs: editorialTargetMs,
+						}),
+					});
+
+					if (!editorialResp.ok) break;
+
+					const editorialData = (await editorialResp.json()) as {
+						cuts: { start_ms: number; end_ms: number; reason: string }[];
+						warnings: string[];
+					};
+
+					if (editorialData.cuts.length === 0) break; // LLM found nothing to cut
+
+					// Budget cap — the LLM picks WHICH segments are weak (quality);
+					// we pick HOW MANY to apply so the edit lands near the target
+					// instead of overshooting.  The LLM is told to cut ~Xs but does
+					// not count precisely, so without this it removes too much and
+					// the video ends up shorter than the reference.
+					const neededMs = currentDurationMs - editorialTargetMs;
+					const budgetedCuts = selectCutsWithinBudget({
+						cuts: editorialData.cuts,
+						neededMs,
+					});
+					if (budgetedCuts.length === 0) break;
+
+					const editorialOps: import("@/types/clipforge").TimelineDiffOp[] =
+						budgetedCuts.map((c) => ({
+							type: "CUT_RANGE" as const,
+							start_ms: c.start_ms,
+							end_ms: c.end_ms,
+						}));
+					const result = this.applyOps({
+						ops: editorialOps,
+						source: "auto-edit",
+					});
+					if (result.applied) appliedOps += result.ops.length;
+
+					// If LLM returned cuts but nothing was applied, stop looping
+					if (!result.applied) break;
+				} catch {
+					// Non-fatal — editorial pass is enhancement, not critical path.
+					break;
+				}
+			}
+		}
+
+		// --- Captions (word-by-word, after all cuts + fresh transcript) ---
+		// Transcript was ensured above; if still empty the catch swallows the error.
+		const captionStyleId = profile.captionStyleId ?? "word-by-word";
+		// Word-by-word styles get tight chunking (2 words max); others use standard defaults.
+		const isWordByWord =
+			captionStyleId === "word-by-word" ||
+			captionStyleId === "punchy-center" ||
+			captionStyleId === "social-pop";
+		const captionOptions: CaptionLineBreakOptions | undefined = isWordByWord
+			? { maxWordsPerChunk: 1, maxCharsPerLine: 30, maxLines: 1, minDisplaySeconds: 0.25 }
+			: undefined;
+		let captionsGenerated = 0;
+		try {
+			const { generated } = this.generateSceneCaptions({
+				template: captionStyleId,
+				overwriteExisting: false,
+				options: captionOptions,
+			});
+			captionsGenerated = generated;
+			if (generated > 0) appliedOps += 1;
+		} catch {
+			// Non-fatal — transcript unavailable or captions already exist
+		}
+
+		// --- Title overlay (full project duration) ---
+		if (profile.titleEnabled !== false) {
+			const postCutDurationMs = Math.round(
+				this.editor.timeline.getTotalDuration() * 1000,
+			);
+			const titleDurationMs = postCutDurationMs > 0 ? postCutDurationMs : 5000;
+			// Reference shows title above speaker head — use "center" (slightly above mid).
+			const titlePosition: "top" | "bottom" | "center" =
+				(profile.titlePosition as "top" | "bottom" | "center") ?? "center";
+			// Title generation. The reference video shows a content hook the
+			// creator typed manually ("Always Operate from Abundance"), which a
+			// filename alone can't produce.  So: AI hook from the transcript
+			// (primary) → cleaned asset name (fallback) → "Untitled".
+			const codecPatterns = /\b(h264|h265|hevc|avc|aac|mp4|mov|mkv|webm|avi|raw)\b/gi;
+			const assetNameTitle = (() => {
+				const cleaned = rawAsset.name
+					.replace(/\.[^.]+$/, "")       // strip extension
+					.replace(/[-_]/g, " ")          // separators → spaces
+					.replace(codecPatterns, "")      // strip codec/container names
+					.replace(/\s+/g, " ")
+					.trim();
+				if (cleaned.length >= 3) {
+					return cleaned
+						.split(" ")
+						.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+						.join(" ")
+						.slice(0, 50);
+				}
+				return "";
+			})();
+
+			let titleText = assetNameTitle || "Untitled";
+
+			// AI title hook from the transcript — captures the message the way a
+			// creator would title it, instead of echoing the filename.
+			if (transcriptWords.length > 0) {
+				try {
+					const transcriptText = transcriptWords
+						.map((w) => w.text.trim())
+						.join(" ")
+						.trim();
+					if (transcriptText.length >= 10) {
+						const titleResp = await fetch("/api/clipforge/generate-title", {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({ transcript: transcriptText }),
+						});
+						if (titleResp.ok) {
+							const titleData = (await titleResp.json()) as {
+								title?: string;
+								warnings?: string[];
+							};
+							if (titleData.title && titleData.title.trim().length >= 3) {
+								titleText = titleData.title.trim();
+							}
+						}
+					}
+				} catch {
+					// Non-fatal — fall back to the asset-name title.
+				}
+			}
+			// Wrap long titles onto two balanced lines (reference style); short
+			// titles stay one line.  Keeps the title off the canvas edges.
+			const wrappedTitleText = balanceTitleLines(titleText);
+			// Size in intended output pixels — op engine converts to internal units.
+			// Reference title is ~56px on 1920 canvas (wraps multi-word titles to 2 lines).
+			const titleResult = this.applyOps({
+				ops: [
+					{
+						type: "ADD_TEXT_OVERLAY",
+						text: wrappedTitleText,
+						start_ms: 0,
+						end_ms: titleDurationMs,
+						position: titlePosition,
+						style_id: "bold-center",
+						font: "Montserrat",
+						size: 56,
+						color: "#FFFFFF",
+						outline: true,
+						background: false,
+					},
+				],
+				source: "auto-edit",
+			});
+			if (titleResult.applied) appliedOps += titleResult.ops.length;
+		}
+
+		// --- Background music ---
+		const musicAsset = musicAssetId
+			? allAssets.find((a) => a.id === musicAssetId && a.type === "audio")
+			: allAssets.find((a) => a.type === "audio" && !a.ephemeral) ?? null;
+		if (musicAsset) {
+			const volume = profile.musicVolumeRatio ?? 0.30;
+			const loop = profile.musicLoop !== false;
+			await this.insertImportedMusicTrack({
+				asset: musicAsset,
+				startMs: 0,
+				volume,
+				loopToProjectEnd: loop,
+				replaceExisting: true,
+			});
+			appliedOps += 1;
+		}
+
+		const finalDurationMs = Math.round(
+			this.editor.timeline.getTotalDuration() * 1000,
+		);
+		const summary = [
+			`Auto-produced from raw video "${rawAsset.name}"`,
+			`target keep: ${Math.round(targetKeepRatio * 100)}%`,
+			`${Math.round(rawDurationMs / 1000)}s raw → ${Math.round(finalDurationMs / 1000)}s final`,
+			`silence regions: ${silenceRegions.length}`,
+			transcriptWords.length > 0
+				? `captions: ${captionsGenerated} segments`
+				: "captions: skipped (no transcript)",
+			musicAsset ? `music: "${musicAsset.name}"` : "no music",
+		].join(", ");
+
+		return { appliedOps, summary };
+	}
+
+	/**
+	 * Re-transcribe the POST-CUT audio and cut any repeats the first Whisper
+	 * pass collapsed.  The original transcript bundles pauses into word
+	 * durations and drops repeated/restarted lines, so those repeats never reach
+	 * the transcript-remap repeat detector.  Re-transcribing the shorter post-cut
+	 * audio (assembled from the current video clips) exposes them, then the
+	 * existing /detect-repeats route flags the redundant takes.
+	 *
+	 * Returns the number of cut ops applied (0 if nothing to do / unavailable).
+	 */
+	private async detectRepeatsByRetranscription({
+		rawAsset,
+	}: {
+		rawAsset: MediaAsset;
+	}): Promise<number> {
+		const project = this.editor.project.getActive();
+		if (!project) return 0;
+
+		// Kept raw ranges = each video clip's [trimStart, trimStart+duration],
+		// in timeline order.  Concatenated, these ARE the post-cut timeline audio.
+		const videoEls = this.editor.timeline
+			.getTracks()
+			.filter((t) => t.type === "video")
+			.flatMap((t) => t.elements.filter((e) => e.type === "video"))
+			.slice()
+			.sort((a, b) => a.startTime - b.startTime);
+		if (videoEls.length === 0) return 0;
+
+		const { samples, sampleRate } = await extractMediaAssetAudioToFloat32({
+			mediaAsset: rawAsset,
+		});
+		if (!samples || samples.length === 0) return 0;
+
+		const parts: Float32Array[] = [];
+		for (const el of videoEls) {
+			const meta = el as { trimStart?: number; duration?: number };
+			const startS = meta.trimStart ?? 0;
+			const durS = meta.duration ?? 0;
+			const s = Math.max(0, Math.floor(startS * sampleRate));
+			const e = Math.min(samples.length, Math.floor((startS + durS) * sampleRate));
+			if (e > s) parts.push(samples.subarray(s, e));
+		}
+		const totalLen = parts.reduce((n, p) => n + p.length, 0);
+		if (totalLen < sampleRate * 2) return 0; // < 2s, skip
+
+		const post = new Float32Array(totalLen);
+		let off = 0;
+		for (const p of parts) {
+			post.set(p, off);
+			off += p.length;
+		}
+
+		// Re-transcribe via the CLI route (reveals the collapsed repeats).
+		const wav = encodeWavPcm16({ samples: post, sampleRate });
+		const file = new File([wav], "postcut.wav", { type: "audio/wav" });
+		const fd = new FormData();
+		fd.set("file", file);
+		fd.set("language", "en");
+		const txResp = await fetch("/api/clipforge/transcribe", {
+			method: "POST",
+			body: fd,
+		});
+		if (!txResp.ok) return 0;
+		const tx = (await txResp.json()) as {
+			words?: { text: string; start_ms: number; end_ms: number }[];
+		};
+		const words = tx.words ?? [];
+		if (words.length < 6) return 0;
+
+		// Detect repeats on the FRESH post-cut transcript.
+		const rrResp = await fetch("/api/clipforge/detect-repeats", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				words: words.map((w) => ({
+					text: w.text,
+					start_ms: w.start_ms,
+					end_ms: w.end_ms,
+				})),
+			}),
+		});
+		if (!rrResp.ok) return 0;
+		const rr = (await rrResp.json()) as {
+			cuts?: { start_ms: number; end_ms: number }[];
+		};
+		const cuts = rr.cuts ?? [];
+		if (cuts.length === 0) return 0;
+
+		// Post-cut audio == current timeline audio, so cut times map directly.
+		const ops: import("@/types/clipforge").TimelineDiffOp[] = cuts.map((c) => ({
+			type: "CUT_RANGE" as const,
+			start_ms: c.start_ms,
+			end_ms: c.end_ms,
+		}));
+		const result = this.applyOps({ ops, source: "auto-edit" });
+		return result.applied ? result.ops.length : 0;
 	}
 
 	async analyzeSceneFootageIntelligence(): Promise<FootageIntelligenceReport> {
@@ -2938,10 +3610,12 @@ export class ClipForgeManager {
 		language,
 		template,
 		overwriteExisting,
+		options,
 	}: {
 		language?: string;
 		template: string;
 		overwriteExisting: boolean;
+		options?: CaptionLineBreakOptions;
 	}): { generated: number; trackId: string | null } {
 		void language;
 		const activeProject = this.editor.project.getActive();
@@ -2965,6 +3639,7 @@ export class ClipForgeManager {
 		const captionElements = createCaptionTextElements({
 			project: nextProject,
 			styleId: template,
+			options,
 		});
 		if (captionElements.length === 0) {
 			throw new Error(
@@ -3948,12 +4623,6 @@ export class ClipForgeManager {
 			throw new Error("Choose a reference video before recreating it.");
 		}
 
-		try {
-			await this.analyzeReferenceVideo({ assetId: referenceAssetId });
-		} catch {
-			// The recreation builder still has deterministic fallbacks.
-		}
-
 		const sourceAssetIds =
 			command.source_asset_ids && command.source_asset_ids.length > 0
 				? command.source_asset_ids
@@ -3964,13 +4633,16 @@ export class ClipForgeManager {
 			);
 		}
 		try {
-			await this.setAssemblySourcePool({ assetIds: sourceAssetIds });
+			await this.setAssemblySourcePool({
+				assetIds: sourceAssetIds,
+				analyze: false,
+			});
 		} catch {
 			// Source analysis is best-effort; validation has already checked the assets.
 		}
 		await this.ensureReferenceRecreationSourceTranscripts({
 			sourceAssetIds,
-			requireTranscript: command.require_transcript ?? true,
+			requireTranscript: command.require_transcript ?? false,
 		});
 
 		const refreshedProject = ensureClipForgeProjectData({
@@ -5122,6 +5794,35 @@ export class ClipForgeManager {
 					}),
 				);
 			}
+			case "produce-from-raw": {
+				const allAssets = this.editor.media.getAssets();
+				const videoAssets = allAssets.filter(
+					(a) => a.type === "video" && !a.ephemeral,
+				);
+				if (videoAssets.length === 0) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "no_video_assets",
+							message:
+								"Import at least one raw video before running auto-produce.",
+						}),
+					];
+				}
+				if (
+					command.raw_video_asset_id &&
+					!allAssets.find((a) => a.id === command.raw_video_asset_id)
+				) {
+					return [
+						buildCommandValidationError({
+							commandIndex,
+							code: "unknown_raw_video_asset",
+							message: "The specified raw video asset does not exist.",
+						}),
+					];
+				}
+				return [];
+			}
 		}
 	}
 
@@ -5471,6 +6172,13 @@ export class ClipForgeManager {
 				}
 				break;
 			}
+			case "produce-from-raw":
+				await this.executeAutoProducePipeline({
+					rawVideoAssetId: command.raw_video_asset_id ?? null,
+					musicAssetId: command.music_asset_id ?? null,
+					targetKeepRatio: command.target_keep_ratio ?? null,
+				});
+				break;
 		}
 
 		this.invalidateSceneFootageIntelligence();
@@ -5615,21 +6323,30 @@ export class ClipForgeManager {
 			editor: this.editor,
 			item,
 		});
-		const projectDurationMs = Math.max(
-			Math.round(this.editor.timeline.getTotalDuration() * 1000),
-			Math.round(item.duration * 1000),
-		);
+		const videoEndMs = Math.round(this.editor.timeline.getTotalDuration() * 1000);
+		// Use the video end as the project duration so music never extends the timeline.
+		const projectDurationMs =
+			loopToProjectEnd && videoEndMs > 0
+				? videoEndMs
+				: startMs + Math.round(item.duration * 1000);
 		const desiredEndMs = loopToProjectEnd
 			? projectDurationMs
 			: startMs + Math.round(item.duration * 1000);
 		const trackId = this.getOrCreateAudioTrackId();
 		let cursorMs = Math.max(0, startMs);
+		const rawDurationMs = Math.round((asset.duration ?? item.duration) * 1000);
 
 		while (cursorMs < desiredEndMs) {
+			const remainingMs = desiredEndMs - cursorMs;
+			const clampedDurationSec = Math.min(
+				asset.duration ?? item.duration,
+				remainingMs / 1000,
+			);
+			if (clampedDurationSec <= 0) break;
 			const element = buildUploadAudioElement({
 				mediaId: asset.id,
 				name: asset.name,
-				duration: asset.duration ?? item.duration,
+				duration: clampedDurationSec,
 				startTime: cursorMs / 1000,
 			});
 			element.role = "music";
@@ -5640,10 +6357,7 @@ export class ClipForgeManager {
 				placement: { mode: "explicit", trackId },
 				element,
 			});
-			cursorMs += Math.max(
-				1,
-				Math.round((asset.duration ?? item.duration) * 1000),
-			);
+			cursorMs += Math.max(1, rawDurationMs);
 			if (!loopToProjectEnd) {
 				break;
 			}
@@ -5675,21 +6389,27 @@ export class ClipForgeManager {
 		}
 
 		const assetDuration = typeof asset.duration === "number" ? asset.duration : 0;
-		const projectDurationMs = Math.max(
-			Math.round(this.editor.timeline.getTotalDuration() * 1000),
-			Math.round(assetDuration * 1000),
-		);
+		const videoEndMs = Math.round(this.editor.timeline.getTotalDuration() * 1000);
+		// Clamp to video end — never let music extend the overall timeline duration.
+		const projectDurationMs =
+			loopToProjectEnd && videoEndMs > 0
+				? videoEndMs
+				: startMs + Math.round(assetDuration * 1000);
 		const desiredEndMs = loopToProjectEnd
 			? projectDurationMs
 			: startMs + Math.round(assetDuration * 1000);
 		const trackId = this.getOrCreateAudioTrackId();
 		let cursorMs = Math.max(0, startMs);
+		const rawDurationMs = Math.round(assetDuration * 1000);
 
 		while (cursorMs < desiredEndMs) {
+			const remainingMs = desiredEndMs - cursorMs;
+			const clampedDurationSec = Math.min(assetDuration, remainingMs / 1000);
+			if (clampedDurationSec <= 0) break;
 			const element = buildUploadAudioElement({
 				mediaId: asset.id,
 				name: asset.name,
-				duration: assetDuration,
+				duration: clampedDurationSec,
 				startTime: cursorMs / 1000,
 			});
 			element.role = "music";
@@ -5700,7 +6420,7 @@ export class ClipForgeManager {
 				placement: { mode: "explicit", trackId },
 				element,
 			});
-			cursorMs += Math.max(1, Math.round(assetDuration * 1000));
+			cursorMs += Math.max(1, rawDurationMs);
 			if (!loopToProjectEnd || assetDuration <= 0) {
 				break;
 			}
@@ -6507,6 +7227,8 @@ function summarizeSingleCommand(command: ClipForgeEditorCommand): string {
 			return "Locked a reference draft section to the current source clip.";
 		case "clear-reference-match-locks":
 			return "Cleared all reference draft section locks.";
+		case "produce-from-raw":
+			return "Auto-produced a finished video from raw footage using creator style profile.";
 	}
 }
 
@@ -6899,4 +7621,353 @@ function buildRecentReferenceComparison({
 		default:
 			return [];
 	}
+}
+
+// ─── Repeat-take detection ────────────────────────────────────────────────
+// Groups post-cut transcript words into utterances (separated by silence
+// gaps ≥ 300ms).  Three detection layers:
+//   1. Jaccard word-set similarity ≥ 0.35 → repeat take
+//   2. Shared bigram ratio ≥ 0.4 → paraphrased repeat
+//   3. False starts: utterance ≤ 2 words immediately before a longer one
+//      that starts with the same word(s) → abandoned sentence
+// The earlier take is cut; the later (usually cleaner) take is kept.
+
+function jaccardWordSimilarity(a: string, b: string): number {
+	const setA = new Set(a.toLowerCase().split(/\s+/).filter(Boolean));
+	const setB = new Set(b.toLowerCase().split(/\s+/).filter(Boolean));
+	let intersection = 0;
+	for (const w of setA) {
+		if (setB.has(w)) intersection++;
+	}
+	const union = setA.size + setB.size - intersection;
+	return union === 0 ? 0 : intersection / union;
+}
+
+function bigramOverlap(a: string, b: string): number {
+	const toBigrams = (s: string) => {
+		const words = s.toLowerCase().split(/\s+/).filter(Boolean);
+		const bigrams = new Set<string>();
+		for (let i = 0; i < words.length - 1; i++) {
+			bigrams.add(`${words[i]} ${words[i + 1]}`);
+		}
+		return bigrams;
+	};
+	const bA = toBigrams(a);
+	const bB = toBigrams(b);
+	if (bA.size === 0 || bB.size === 0) return 0;
+	let intersection = 0;
+	for (const bg of bA) {
+		if (bB.has(bg)) intersection++;
+	}
+	return intersection / Math.min(bA.size, bB.size);
+}
+
+function isFalseStart(short: string, long: string): boolean {
+	const sWords = short.toLowerCase().split(/\s+/).filter(Boolean);
+	const lWords = long.toLowerCase().split(/\s+/).filter(Boolean);
+	if (sWords.length > 3 || lWords.length <= sWords.length) return false;
+	// Check if the longer utterance starts with the same first word(s)
+	for (let k = 0; k < Math.min(sWords.length, 2); k++) {
+		if (sWords[k] === lWords[k]) return true;
+	}
+	return false;
+}
+
+interface Utterance {
+	startMs: number;
+	endMs: number;
+	text: string;
+	wordCount: number;
+}
+
+function detectRepeatTakeCuts({
+	words,
+	minSimilarity = 0.35,
+	minUtteranceWords = 3,
+}: {
+	words: TimelineTranscriptWord[];
+	minSimilarity: number;
+	minUtteranceWords: number;
+}): import("@/types/clipforge").TimelineDiffOp[] {
+	if (words.length < 4) return [];
+
+	// Group words into utterances separated by gaps > 300ms
+	const utterances: Utterance[] = [];
+	let buf: TimelineTranscriptWord[] = [];
+
+	const flush = () => {
+		if (buf.length > 0) {
+			utterances.push({
+				startMs: buf[0].start_ms,
+				endMs: buf[buf.length - 1].end_ms,
+				text: buf.map((w) => w.text.trim()).join(" "),
+				wordCount: buf.length,
+			});
+			buf = [];
+		}
+	};
+
+	for (const word of words) {
+		if (buf.length > 0) {
+			const gap = word.start_ms - buf[buf.length - 1].end_ms;
+			if (gap > 300) flush();
+		}
+		buf.push(word);
+	}
+	flush();
+
+	// Detect repeats + false starts (look-ahead window = 6)
+	const removeIndices = new Set<number>();
+	for (let i = 0; i < utterances.length - 1; i++) {
+		if (removeIndices.has(i)) continue;
+
+		// Layer 3: false start — very short utterance before a longer one
+		if (utterances[i].wordCount <= 2) {
+			const next = utterances[i + 1];
+			if (next && !removeIndices.has(i + 1) && isFalseStart(utterances[i].text, next.text)) {
+				removeIndices.add(i);
+				continue;
+			}
+		}
+
+		if (utterances[i].wordCount < minUtteranceWords) continue;
+
+		for (let j = i + 1; j < Math.min(i + 7, utterances.length); j++) {
+			if (removeIndices.has(j)) continue;
+			if (utterances[j].wordCount < minUtteranceWords) continue;
+
+			// Layer 1: Jaccard word-set similarity
+			const sim = jaccardWordSimilarity(
+				utterances[i].text,
+				utterances[j].text,
+			);
+			if (sim >= minSimilarity) {
+				removeIndices.add(i);
+				break;
+			}
+
+			// Layer 2: bigram overlap (catches paraphrased repeats)
+			const bOverlap = bigramOverlap(utterances[i].text, utterances[j].text);
+			if (bOverlap >= 0.4) {
+				removeIndices.add(i);
+				break;
+			}
+		}
+	}
+
+	// Build CUT_RANGE ops for each false take (timeline-time coordinates)
+	return [...removeIndices]
+		.sort((a, b) => a - b)
+		.map((idx) => ({
+			type: "CUT_RANGE" as const,
+			start_ms: utterances[idx].startMs,
+			end_ms: utterances[idx].endMs,
+		}));
+}
+
+// ─── Word-level stutter removal ───────────────────────────────────────────
+// Detects consecutive duplicate words ("only only", "that that", "and and")
+// and generates CUT_RANGE ops to remove the first occurrence.
+// These are common verbal tics in unscripted talking-head footage.
+
+/**
+ * Balance a title overlay onto at most two lines, matching the reference's
+ * wrapped upper-third title.  The renderer honours "\n" but does not auto-wrap
+ * by width, so a long single-line title would otherwise span edge-to-edge.
+ * Splits at the word boundary nearest the character midpoint.
+ */
+function balanceTitleLines(title: string): string {
+	const words = title.trim().split(/\s+/).filter(Boolean);
+	if (words.length <= 2) return title.trim(); // short → keep one line
+	const total = title.trim().length;
+	let bestSplit = -1;
+	let bestDelta = Number.POSITIVE_INFINITY;
+	let acc = 0;
+	for (let i = 0; i < words.length - 1; i++) {
+		acc += words[i].length + (i > 0 ? 1 : 0); // +1 for the joining space
+		const delta = Math.abs(acc - total / 2);
+		if (delta < bestDelta) {
+			bestDelta = delta;
+			bestSplit = i;
+		}
+	}
+	if (bestSplit < 0) return title.trim();
+	const line1 = words.slice(0, bestSplit + 1).join(" ");
+	const line2 = words.slice(bestSplit + 1).join(" ");
+	return `${line1}\n${line2}`;
+}
+
+/**
+ * Encode mono Float32 PCM samples to a 16-bit WAV ArrayBuffer (so post-cut
+ * audio can be POSTed to the Whisper CLI transcribe route for re-transcription).
+ */
+function encodeWavPcm16({
+	samples,
+	sampleRate,
+}: {
+	samples: Float32Array;
+	sampleRate: number;
+}): ArrayBuffer {
+	const n = samples.length;
+	const buf = new ArrayBuffer(44 + n * 2);
+	const v = new DataView(buf);
+	const ws = (off: number, s: string) => {
+		for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i));
+	};
+	ws(0, "RIFF");
+	v.setUint32(4, 36 + n * 2, true);
+	ws(8, "WAVE");
+	ws(12, "fmt ");
+	v.setUint32(16, 16, true);
+	v.setUint16(20, 1, true); // PCM
+	v.setUint16(22, 1, true); // mono
+	v.setUint32(24, sampleRate, true);
+	v.setUint32(28, sampleRate * 2, true); // byte rate
+	v.setUint16(32, 2, true); // block align
+	v.setUint16(34, 16, true); // bits per sample
+	ws(36, "data");
+	v.setUint32(40, n * 2, true);
+	let off = 44;
+	for (let i = 0; i < n; i++) {
+		const x = Math.max(-1, Math.min(1, samples[i]));
+		v.setInt16(off, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+		off += 2;
+	}
+	return buf;
+}
+
+/**
+ * Pick the subset of editorial cuts whose total removed duration is closest
+ * to `neededMs`, so the final edit lands near the target instead of
+ * overshooting.  The LLM flags every returned segment as weak/redundant, so
+ * any subset is editorially valid — we choose the one that best matches the
+ * duration budget.
+ *
+ * Brute-forces all subsets when the cut count is small (≤ 16); for larger
+ * lists it falls back to a greedy in-order pack.  Ties prefer the smaller
+ * total (cut less → leave the video slightly longer, which reads closer to
+ * the reference than cutting too much).
+ */
+function selectCutsWithinBudget({
+	cuts,
+	neededMs,
+}: {
+	cuts: { start_ms: number; end_ms: number; reason: string }[];
+	neededMs: number;
+}): { start_ms: number; end_ms: number; reason: string }[] {
+	const valid = cuts.filter((c) => c.end_ms > c.start_ms);
+	if (valid.length === 0 || neededMs <= 0) return [];
+
+	const durMs = (c: { start_ms: number; end_ms: number }) =>
+		c.end_ms - c.start_ms;
+	const total = valid.reduce((s, c) => s + durMs(c), 0);
+
+	// If everything fits within budget, take it all.
+	if (total <= neededMs) return valid;
+
+	// Small list → exact closest-subset-sum.
+	if (valid.length <= 16) {
+		let bestMask = 0;
+		let bestDelta = Number.POSITIVE_INFINITY;
+		let bestSum = Number.POSITIVE_INFINITY;
+		const combos = 1 << valid.length;
+		for (let mask = 1; mask < combos; mask++) {
+			let sum = 0;
+			for (let i = 0; i < valid.length; i++) {
+				if (mask & (1 << i)) sum += durMs(valid[i]);
+			}
+			const delta = Math.abs(sum - neededMs);
+			// Closest to budget; tie-break toward the smaller total (cut less).
+			if (delta < bestDelta || (delta === bestDelta && sum < bestSum)) {
+				bestDelta = delta;
+				bestSum = sum;
+				bestMask = mask;
+			}
+		}
+		return valid.filter((_, i) => bestMask & (1 << i));
+	}
+
+	// Large list → greedy: take cuts in LLM (priority) order until the next
+	// one would overshoot the budget by more than half its own length.
+	const selected: typeof valid = [];
+	let acc = 0;
+	for (const c of valid) {
+		const d = durMs(c);
+		if (acc + d <= neededMs + d / 2) {
+			selected.push(c);
+			acc += d;
+		}
+		if (acc >= neededMs) break;
+	}
+	// Never return empty when cuts exist — take the single smallest.
+	if (selected.length === 0) {
+		const smallest = [...valid].sort((a, b) => durMs(a) - durMs(b))[0];
+		return [smallest];
+	}
+	return selected;
+}
+
+/**
+ * Group timeline transcript words into utterances by 300ms silence gaps.
+ * Each utterance = one contiguous speech segment with its full text.
+ */
+function buildUtterancesFromWords(
+	words: TimelineTranscriptWord[],
+): { startMs: number; endMs: number; text: string }[] {
+	const utterances: { startMs: number; endMs: number; text: string }[] = [];
+	let current: { startMs: number; endMs: number; words: string[] } | null = null;
+
+	for (const w of words) {
+		if (!current || w.start_ms - current.endMs > 300) {
+			if (current) {
+				utterances.push({
+					startMs: current.startMs,
+					endMs: current.endMs,
+					text: current.words.join(" "),
+				});
+			}
+			current = { startMs: w.start_ms, endMs: w.end_ms, words: [w.text] };
+		} else {
+			current.endMs = w.end_ms;
+			current.words.push(w.text);
+		}
+	}
+	if (current) {
+		utterances.push({
+			startMs: current.startMs,
+			endMs: current.endMs,
+			text: current.words.join(" "),
+		});
+	}
+
+	return utterances;
+}
+
+function detectWordStutterCuts({
+	words,
+}: {
+	words: TimelineTranscriptWord[];
+}): import("@/types/clipforge").TimelineDiffOp[] {
+	const cuts: import("@/types/clipforge").TimelineDiffOp[] = [];
+
+	for (let i = 0; i < words.length - 1; i++) {
+		const current = words[i].text.toLowerCase().replace(/[^a-z']/g, "");
+		const next = words[i + 1].text.toLowerCase().replace(/[^a-z']/g, "");
+
+		if (current.length < 2) continue; // skip very short words
+		if (current !== next) continue; // not a stutter
+
+		// Check gap — stutters have < 300ms gap between duplicates
+		const gap = words[i + 1].start_ms - words[i].end_ms;
+		if (gap > 300) continue;
+
+		// Cut the FIRST (stuttered) word, keep the second (clean) one
+		cuts.push({
+			type: "CUT_RANGE",
+			start_ms: words[i].start_ms,
+			end_ms: words[i].end_ms,
+		});
+	}
+
+	return cuts;
 }

@@ -896,6 +896,8 @@ function summarizeCommandForEval({
 			return "Locked a matched draft section.";
 		case "clear-reference-match-locks":
 			return "Cleared reference draft locks.";
+		case "produce-from-raw":
+			return "Auto-produced from raw footage.";
 	}
 }
 
@@ -942,6 +944,7 @@ function extractSummarySegmentTargets({
 			case "replace-with-source-match":
 			case "lock-reference-match":
 			case "clear-reference-match-locks":
+			case "produce-from-raw":
 				return [];
 			case "build-reference-draft":
 				return command.matches.map((match) => match.match_id);
@@ -991,6 +994,7 @@ function extractSummaryElementTargets({
 			case "replace-with-source-match":
 			case "lock-reference-match":
 			case "clear-reference-match-locks":
+			case "produce-from-raw":
 				return [];
 		}
 	return [];

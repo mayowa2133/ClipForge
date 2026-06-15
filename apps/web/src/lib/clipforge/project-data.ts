@@ -64,6 +64,7 @@ export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 		},
 		opsAudit: [],
 		captionSizeMultiplier: 1,
+		creatorProfile: null,
 	};
 }
 
@@ -81,6 +82,7 @@ export function normalizeClipForgeMediaMetadata({
 		transcriptionLanguage: metadata?.transcriptionLanguage ?? null,
 		transcriptionError: metadata?.transcriptionError ?? null,
 		indexedAt: metadata?.indexedAt ?? null,
+		silenceAnalyzedAt: metadata?.silenceAnalyzedAt ?? null,
 	};
 }
 
@@ -1121,7 +1123,7 @@ function normalizeMusicTrackAnalysis(
 		recommended_volume:
 			typeof source.recommended_volume === "number"
 				? source.recommended_volume
-				: 0.28,
+				: 0.45,
 		loop_to_project_end:
 			typeof source.loop_to_project_end === "boolean"
 				? source.loop_to_project_end
@@ -1325,6 +1327,53 @@ function normalizeReferenceRecreationPlan(
 					: 0,
 		},
 		audio_mix: referenceAnalysis.audio_mix,
+		quality_gate: {
+			target_duration_delta_ms:
+				typeof source.quality_gate?.target_duration_delta_ms === "number"
+					? source.quality_gate.target_duration_delta_ms
+					: 0,
+			filled_reference_slots:
+				typeof source.quality_gate?.filled_reference_slots === "number"
+					? source.quality_gate.filled_reference_slots
+					: source.source_ranges?.length ?? 0,
+			total_reference_slots:
+				typeof source.quality_gate?.total_reference_slots === "number"
+					? source.quality_gate.total_reference_slots
+					: source.cut_points_ms?.length
+						? source.cut_points_ms.length + 1
+						: 0,
+			source_coverage_ratio:
+				typeof source.quality_gate?.source_coverage_ratio === "number"
+					? source.quality_gate.source_coverage_ratio
+					: 1,
+			average_agent_score:
+				typeof source.quality_gate?.average_agent_score === "number"
+					? source.quality_gate.average_agent_score
+					: typeof source.caption_generation?.alignment_confidence === "number"
+						? source.caption_generation.alignment_confidence
+						: 0,
+			music_selected:
+				typeof source.quality_gate?.music_selected === "boolean"
+					? source.quality_gate.music_selected
+					: typeof source.music_asset_id === "string",
+			caption_review_required:
+				typeof source.quality_gate?.caption_review_required === "boolean"
+					? source.quality_gate.caption_review_required
+					: (source.caption_generation?.needs_review_terms?.length ?? 0) > 0,
+			readiness:
+				source.quality_gate?.readiness === "ready-for-review" ||
+				source.quality_gate?.readiness === "needs-review" ||
+				source.quality_gate?.readiness === "blocked"
+					? source.quality_gate.readiness
+					: "needs-review",
+			human_review_steps: Array.isArray(
+				source.quality_gate?.human_review_steps,
+			)
+				? source.quality_gate.human_review_steps.filter(
+						(step): step is string => typeof step === "string",
+					)
+				: [],
+		},
 		crop: {
 			target_aspect_ratio: "9:16",
 			canvas_width:

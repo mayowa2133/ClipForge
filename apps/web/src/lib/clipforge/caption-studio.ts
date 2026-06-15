@@ -1,4 +1,4 @@
-import { DEFAULT_TEXT_ELEMENT } from "@/constants/text-constants";
+import { DEFAULT_TEXT_ELEMENT, FONT_SIZE_SCALE_REFERENCE } from "@/constants/text-constants";
 import { generateCaptionChunks, generateCaptionChunksFromWords, getCaptionTemplate } from "@/lib/clipforge/caption-generator";
 import { buildTimelineTranscriptSegments, buildTimelineTranscriptWords } from "@/lib/clipforge/timeline-transcript";
 import { buildEmptyTrack } from "@/lib/timeline/track-utils";
@@ -249,25 +249,39 @@ export function applyCaptionStyleToTextElement({
 }): TextElement {
 	const positionY =
 		style.position === "bottom" ? Math.round(canvasHeight * 0.35) : 0;
-	const effectiveSize = Math.round(style.size * Math.max(0.5, Math.min(3, sizeMultiplier)));
-	const bgColor = style.outline ? (style.outline_color ?? "#000000") : "transparent";
+	// style.size is intended output pixels; convert to internal fontSize units.
+	// Renderer does: fontSize * (canvasHeight / FONT_SIZE_SCALE_REFERENCE) = output pixels.
+	// So: fontSize = style.size * (FONT_SIZE_SCALE_REFERENCE / canvasHeight).
+	const effectiveSizePx = style.size * Math.max(0.5, Math.min(3, sizeMultiplier));
+	const fontSize = effectiveSizePx * (FONT_SIZE_SCALE_REFERENCE / canvasHeight);
+
+	// Outline = text stroke (ctx.strokeText), NOT a background box.
+	// Stroke width ~25% of font size gives a thick CapCut-like outlined look.
+	const strokeOutline = style.outline
+		? {
+				color: style.outline_color ?? "#000000",
+				width: fontSize * 0.25,
+			}
+		: null;
+
 	return {
 		...element,
 		role: "caption",
 		fontFamily: style.font,
-		fontSize: effectiveSize,
+		fontSize,
 		color: style.color ?? "#ffffff",
 		fontWeight: style.font_weight ?? (
 			style.style_id === "bold-center" || style.position === "center" ? "bold" : "normal"
 		),
 		fontStyle: style.font_style ?? "normal",
 		textAlign: "center",
+		stroke: strokeOutline,
 		background: {
 			...element.background,
-			color: bgColor,
-			cornerRadius: style.outline ? 8 : 0,
-			paddingX: style.outline ? 24 : 0,
-			paddingY: style.outline ? 12 : 0,
+			color: "transparent",
+			cornerRadius: 0,
+			paddingX: 0,
+			paddingY: 0,
 		},
 		transform: {
 			...element.transform,
@@ -303,6 +317,8 @@ export function createCaptionTextElements({
 	const style = getCaptionTemplate({ styleId });
 	const canvasHeight = project.settings.canvasSize.height;
 	const sizeMultiplier = project.clipforge?.captionSizeMultiplier ?? 1;
+	// Word-by-word and word-highlight styles render as ALL CAPS for impact.
+	const uppercase = style.highlight_mode === "word";
 
 	return chunks.map((chunk, index) => {
 		const base: TextElement = {
@@ -311,7 +327,7 @@ export function createCaptionTextElements({
 			role: "caption",
 			captionTiming: chunk.words ? { words: chunk.words } : null,
 			name: `Caption ${index + 1}`,
-			content: chunk.text,
+			content: uppercase ? chunk.text.toUpperCase() : chunk.text,
 			duration: chunk.duration,
 			startTime: chunk.startTime,
 		};

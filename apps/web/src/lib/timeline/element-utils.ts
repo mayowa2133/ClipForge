@@ -186,6 +186,7 @@ export function buildTextElement({
 				: DEFAULT_TEXT_ELEMENT.fontSize,
 		fontFamily: t.fontFamily ?? DEFAULT_TEXT_ELEMENT.fontFamily,
 		color: t.color ?? DEFAULT_TEXT_ELEMENT.color,
+		stroke: t.stroke ?? null,
 		background: {
 		color: t.background?.color ?? DEFAULT_TEXT_ELEMENT.background.color,
 		cornerRadius: t.background?.cornerRadius,

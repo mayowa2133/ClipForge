@@ -156,6 +156,25 @@ export const BUILT_IN_CAPTION_STYLES: BuiltInCaptionStyleDefinition[] = [
 			font_weight: "normal",
 		},
 	},
+	{
+		// CapCut-style word-by-word: single word at a time, bold condensed font,
+		// thick stroke outline — matches the default creator profile "word-by-word" style ID.
+		id: "word-by-word",
+		label: "Word by Word",
+		template: {
+			style_id: "word-by-word",
+			font: "Anton",
+			size: 140,
+			position: "bottom",
+			outline: true,
+			outline_color: "#000000",
+			highlight_mode: "word",
+			reveal_preset_id: "pop-line",
+			sound_sync_preset_id: "caption-pop-bright",
+			color: "#FFFFFF",
+			font_weight: "bold",
+		},
+	},
 ];
 
 export const BUILT_IN_CAPTION_STYLE_MAP: Record<string, CaptionStyleTemplate> =

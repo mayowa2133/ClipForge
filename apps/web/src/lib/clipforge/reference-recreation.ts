@@ -210,7 +210,7 @@ export function buildReferenceEditAnalysis({
 			target_lufs: -11,
 			true_peak_db: -0.7,
 			voice_gain_db: 11,
-			music_volume: 0.28,
+			music_volume: 0.45,
 			ducking_amount: 0.62,
 			ducking_attack_ms: 70,
 			ducking_release_ms: 260,
@@ -466,7 +466,7 @@ export function buildMusicTrackAnalysis({
 		asset_id: asset.id,
 		duration_ms: Math.max(1, Math.round((asset.duration ?? 0) * 1000)),
 		bpm: asset.beatAnalysis?.bpm ?? null,
-		recommended_volume: 0.28,
+		recommended_volume: 0.45,
 		loop_to_project_end: true,
 		rights_profile: rightsProfile,
 		warnings:
@@ -683,6 +683,155 @@ function candidateStartPoints({
 		.slice(0, 32);
 }
 
+function buildChronologicalFallbackSourceRangesForPlan({
+	sources,
+	boundaries,
+	mediaMetadataById,
+}: {
+	sources: Array<{ asset: MediaAsset; analysis: SourceRecreationAnalysis }>;
+	boundaries: Array<{ start_ms: number; end_ms: number }>;
+	mediaMetadataById: Record<string, ClipMediaMetadata>;
+}): ReferenceRecreationPlan["source_ranges"] {
+	const targetDurationMs = boundaries.at(-1)?.end_ms ?? 0;
+	const ranges: ReferenceRecreationPlan["source_ranges"] = [];
+	let timelineCursorMs = 0;
+	let sourceIndex = 0;
+	const sourceCursorByAsset = new Map<string, number>();
+
+	for (const boundary of boundaries) {
+		if (timelineCursorMs >= targetDurationMs) break;
+		const requestedDurationMs = boundary.end_ms - boundary.start_ms;
+		const targetRemainingMs = targetDurationMs - timelineCursorMs;
+		const targetClipMs = Math.min(requestedDurationMs, targetRemainingMs);
+		let selected:
+			| {
+					asset: MediaAsset;
+					range: SourceRecreationAnalysis["speech_ranges"][number];
+					sourceStartMs: number;
+					sourceEndMs: number;
+					durationMs: number;
+					scoreBreakdown: ReferenceRecreationPlan["source_ranges"][number]["score_breakdown"];
+					agentScore: number;
+				}
+			| null = null;
+
+		for (
+			let attemptIndex = sourceIndex;
+			attemptIndex < sources.length;
+			attemptIndex += 1
+		) {
+			const source = sources[attemptIndex];
+			if (!source) continue;
+			const { asset, analysis } = source;
+			const metadata = mediaMetadataById[asset.id];
+			const minSourceStartMs = sourceCursorByAsset.get(asset.id) ?? 0;
+			const assetDurationMs = Math.max(
+				1,
+				Math.round((asset.duration ?? 0) * 1000),
+			);
+			const usableRanges = analysis.speech_ranges
+				.filter((candidate) => candidate.end_ms - candidate.start_ms >= 120)
+				.sort((left, right) => left.start_ms - right.start_ms);
+			const nextRange = usableRanges.find(
+				(candidate) =>
+					candidate.end_ms > minSourceStartMs + 80 &&
+					candidate.start_ms < assetDurationMs - 120,
+			);
+			if (!nextRange) {
+				sourceIndex = Math.min(attemptIndex + 1, sources.length - 1);
+				continue;
+			}
+
+			const sourceStartMs = clamp(
+				Math.max(nextRange.start_ms, minSourceStartMs),
+				0,
+				assetDurationMs,
+			);
+			const sourceEndMs = clamp(
+				sourceStartMs + targetClipMs,
+				sourceStartMs,
+				assetDurationMs,
+			);
+			const durationMs = sourceEndMs - sourceStartMs;
+			if (durationMs < 120) {
+				sourceCursorByAsset.set(asset.id, sourceEndMs);
+				continue;
+			}
+
+			const scoreBreakdown = {
+				speech: clamp(nextRange.confidence, 0, 1),
+				pause: silenceBoundaryScore({
+					silenceRegions: metadata?.silenceRegions ?? [],
+					startMs: sourceStartMs,
+					endMs: sourceEndMs,
+				}),
+				semantic: 0,
+				activity: activityScoreForRange({
+					asset,
+					startMs: sourceStartMs,
+					endMs: sourceEndMs,
+				}),
+				cadence: clamp(
+					1 - Math.abs(durationMs - targetClipMs) / Math.max(targetClipMs, 1),
+					0,
+					1,
+				),
+			};
+			const chronologicalScore = clamp(
+				1 - sourceStartMs / Math.max(assetDurationMs, 1),
+				0,
+				1,
+			);
+			const agentScore =
+				scoreBreakdown.speech * 0.24 +
+				scoreBreakdown.pause * 0.2 +
+				scoreBreakdown.activity * 0.14 +
+				scoreBreakdown.cadence * 0.2 +
+				chronologicalScore * 0.22;
+			selected = {
+				asset,
+				range: nextRange,
+				sourceStartMs,
+				sourceEndMs,
+				durationMs,
+				scoreBreakdown,
+				agentScore,
+			};
+			sourceIndex = attemptIndex;
+			break;
+		}
+
+		if (!selected) break;
+
+		ranges.push({
+			range_id: `${selected.asset.id}:recreate:${ranges.length + 1}`,
+			source_asset_id: selected.asset.id,
+			source_asset_name: selected.asset.name,
+			source_start_ms: selected.sourceStartMs,
+			source_end_ms: selected.sourceEndMs,
+			timeline_start_ms: timelineCursorMs,
+			target_duration_ms: selected.durationMs,
+			confidence: Number(selected.agentScore.toFixed(2)),
+			agent_score: Number(selected.agentScore.toFixed(3)),
+			score_breakdown: {
+				speech: Number(selected.scoreBreakdown.speech.toFixed(3)),
+				pause: Number(selected.scoreBreakdown.pause.toFixed(3)),
+				semantic: 0,
+				activity: Number(selected.scoreBreakdown.activity.toFixed(3)),
+				cadence: Number(selected.scoreBreakdown.cadence.toFixed(3)),
+			},
+			reasons: [
+				"Reference caption OCR was unavailable, so ClipForge filled this slot chronologically from the next usable source speech anchor.",
+				...selected.range.reasons,
+			],
+		});
+		timelineCursorMs += selected.durationMs;
+		sourceCursorByAsset.set(selected.asset.id, selected.sourceEndMs);
+	}
+
+	return ranges;
+}
+
 function buildSourceRangesForPlan({
 	sources,
 	boundaries,
@@ -694,6 +843,14 @@ function buildSourceRangesForPlan({
 	mediaMetadataById: Record<string, ClipMediaMetadata>;
 	referenceWords: ReferenceCaptionOcrWord[];
 }): ReferenceRecreationPlan["source_ranges"] {
+	if (referenceWords.length === 0) {
+		return buildChronologicalFallbackSourceRangesForPlan({
+			sources,
+			boundaries,
+			mediaMetadataById,
+		});
+	}
+
 	const targetDurationMs = boundaries.at(-1)?.end_ms ?? 0;
 	const ranges: ReferenceRecreationPlan["source_ranges"] = [];
 	let timelineCursorMs = 0;
@@ -783,12 +940,25 @@ function buildSourceRangesForPlan({
 							1,
 						),
 					};
+					const chronologicalScore = clamp(
+						1 -
+							(sourceStartMs - minSourceStartMs) /
+								Math.max(assetDurationMs, 1),
+						0,
+						1,
+					);
 					const agentScore =
-						scoreBreakdown.speech * 0.28 +
-						scoreBreakdown.semantic * 0.22 +
-						scoreBreakdown.pause * 0.18 +
-						scoreBreakdown.activity * 0.16 +
-						scoreBreakdown.cadence * 0.16;
+						referenceTokens.length > 0
+							? scoreBreakdown.speech * 0.28 +
+								scoreBreakdown.semantic * 0.22 +
+								scoreBreakdown.pause * 0.18 +
+								scoreBreakdown.activity * 0.16 +
+								scoreBreakdown.cadence * 0.16
+							: scoreBreakdown.speech * 0.24 +
+								scoreBreakdown.pause * 0.2 +
+								scoreBreakdown.activity * 0.14 +
+								scoreBreakdown.cadence * 0.2 +
+								chronologicalScore * 0.22;
 					if (!bestCandidate || agentScore > bestCandidate.agentScore) {
 						bestCandidate = {
 							asset,
@@ -987,6 +1157,10 @@ export function buildReferenceRecreationPlan({
 			? sourceRanges.reduce((sum, range) => sum + range.agent_score, 0) /
 				sourceRanges.length
 			: 0;
+	const plannedDurationMs = sourceRanges.reduce(
+		(sum, range) => sum + range.target_duration_ms,
+		0,
+	);
 	const warnings = [
 		...referenceEditAnalysis.warnings,
 		...referenceEditAnalysis.caption_ocr.warnings,
@@ -1004,6 +1178,35 @@ export function buildReferenceRecreationPlan({
 			"No imported music asset was selected, so the draft will keep only camera audio.",
 		);
 	}
+	const captionReviewRequired =
+		captionReview.terms.length > 0 ||
+		referenceWords.length === 0 ||
+		captionReview.warnings.length > 0;
+	const durationDeltaMs = Math.abs(
+		plannedDurationMs - referenceEditAnalysis.duration_ms,
+	);
+	const sourceCoverageRatio = clamp(
+		plannedDurationMs / Math.max(referenceEditAnalysis.duration_ms, 1),
+		0,
+		1.5,
+	);
+	const humanReviewSteps = [
+		"Scrub the first three cuts against the reference hook and verify the selected source take is the intended one.",
+		"Play captions at full speed and correct any flagged transcript terms before export.",
+		musicAsset
+			? "Play the final mix and adjust music volume if speech is not clearly forward."
+			: "Import the reference background music before exporting.",
+		"Export, then run the reference comparison smoke script against the finished MP4.",
+	];
+	const qualityReadiness =
+		sourceRanges.length === 0
+			? "blocked"
+			: durationDeltaMs <= 3000 &&
+				  sourceRanges.length >= Math.max(1, Math.round(boundaries.length * 0.85)) &&
+				  alignmentConfidence >= 0.45 &&
+				  musicAsset
+				? "ready-for-review"
+				: "needs-review";
 
 	const plan: ReferenceRecreationPlan = {
 		plan_id: generateUUID(),
@@ -1037,6 +1240,17 @@ export function buildReferenceRecreationPlan({
 					music_volume: musicAnalysis.recommended_volume,
 				}
 			: referenceEditAnalysis.audio_mix,
+		quality_gate: {
+			target_duration_delta_ms: durationDeltaMs,
+			filled_reference_slots: sourceRanges.length,
+			total_reference_slots: boundaries.length,
+			source_coverage_ratio: Number(sourceCoverageRatio.toFixed(3)),
+			average_agent_score: Number(clamp(alignmentConfidence, 0, 1).toFixed(3)),
+			music_selected: Boolean(musicAsset),
+			caption_review_required: captionReviewRequired,
+			readiness: qualityReadiness,
+			human_review_steps: humanReviewSteps,
+		},
 		crop: {
 			target_aspect_ratio: "9:16",
 			canvas_width: TARGET_CANVAS_WIDTH,

@@ -1,6 +1,18 @@
 import { z } from "zod";
 
-const isLocalMode = process.env.CLIPFORGE_MODE === "local";
+const browserEnvFallback =
+	typeof window !== "undefined"
+		? {
+				CLIPFORGE_MODE: "local",
+				NODE_ENV: "development",
+				NEXT_PUBLIC_SITE_URL: "http://localhost:3000",
+			}
+		: {};
+const env = {
+	...browserEnvFallback,
+	...process.env,
+};
+const isLocalMode = env.CLIPFORGE_MODE === "local";
 
 const optionalInLocal = <T extends z.ZodTypeAny>(schema: T) =>
 	isLocalMode ? schema.optional() : schema;
@@ -41,4 +53,4 @@ const webEnvSchema = z.object({
 
 export type WebEnv = z.infer<typeof webEnvSchema>;
 
-export const webEnv = webEnvSchema.parse(process.env);
+export const webEnv = webEnvSchema.parse(env);

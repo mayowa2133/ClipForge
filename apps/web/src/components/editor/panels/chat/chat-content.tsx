@@ -75,8 +75,10 @@ export function ChatContent() {
 		(state) => state.markFirstAssistantActionCompleted,
 	);
 	const activeRequestIdRef = useRef(0);
+	const isApplyingRef = useRef(false);
 	const [prompt, setPrompt] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
+	const [isApplying, setIsApplying] = useState(false);
 	const [proposedCommands, setProposedCommands] = useState<ClipForgeEditorCommand[]>([]);
 	const [impactPreview, setImpactPreview] = useState<ChatPlanPreviewResult | null>(
 		null,
@@ -573,7 +575,9 @@ export function ChatContent() {
 	};
 
 	const handleApply = async () => {
-		if (selectedCommands.length === 0) return;
+		if (selectedCommands.length === 0 || isApplyingRef.current) return;
+		isApplyingRef.current = true;
+		setIsApplying(true);
 
 		try {
 			const result = await editor.clipforge.applyCommands({
@@ -606,6 +610,9 @@ export function ChatContent() {
 			toast.error("Failed to apply planned edits.", {
 				description: message,
 			});
+		} finally {
+			isApplyingRef.current = false;
+			setIsApplying(false);
 		}
 	};
 
@@ -876,12 +883,73 @@ export function ChatContent() {
 							{referenceSummary.footage_match_readiness.reason}
 						</p>
 						{activeRecreationPlan && (
-							<p className="text-muted-foreground mt-1 text-xs">
-								Recreation blueprint:{" "}
-								{(activeRecreationPlan.target_duration_ms / 1000).toFixed(1)}s ·{" "}
-								{activeRecreationPlan.source_ranges.length} cuts ·{" "}
-								{activeRecreationPlan.music_asset_id ? "music on" : "no music"}
-							</p>
+							<div className="mt-3 border-t pt-2">
+								<div className="flex items-center justify-between gap-3">
+									<p className="text-xs font-medium">Recreation proof</p>
+									<span className="text-muted-foreground text-[10px] uppercase tracking-wide">
+										{activeRecreationPlan.quality_gate.readiness.replaceAll(
+											"-",
+											" ",
+										)}
+									</span>
+								</div>
+								<div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+									<p>
+										<span className="text-muted-foreground">
+											Duration delta:
+										</span>{" "}
+										{(
+											activeRecreationPlan.quality_gate
+												.target_duration_delta_ms / 1000
+										).toFixed(1)}
+										s
+									</p>
+									<p>
+										<span className="text-muted-foreground">
+											Slots filled:
+										</span>{" "}
+										{
+											activeRecreationPlan.quality_gate
+												.filled_reference_slots
+										}
+										/
+										{
+											activeRecreationPlan.quality_gate
+												.total_reference_slots
+										}
+									</p>
+									<p>
+										<span className="text-muted-foreground">
+											Alignment:
+										</span>{" "}
+										{Math.round(
+											activeRecreationPlan.quality_gate
+												.average_agent_score * 100,
+										)}
+										%
+									</p>
+									<p>
+										<span className="text-muted-foreground">Music:</span>{" "}
+										{activeRecreationPlan.quality_gate.music_selected
+											? "selected"
+											: "missing"}
+									</p>
+								</div>
+								{activeRecreationPlan.quality_gate.human_review_steps
+									.length > 0 && (
+									<ul className="text-muted-foreground mt-2 list-disc space-y-1 pl-4 text-[11px]">
+										{activeRecreationPlan.quality_gate.human_review_steps
+											.slice(0, 3)
+											.map((step, index) => (
+												<li
+													key={`${activeRecreationPlan.plan_id}-review-${index}`}
+												>
+													{step}
+												</li>
+											))}
+									</ul>
+								)}
+							</div>
 						)}
 					</div>
 				)}
@@ -1557,9 +1625,14 @@ export function ChatContent() {
 					<div className="flex gap-2">
 						<Button
 							onClick={() => void handleApply()}
-							disabled={errors.length > 0 || selectedCommands.length === 0}
+							onPointerUp={() => void handleApply()}
+							disabled={
+								isApplying ||
+								errors.length > 0 ||
+								selectedCommands.length === 0
+							}
 						>
-							Apply
+							{isApplying ? "Applying..." : "Apply"}
 						</Button>
 						<Button
 							variant="outline"
