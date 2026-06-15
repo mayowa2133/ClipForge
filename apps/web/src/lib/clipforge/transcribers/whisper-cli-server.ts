@@ -43,7 +43,10 @@ export async function runWhisperCliTranscription({
 	}
 
 	const tempDir = await mkdtemp(join(tmpdir(), "clipforge-whisper-"));
-	const filePath = join(tempDir, file.name || "input-media");
+	// basename() strips any path components — a caller-controlled file.name like
+	// "../../etc/x" would otherwise escape tempDir via join() (path traversal write).
+	const safeName = basename(file.name || "input-media") || "input-media";
+	const filePath = join(tempDir, safeName);
 
 	try {
 		await writeFile(filePath, Buffer.from(await file.arrayBuffer()));
