@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkAiRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -25,6 +26,14 @@ interface GenerateTitleResponse {
 
 export async function POST(request: Request) {
 	try {
+		const { limited } = await checkAiRateLimit({ request });
+		if (limited) {
+			return NextResponse.json(
+				{ error: "Too many requests" },
+				{ status: 429 },
+			);
+		}
+
 		const body = (await request.json()) as GenerateTitleRequest;
 
 		const transcript = (body.transcript ?? "").trim();

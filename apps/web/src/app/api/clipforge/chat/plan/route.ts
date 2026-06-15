@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkAiRateLimit } from "@/lib/rate-limit";
 import { requestAnthropicChatPlan } from "@/lib/clipforge/chat/server/anthropic-planner";
 import { requestOpenAIChatPlan } from "@/lib/clipforge/chat/server/openai-planner";
 import type {
@@ -24,6 +25,14 @@ function resolveProvider(requested?: string): "anthropic" | "openai" {
 
 export async function POST(request: Request) {
 	try {
+		const { limited } = await checkAiRateLimit({ request });
+		if (limited) {
+			return NextResponse.json(
+				{ error: "Too many requests" },
+				{ status: 429 },
+			);
+		}
+
 		const body = (await request.json()) as unknown;
 		if (!isRecord(body)) {
 			return NextResponse.json(
