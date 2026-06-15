@@ -58,9 +58,15 @@ function getAiLimiter(): Ratelimit | null {
 
 async function check(limiter: Ratelimit | null, request: Request) {
 	if (!limiter) return { success: true, limited: false };
-	const ip = request.headers.get("x-forwarded-for") ?? "anonymous";
-	const { success } = await limiter.limit(ip);
-	return { success, limited: !success };
+	try {
+		const ip = request.headers.get("x-forwarded-for") ?? "anonymous";
+		const { success } = await limiter.limit(ip);
+		return { success, limited: !success };
+	} catch {
+		// Fail open: a rate-limiter outage or misconfiguration must never take
+		// down the route it guards.
+		return { success: true, limited: false };
+	}
 }
 
 export async function checkRateLimit({ request }: { request: Request }) {

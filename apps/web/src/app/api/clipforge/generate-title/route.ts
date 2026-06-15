@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { checkAiRateLimit } from "@/lib/rate-limit";
+import { aiRateLimitResponse } from "@/lib/clipforge/ai-rate-limit-guard";
 
 export const runtime = "nodejs";
 
@@ -26,13 +26,8 @@ interface GenerateTitleResponse {
 
 export async function POST(request: Request) {
 	try {
-		const { limited } = await checkAiRateLimit({ request });
-		if (limited) {
-			return NextResponse.json(
-				{ error: "Too many requests" },
-				{ status: 429 },
-			);
-		}
+		const blocked = await aiRateLimitResponse(request);
+		if (blocked) return blocked;
 
 		const body = (await request.json()) as GenerateTitleRequest;
 
