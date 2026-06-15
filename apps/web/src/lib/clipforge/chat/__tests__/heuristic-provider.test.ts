@@ -313,8 +313,13 @@ async function proposeWithSummary({
 describe("HeuristicChatOpsProvider", () => {
 	test("returns deterministic ops for common edit intents in clause order", async () => {
 		const provider = new HeuristicChatOpsProvider();
-		const result = await propose({
+		const result = await proposeWithSummary({
 			provider,
+			// Silence regions present so the "remove pauses" clause resolves to a
+			// REMOVE_SILENCE op rather than the analyze-first clarification.
+			projectSummary: buildSummary({
+				pause_stats: { region_count: 5, total_pause_ms: 4000 },
+			}),
 			userText: "make it faster and remove more pauses and use bold center captions",
 		});
 

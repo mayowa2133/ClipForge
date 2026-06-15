@@ -359,7 +359,7 @@ function planClause({
 	}
 
 	const deleteRequest = parseDeleteSegmentRequest({ text: clause });
-	if (deleteRequest) {
+	if (deleteRequest && !isSilenceCutIntent(clause)) {
 		const target = resolveReference({
 			projectSummary,
 			context,
@@ -2269,17 +2269,12 @@ function parseSilencePadMs(text: string): number {
 }
 
 /**
- * Detect "remove non-talking / clip silence / auto clip" requests and emit a
- * REMOVE_SILENCE op using the pre-computed silence regions in the project
- * metadata.
+ * True when a clause is a silence / pause / dead-air removal request (handled by
+ * planSilenceCutClause). Shared so the delete-segment path can skip these — e.g.
+ * "remove more pauses" must not be resolved as a segment named "more pauses".
  */
-function planSilenceCutClause(args: DirectPlannerArgs): DirectPlanResult {
-	const { clause, projectSummary, state } = args;
-	const lower = clause.toLowerCase();
-
-	// Broad intent-matching: silence removal / non-talking cuts / auto-clip.
-	// NOTE: avoid trailing \b on word stems so "non-talking", "non-speaking" etc. match.
-	const isSilenceCut =
+function isSilenceCutIntent(clause: string): boolean {
+	return (
 		/\b(?:remove|cut|clip|trim|delete|strip)\b.{0,40}(?:silence|silent|pauses?|gaps?|dead\s+air|non.?talk\w*|not\s+talk\w*|non.?speak\w*)/i.test(
 			clause,
 		) ||
@@ -2290,9 +2285,20 @@ function planSilenceCutClause(args: DirectPlannerArgs): DirectPlanResult {
 		/\bremove\s+(?:the\s+)?pauses?\b/i.test(clause) ||
 		/\bcut\s+(?:out\s+)?(?:the\s+)?(?:dead|quiet|empty)\s+(?:air|space|parts?)\b/i.test(
 			clause,
-		);
+		)
+	);
+}
 
-	if (!isSilenceCut) return emptyDirectPlan({ state });
+/**
+ * Detect "remove non-talking / clip silence / auto clip" requests and emit a
+ * REMOVE_SILENCE op using the pre-computed silence regions in the project
+ * metadata.
+ */
+function planSilenceCutClause(args: DirectPlannerArgs): DirectPlanResult {
+	const { clause, projectSummary, state } = args;
+	const lower = clause.toLowerCase();
+
+	if (!isSilenceCutIntent(clause)) return emptyDirectPlan({ state });
 
 	const hasRegions = (projectSummary.pause_stats?.region_count ?? 0) > 0;
 

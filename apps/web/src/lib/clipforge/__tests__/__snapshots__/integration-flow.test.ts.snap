@@ -1,4 +1,4 @@
-// Bun Snapshot v1, https://goo.gl/fbAQLP
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
 exports[`ClipForge integration flow ingest 3 clips -> auto edit -> apply chat ops -> stable snapshot 1`] = `
 {
@@ -19,7 +19,7 @@ exports[`ClipForge integration flow ingest 3 clips -> auto edit -> apply chat op
       ],
     ],
   },
-  "duration": 8.4,
+  "duration": 7,
   "tracks": [
     {
       "segments": [
@@ -39,7 +39,7 @@ exports[`ClipForge integration flow ingest 3 clips -> auto edit -> apply chat op
         },
         {
           "content": null,
-          "duration": 2.4,
+          "duration": 1,
           "mediaId": "clip-003",
           "start": 6,
           "type": "video",

@@ -62,6 +62,7 @@ this is clipforge
 			words: [],
 			segments: [],
 			silenceRegions: [],
+			silenceAnalyzedAt: null,
 			transcriptionStatus: "idle",
 			transcriptionProvider: null,
 			transcriptionLanguage: null,

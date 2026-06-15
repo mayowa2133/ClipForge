@@ -408,7 +408,8 @@ describe("timeline op engine", () => {
 			const overlay = textTrack.elements.find((element) => element.id === "overlay-1");
 			expect(caption).toMatchObject({
 				fontFamily: "Bebas Neue",
-				fontSize: 64,
+				// 64px output → internal units: 64 * (FONT_SIZE_SCALE_REFERENCE 160 / canvasHeight 1920)
+				fontSize: 64 * (160 / 1920),
 				textAlign: "center",
 			});
 			expect(overlay).toMatchObject({

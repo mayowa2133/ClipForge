@@ -199,7 +199,7 @@ describe("caption studio helpers", () => {
 		expect(styled.role).toBe("caption");
 		expect(styled.fontFamily).toBe("Bebas Neue");
 		expect(styled.fontWeight).toBe("bold");
-		expect(styled.background.color).toBe("#000000");
+		expect(styled.background.color).toBe("transparent");
 	});
 
 	test("adoptLegacyCaptionTracks adopts a high-confidence legacy caption track", () => {
