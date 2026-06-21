@@ -172,6 +172,15 @@ describe("reference recreation", () => {
 		expect(result.project.clipforge?.activeReferenceRecreationPlanId).toBe(
 			result.plan.plan_id,
 		);
+		expect(result.project.clipforge?.creatorProfile?.targetKeepRatio).toBe(0.5);
+		expect(result.project.clipforge?.creatorProfile?.targetDurationS).toBe(4);
+		expect(result.project.clipforge?.creatorProfile?.referenceCutCount).toBe(3);
+		expect(result.project.clipforge?.creatorProfile?.maxWordsPerCaption).toBe(
+			1,
+		);
+		expect(result.project.clipforge?.creatorProfile?.musicVolumeRatio).toBe(
+			0.45,
+		);
 	});
 
 	test("auto-selects imported music when the command does not provide a music id", () => {
@@ -220,8 +229,8 @@ describe("reference recreation", () => {
 						duration: 36.082,
 						visualAnalysis: {
 							sceneCuts: [
-								1, 2, 4.75, 5.5, 6.5, 8, 9.75, 11, 13, 15.5, 17.25,
-								17.75, 20, 22, 22.75, 23.5, 25,
+								1, 2, 4.75, 5.5, 6.5, 8, 9.75, 11, 13, 15.5, 17.25, 17.75, 20,
+								22, 22.75, 23.5, 25,
 							],
 							activityWindows: [],
 							analyzedAt: new Date().toISOString(),
@@ -251,9 +260,9 @@ describe("reference recreation", () => {
 		expect(result.plan.source_ranges).toHaveLength(18);
 		expect(result.plan.quality_gate.filled_reference_slots).toBe(18);
 		expect(result.plan.quality_gate.total_reference_slots).toBe(18);
-		expect(result.plan.quality_gate.target_duration_delta_ms).toBeLessThanOrEqual(
-			1,
-		);
+		expect(
+			result.plan.quality_gate.target_duration_delta_ms,
+		).toBeLessThanOrEqual(1);
 		expect(plannedDurationMs).toBe(result.plan.target_duration_ms);
 		expect(result.plan.quality_gate.readiness).toBe("ready-for-review");
 		expect(result.plan.source_ranges[0]?.source_start_ms).toBe(0);

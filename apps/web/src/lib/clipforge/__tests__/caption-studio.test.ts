@@ -101,7 +101,12 @@ function buildCaptionElement(): TextElement {
 		textDecoration: "none",
 		textAlign: "center",
 		color: "#FFFFFF",
-		background: { color: "transparent", paddingX: 0, paddingY: 0, cornerRadius: 0 },
+		background: {
+			color: "transparent",
+			paddingX: 0,
+			paddingY: 0,
+			cornerRadius: 0,
+		},
 		transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
 		opacity: 1,
 		captionTiming: {
@@ -124,6 +129,24 @@ describe("caption studio helpers", () => {
 		expect(elements.length).toBeGreaterThan(0);
 		expect(elements[0]?.role).toBe("caption");
 		expect(elements[0]?.captionTiming?.words.length).toBeGreaterThan(0);
+	});
+
+	test("uses final-cut transcript words instead of stale source timing", () => {
+		const elements = createCaptionTextElements({
+			project: buildProjectFixture(),
+			styleId: "word-by-word",
+			options: { maxWordsPerChunk: 1, minDisplaySeconds: 0.16 },
+			transcriptWords: [
+				{ text: "fresh", start_ms: 100, end_ms: 320 },
+				{ text: "caption", start_ms: 340, end_ms: 620 },
+			],
+		});
+
+		expect(elements.map((element) => element.content)).toEqual([
+			"FRESH",
+			"CAPTION",
+		]);
+		expect(elements[0]?.startTime).toBeCloseTo(0.1, 3);
 	});
 
 	test("buildSceneCaptionSegments returns active-scene caption rows only", () => {
@@ -228,13 +251,21 @@ describe("caption studio helpers", () => {
 		});
 
 		const adopted = adoptLegacyCaptionTracks({ project });
-		const track = adopted.scenes[0]?.tracks.find((candidate) => candidate.id === "legacy-captions");
+		const track = adopted.scenes[0]?.tracks.find(
+			(candidate) => candidate.id === "legacy-captions",
+		);
 
 		expect(track?.type).toBe("text");
 		if (track?.type === "text") {
-			expect(track.elements.every((element) => element.type === "text" && element.role === "caption")).toBe(true);
+			expect(
+				track.elements.every(
+					(element) => element.type === "text" && element.role === "caption",
+				),
+			).toBe(true);
 		}
-		expect(adopted.clipforge?.captionTrackIdsBySceneId["scene-main"]).toBe("legacy-captions");
+		expect(adopted.clipforge?.captionTrackIdsBySceneId["scene-main"]).toBe(
+			"legacy-captions",
+		);
 	});
 
 	test("adoptLegacyCaptionTracks adopts generic text tracks when element names are caption-like", () => {
@@ -269,13 +300,21 @@ describe("caption studio helpers", () => {
 		});
 
 		const adopted = adoptLegacyCaptionTracks({ project });
-		const track = adopted.scenes[0]?.tracks.find((candidate) => candidate.id === "legacy-text-track");
+		const track = adopted.scenes[0]?.tracks.find(
+			(candidate) => candidate.id === "legacy-text-track",
+		);
 
 		expect(track?.type).toBe("text");
 		if (track?.type === "text") {
-			expect(track.elements.every((element) => element.type === "text" && element.role === "caption")).toBe(true);
+			expect(
+				track.elements.every(
+					(element) => element.type === "text" && element.role === "caption",
+				),
+			).toBe(true);
 		}
-		expect(adopted.clipforge?.captionTrackIdsBySceneId["scene-main"]).toBe("legacy-text-track");
+		expect(adopted.clipforge?.captionTrackIdsBySceneId["scene-main"]).toBe(
+			"legacy-text-track",
+		);
 	});
 
 	test("adoptLegacyCaptionTracks does not adopt mixed overlay text tracks", () => {
@@ -305,12 +344,21 @@ describe("caption studio helpers", () => {
 		});
 
 		const adopted = adoptLegacyCaptionTracks({ project });
-		const track = adopted.scenes[0]?.tracks.find((candidate) => candidate.id === "mixed-text");
+		const track = adopted.scenes[0]?.tracks.find(
+			(candidate) => candidate.id === "mixed-text",
+		);
 
 		expect(track?.type).toBe("text");
 		if (track?.type === "text") {
-			expect(track.elements.every((element) => element.type === "text" && (element.role ?? "text") === "text")).toBe(true);
+			expect(
+				track.elements.every(
+					(element) =>
+						element.type === "text" && (element.role ?? "text") === "text",
+				),
+			).toBe(true);
 		}
-		expect(adopted.clipforge?.captionTrackIdsBySceneId["scene-main"]).toBeUndefined();
+		expect(
+			adopted.clipforge?.captionTrackIdsBySceneId["scene-main"],
+		).toBeUndefined();
 	});
 });

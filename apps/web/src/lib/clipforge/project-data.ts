@@ -5,6 +5,8 @@ import type {
 	ClipForgeChatMemory,
 	ClipForgeChatTurnSummary,
 	ClipForgeProjectData,
+	AutonomousEditQualityGate,
+	CreatorStyleProfile,
 	ClipMediaMetadata,
 	FootageDescriptor,
 	MusicTrackAnalysis,
@@ -19,7 +21,7 @@ import type { TProject } from "@/types/project";
 import { adoptLegacyCaptionTracks } from "./caption-studio";
 import { BUILT_IN_CAPTION_STYLE_MAP } from "./caption-style-library";
 
-export const CLIPFORGE_SCHEMA_VERSION = 9;
+export const CLIPFORGE_SCHEMA_VERSION = 10;
 
 const MAX_CHAT_MEMORY_TURNS = 12;
 const MAX_CHAT_MEMORY_APPLIED_COMMANDS = 20;
@@ -65,6 +67,7 @@ export function buildDefaultClipForgeProjectData(): ClipForgeProjectData {
 		opsAudit: [],
 		captionSizeMultiplier: 1,
 		creatorProfile: null,
+		lastAutonomousQualityGate: null,
 	};
 }
 
@@ -908,6 +911,10 @@ function normalizeReferenceEditAnalysis(
 			typeof audioMix?.voice_gain_db === "number" ? audioMix.voice_gain_db : 11,
 		music_volume:
 			typeof audioMix?.music_volume === "number" ? audioMix.music_volume : 0.28,
+		music_start_offset_s:
+			typeof audioMix?.music_start_offset_s === "number"
+				? Math.max(0, audioMix.music_start_offset_s)
+				: 0,
 		ducking_amount:
 			typeof audioMix?.ducking_amount === "number"
 				? audioMix.ducking_amount
@@ -1335,7 +1342,7 @@ function normalizeReferenceRecreationPlan(
 			filled_reference_slots:
 				typeof source.quality_gate?.filled_reference_slots === "number"
 					? source.quality_gate.filled_reference_slots
-					: source.source_ranges?.length ?? 0,
+					: (source.source_ranges?.length ?? 0),
 			total_reference_slots:
 				typeof source.quality_gate?.total_reference_slots === "number"
 					? source.quality_gate.total_reference_slots
@@ -1366,9 +1373,7 @@ function normalizeReferenceRecreationPlan(
 				source.quality_gate?.readiness === "blocked"
 					? source.quality_gate.readiness
 					: "needs-review",
-			human_review_steps: Array.isArray(
-				source.quality_gate?.human_review_steps,
-			)
+			human_review_steps: Array.isArray(source.quality_gate?.human_review_steps)
 				? source.quality_gate.human_review_steps.filter(
 						(step): step is string => typeof step === "string",
 					)
@@ -1389,6 +1394,131 @@ function normalizeReferenceRecreationPlan(
 					? "center-face-safe"
 					: "center-crop",
 		},
+		warnings: Array.isArray(source.warnings)
+			? source.warnings.filter(
+					(warning): warning is string => typeof warning === "string",
+				)
+			: [],
+	};
+}
+
+function normalizeCreatorStyleProfile({
+	profile,
+}: {
+	profile?: Partial<CreatorStyleProfile> | null;
+}): CreatorStyleProfile | null {
+	if (!profile || typeof profile !== "object") return null;
+	if (
+		typeof profile.learnedAt !== "string" ||
+		typeof profile.rawDurationS !== "number" ||
+		typeof profile.finishedDurationS !== "number" ||
+		typeof profile.targetKeepRatio !== "number" ||
+		typeof profile.silenceThresholdMs !== "number" ||
+		typeof profile.silencePadMs !== "number" ||
+		typeof profile.captionStyleId !== "string" ||
+		typeof profile.titleEnabled !== "boolean" ||
+		(profile.titlePosition !== "top" &&
+			profile.titlePosition !== "bottom" &&
+			profile.titlePosition !== "center") ||
+		typeof profile.musicVolumeRatio !== "number" ||
+		typeof profile.musicLoop !== "boolean"
+	) {
+		return null;
+	}
+
+	const optionalNumber = (value: unknown): number | null =>
+		typeof value === "number" && Number.isFinite(value) ? value : null;
+	const optionalStringArray = (value: unknown): string[] | null =>
+		Array.isArray(value)
+			? value
+					.filter((entry): entry is string => typeof entry === "string")
+					.map((entry) => entry.trim())
+					.filter(Boolean)
+			: null;
+
+	return {
+		version: 1,
+		learnedAt: profile.learnedAt,
+		learnedFromAssetName:
+			typeof profile.learnedFromAssetName === "string"
+				? profile.learnedFromAssetName
+				: null,
+		learnedReferenceCount: optionalNumber(profile.learnedReferenceCount),
+		rawDurationS: profile.rawDurationS,
+		finishedDurationS: profile.finishedDurationS,
+		targetKeepRatio: profile.targetKeepRatio,
+		targetDurationS: optionalNumber(profile.targetDurationS),
+		referenceCutCount: optionalNumber(profile.referenceCutCount),
+		averageCutMs: optionalNumber(profile.averageCutMs),
+		cutDensityPerMinute: optionalNumber(profile.cutDensityPerMinute),
+		editorialKeepKeywords: optionalStringArray(profile.editorialKeepKeywords),
+		editorialHookKeywords: optionalStringArray(profile.editorialHookKeywords),
+		editorialPayoffKeywords: optionalStringArray(
+			profile.editorialPayoffKeywords,
+		),
+		editorialAvoidKeywords: optionalStringArray(profile.editorialAvoidKeywords),
+		silenceThresholdMs: profile.silenceThresholdMs,
+		silencePadMs: profile.silencePadMs,
+		captionStyleId: profile.captionStyleId,
+		captionRevealPreset:
+			typeof profile.captionRevealPreset === "string"
+				? profile.captionRevealPreset
+				: null,
+		maxWordsPerCaption: optionalNumber(profile.maxWordsPerCaption),
+		minCaptionDisplayMs: optionalNumber(profile.minCaptionDisplayMs),
+		titleEnabled: profile.titleEnabled,
+		titlePosition: profile.titlePosition,
+		titleFontSize: optionalNumber(profile.titleFontSize),
+		voiceGainDb: optionalNumber(profile.voiceGainDb),
+		musicVolumeRatio: profile.musicVolumeRatio,
+		musicStartOffsetS: optionalNumber(profile.musicStartOffsetS),
+		musicLoop: profile.musicLoop,
+	};
+}
+
+function normalizeAutonomousEditQualityGate(
+	value: unknown,
+): AutonomousEditQualityGate | null {
+	if (typeof value !== "object" || value === null) return null;
+	const source = value as Partial<AutonomousEditQualityGate>;
+	if (
+		typeof source.evaluatedAt !== "string" ||
+		typeof source.target_duration_ms !== "number" ||
+		typeof source.actual_duration_ms !== "number" ||
+		typeof source.target_duration_delta_ms !== "number" ||
+		typeof source.actual_cut_density_per_minute !== "number" ||
+		typeof source.video_cut_count !== "number" ||
+		typeof source.caption_count !== "number" ||
+		typeof source.title_present !== "boolean" ||
+		typeof source.music_present !== "boolean" ||
+		typeof source.portrait_canvas !== "boolean" ||
+		(source.readiness !== "ready-for-review" &&
+			source.readiness !== "needs-review" &&
+			source.readiness !== "blocked")
+	) {
+		return null;
+	}
+
+	return {
+		evaluatedAt: source.evaluatedAt,
+		target_duration_ms: source.target_duration_ms,
+		actual_duration_ms: source.actual_duration_ms,
+		target_duration_delta_ms: source.target_duration_delta_ms,
+		target_cut_density_per_minute:
+			typeof source.target_cut_density_per_minute === "number"
+				? source.target_cut_density_per_minute
+				: null,
+		actual_cut_density_per_minute: source.actual_cut_density_per_minute,
+		cut_density_delta_per_minute:
+			typeof source.cut_density_delta_per_minute === "number"
+				? source.cut_density_delta_per_minute
+				: null,
+		video_cut_count: source.video_cut_count,
+		caption_count: source.caption_count,
+		title_present: source.title_present,
+		music_present: source.music_present,
+		portrait_canvas: source.portrait_canvas,
+		readiness: source.readiness,
 		warnings: Array.isArray(source.warnings)
 			? source.warnings.filter(
 					(warning): warning is string => typeof warning === "string",
@@ -1808,6 +1938,12 @@ export function normalizeClipForgeProjectData({
 		chatMemory: normalizeChatMemory({
 			memory: source.chatMemory,
 		}),
+		creatorProfile: normalizeCreatorStyleProfile({
+			profile: source.creatorProfile,
+		}),
+		lastAutonomousQualityGate: normalizeAutonomousEditQualityGate(
+			source.lastAutonomousQualityGate,
+		),
 		opsAudit: source.opsAudit ?? [],
 	};
 }

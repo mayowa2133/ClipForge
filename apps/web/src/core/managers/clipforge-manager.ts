@@ -58,20 +58,14 @@ import {
 	buildPipelineSummary,
 	buildCreatorProfileFromDurations,
 	DEFAULT_CREATOR_PROFILE,
-	extractSpeechSegments,
-	scoreSpeechSegments,
-	selectBestSegments,
-	buildCutOpsFromKeptSegments,
+	detectUniversalFlubCuts,
+	resolveAutonomousAudioMix,
+	resolveCreatorProfileTargetDurationMs,
+	evaluateAutonomousEditQualityGate,
 } from "@/lib/clipforge";
-import type {
-	MusicSelectionResult,
-} from "@/lib/clipforge/music-auto-select";
-import type {
-	ThumbnailRecommendation,
-} from "@/lib/clipforge/thumbnail-optimizer";
-import type {
-	FullPipelineResult,
-} from "@/lib/clipforge/multi-version-generator";
+import type { MusicSelectionResult } from "@/lib/clipforge/music-auto-select";
+import type { ThumbnailRecommendation } from "@/lib/clipforge/thumbnail-optimizer";
+import type { FullPipelineResult } from "@/lib/clipforge/multi-version-generator";
 import {
 	buildCommandPlanImpactPreview,
 	buildPlanImpactPreview,
@@ -924,7 +918,10 @@ export class ClipForgeManager {
 					userText: prompt,
 					heuristicBrief,
 					projectSummary,
-					provider: plannerMode === "anthropic" || plannerMode === "openai" ? plannerMode : undefined,
+					provider:
+						plannerMode === "anthropic" || plannerMode === "openai"
+							? plannerMode
+							: undefined,
 				}),
 			});
 			const payload = (await response.json().catch(() => null)) as
@@ -972,6 +969,65 @@ export class ClipForgeManager {
 				],
 			};
 		}
+	}
+
+	private async transcribeCurrentTimelineAudio({
+		rawAsset,
+	}: {
+		rawAsset: MediaAsset;
+	}): Promise<Array<{ text: string; start_ms: number; end_ms: number }>> {
+		const videoEls = this.editor.timeline
+			.getTracks()
+			.filter((track) => track.type === "video")
+			.flatMap((track) =>
+				track.elements.filter((element) => element.type === "video"),
+			)
+			.slice()
+			.sort((left, right) => left.startTime - right.startTime);
+		if (videoEls.length === 0) return [];
+
+		const { samples, sampleRate } = await extractMediaAssetAudioToFloat32({
+			mediaAsset: rawAsset,
+		});
+		if (!samples || samples.length === 0) return [];
+
+		const parts: Float32Array[] = [];
+		for (const element of videoEls) {
+			const startS = element.trimStart ?? 0;
+			const durationS = element.duration ?? 0;
+			const start = Math.max(0, Math.floor(startS * sampleRate));
+			const end = Math.min(
+				samples.length,
+				Math.floor((startS + durationS) * sampleRate),
+			);
+			if (end > start) parts.push(samples.subarray(start, end));
+		}
+		const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+		if (totalLength < sampleRate * 2) return [];
+
+		const postCutSamples = new Float32Array(totalLength);
+		let offset = 0;
+		for (const part of parts) {
+			postCutSamples.set(part, offset);
+			offset += part.length;
+		}
+
+		const wav = encodeWavPcm16({ samples: postCutSamples, sampleRate });
+		const file = new File([wav], "postcut.wav", { type: "audio/wav" });
+		const formData = new FormData();
+		formData.set("file", file);
+		formData.set("language", "en");
+		const response = await fetch("/api/clipforge/transcribe", {
+			method: "POST",
+			body: formData,
+		});
+		if (!response.ok) return [];
+		const payload = (await response.json()) as {
+			words?: { text: string; start_ms: number; end_ms: number }[];
+		};
+		return (payload.words ?? []).filter(
+			(word) => word.end_ms > word.start_ms && word.text.trim().length > 0,
+		);
 	}
 
 	/**
@@ -1096,7 +1152,9 @@ export class ClipForgeManager {
 					}),
 				});
 				if (!response.ok) {
-					warnings.push(`Refinement pass ${pass + 1} failed (HTTP ${response.status}).`);
+					warnings.push(
+						`Refinement pass ${pass + 1} failed (HTTP ${response.status}).`,
+					);
 					break;
 				}
 				const payload = (await response.json()) as {
@@ -1252,7 +1310,10 @@ export class ClipForgeManager {
 			const projectWithData = ensureClipForgeProjectData({
 				project: refreshedProject,
 			});
-			const importAnalysis: Record<string, import("@/types/clipforge").ImportAnalysisSnapshot> = {
+			const importAnalysis: Record<
+				string,
+				import("@/types/clipforge").ImportAnalysisSnapshot
+			> = {
 				...(projectWithData.clipforge.importAnalysisByAssetId ?? {}),
 			};
 			for (const result of importResults) {
@@ -1282,7 +1343,11 @@ export class ClipForgeManager {
 				0,
 			);
 			const contentTypes = [
-				...new Set(importResults.map((r) => r.contentType).filter((t) => t !== "unknown")),
+				...new Set(
+					importResults
+						.map((r) => r.contentType)
+						.filter((t) => t !== "unknown"),
+				),
 			];
 			messages.push(
 				`Scene analysis: ${totalCuts} cut${totalCuts !== 1 ? "s" : ""} across ${importResults.length} clip${importResults.length !== 1 ? "s" : ""}` +
@@ -1319,7 +1384,7 @@ export class ClipForgeManager {
 			if (musicSelection) {
 				// Ensure the bundled track is imported as a project asset
 				const musicItem = BUNDLED_MUSIC.find(
-					(item) => item.id === musicSelection!.track.id,
+					(item) => item.id === musicSelection?.track.id,
 				);
 				if (musicItem) {
 					try {
@@ -1439,7 +1504,9 @@ export class ClipForgeManager {
 			}
 			warnings.push(...versionPlan.warnings);
 		} catch {
-			warnings.push("Multi-version generation failed; only the primary format is available.");
+			warnings.push(
+				"Multi-version generation failed; only the primary format is available.",
+			);
 		}
 
 		// --- 8. Thumbnail optimization ---
@@ -1485,7 +1552,9 @@ export class ClipForgeManager {
 				}
 			}
 		} catch {
-			warnings.push("Thumbnail optimization failed; no recommendation was generated.");
+			warnings.push(
+				"Thumbnail optimization failed; no recommendation was generated.",
+			);
 		}
 
 		// --- 9. Optional LLM refinement ---
@@ -1552,7 +1621,10 @@ export class ClipForgeManager {
 		const projectWithData = ensureClipForgeProjectData({
 			project: activeProject,
 		});
-		const importAnalysis: Record<string, import("@/types/clipforge").ImportAnalysisSnapshot> = {
+		const importAnalysis: Record<
+			string,
+			import("@/types/clipforge").ImportAnalysisSnapshot
+		> = {
 			...(projectWithData.clipforge.importAnalysisByAssetId ?? {}),
 		};
 		for (const result of importResults) {
@@ -2111,9 +2183,7 @@ export class ClipForgeManager {
 	}: {
 		mediaId: string;
 	}): Promise<void> {
-		const asset = this.editor.media
-			.getAssets()
-			.find((a) => a.id === mediaId);
+		const asset = this.editor.media.getAssets().find((a) => a.id === mediaId);
 		if (!asset || (asset.type !== "video" && asset.type !== "audio")) return;
 
 		const { samples, sampleRate } = await extractMediaAssetAudioToFloat32({
@@ -2151,7 +2221,9 @@ export class ClipForgeManager {
 
 		const videoAssets = this.editor.media
 			.getAssets()
-			.filter((a) => (a.type === "video" || a.type === "audio") && !a.ephemeral);
+			.filter(
+				(a) => (a.type === "video" || a.type === "audio") && !a.ephemeral,
+			);
 
 		for (const asset of videoAssets) {
 			const meta = cfData?.mediaMetadataById[asset.id];
@@ -2185,7 +2257,9 @@ export class ClipForgeManager {
 		});
 		const activeProject = this.editor.project.getActive();
 		if (!activeProject) throw new Error("No active project.");
-		const projectWithClipForge = ensureClipForgeProjectData({ project: activeProject });
+		const projectWithClipForge = ensureClipForgeProjectData({
+			project: activeProject,
+		});
 		this.editor.project.setActiveProject({
 			project: {
 				...projectWithClipForge,
@@ -2245,8 +2319,11 @@ export class ClipForgeManager {
 		if (!activeProject) throw new Error("No active project.");
 
 		// --- Resolve profile ---
-		const cfData = ensureClipForgeProjectData({ project: activeProject }).clipforge;
-		const profile: typeof DEFAULT_CREATOR_PROFILE & Partial<CreatorStyleProfile> =
+		const cfData = ensureClipForgeProjectData({
+			project: activeProject,
+		}).clipforge;
+		const profile: typeof DEFAULT_CREATOR_PROFILE &
+			Partial<CreatorStyleProfile> =
 			cfData.creatorProfile ?? DEFAULT_CREATOR_PROFILE;
 		const targetKeepRatio = keepRatioOverride ?? profile.targetKeepRatio;
 
@@ -2323,9 +2400,7 @@ export class ClipForgeManager {
 						// Poll until it finishes or we time out.
 						const deadline = Date.now() + TRANSCRIPT_TIMEOUT_MS;
 						while (Date.now() < deadline) {
-							await new Promise<void>((r) =>
-								setTimeout(r, POLL_INTERVAL_MS),
-							);
+							await new Promise<void>((r) => setTimeout(r, POLL_INTERVAL_MS));
 							const fresh = this.getMediaMetadata({ mediaId: rawAsset.id });
 							if (this.hasUsableMediaTranscript({ metadata: fresh })) break;
 							if (fresh?.transcriptionStatus !== "processing") break;
@@ -2358,12 +2433,6 @@ export class ClipForgeManager {
 		const meta = refreshedCfData.mediaMetadataById[rawAsset.id];
 		const silenceRegions = meta?.silenceRegions ?? [];
 		const transcriptWords = meta?.words ?? [];
-		const gazeAnalysis = rawAsset.gazeAnalysis ?? null;
-		const gazeWindows = (gazeAnalysis?.windows ?? []).map((w) => ({
-			startMs: Math.round(w.startTime * 1000),
-			endMs: Math.round(w.endTime * 1000),
-			score: w.gazeScore,
-		}));
 
 		// Prefer the asset's known duration; fall back to current timeline duration
 		// (covers the case where the asset duration wasn't populated at pipeline start).
@@ -2398,6 +2467,17 @@ export class ClipForgeManager {
 					if (cutEnd <= cutStart) continue;
 					rawCutRanges.push({ start_ms: cutStart, end_ms: cutEnd });
 				}
+			}
+
+			for (const flubCut of detectUniversalFlubCuts({
+				words: transcriptWords.map((word) => ({
+					text: word.text,
+					start_ms: word.start_ms,
+					end_ms: word.end_ms,
+					segment_id: "",
+				})),
+			})) {
+				rawCutRanges.push(flubCut);
 			}
 
 			// Repeated / restarted / flubbed sentences → cut ranges (UNBUDGETED:
@@ -2457,9 +2537,12 @@ export class ClipForgeManager {
 					mergedCuts.push({ ...r });
 				}
 			}
-			const cutOps: import("@/types/clipforge").TimelineDiffOp[] = mergedCuts.map(
-				(r) => ({ type: "CUT_RANGE" as const, start_ms: r.start_ms, end_ms: r.end_ms }),
-			);
+			const cutOps: import("@/types/clipforge").TimelineDiffOp[] =
+				mergedCuts.map((r) => ({
+					type: "CUT_RANGE" as const,
+					start_ms: r.start_ms,
+					end_ms: r.end_ms,
+				}));
 			if (cutOps.length > 0) {
 				const result = this.applyOps({ ops: cutOps, source: "auto-edit" });
 				if (result.applied) appliedOps += result.ops.length;
@@ -2509,9 +2592,11 @@ export class ClipForgeManager {
 				/* re-transcription unavailable (no CLI/cloud transcriber) — skip */
 			}
 
-			const editorialTargetMs = Math.round(
-				rawDurationMs * (targetKeepRatio > 0 ? targetKeepRatio : 0.30),
-			);
+			const editorialTargetMs = resolveCreatorProfileTargetDurationMs({
+				profile,
+				rawDurationMs,
+				keepRatioOverride,
+			});
 			const MAX_EDITORIAL_PASSES = 2;
 
 			for (let editPass = 0; editPass < MAX_EDITORIAL_PASSES; editPass++) {
@@ -2522,12 +2607,9 @@ export class ClipForgeManager {
 					this.editor.timeline.getTotalDuration() * 1000,
 				);
 
-				// Stop once we're within ~3% of target (or under a 2s overshoot).
-				// Tight threshold so the edit still tightens to the reference
-				// length after repeat removal, instead of settling several
-				// seconds long.
-				const overageRatio = currentDurationMs / editorialTargetMs;
-				if (overageRatio <= 1.03 || currentDurationMs <= editorialTargetMs + 2000) {
+				// Still run semantic cleanup for small overages. A weak 1-2 second
+				// thought can leave duration "close" while materially lowering the edit.
+				if (currentDurationMs <= editorialTargetMs + 250) {
 					break;
 				}
 
@@ -2548,6 +2630,18 @@ export class ClipForgeManager {
 							utterances,
 							currentDurationMs,
 							targetDurationMs: editorialTargetMs,
+							creatorProfile: {
+								targetKeepRatio: profile.targetKeepRatio,
+								cutDensityPerMinute: profile.cutDensityPerMinute ?? null,
+								editorialKeepKeywords:
+									profile.editorialKeepKeywords?.slice(0, 24) ?? null,
+								editorialHookKeywords:
+									profile.editorialHookKeywords?.slice(0, 12) ?? null,
+								editorialPayoffKeywords:
+									profile.editorialPayoffKeywords?.slice(0, 12) ?? null,
+								editorialAvoidKeywords:
+									profile.editorialAvoidKeywords?.slice(0, 12) ?? null,
+							},
 						}),
 					});
 
@@ -2601,15 +2695,43 @@ export class ClipForgeManager {
 			captionStyleId === "word-by-word" ||
 			captionStyleId === "punchy-center" ||
 			captionStyleId === "social-pop";
+		const maxWordsPerCaption =
+			typeof profile.maxWordsPerCaption === "number" &&
+			profile.maxWordsPerCaption > 0
+				? Math.max(1, Math.min(4, Math.round(profile.maxWordsPerCaption)))
+				: 1;
+		const minCaptionDisplaySeconds =
+			typeof profile.minCaptionDisplayMs === "number" &&
+			profile.minCaptionDisplayMs > 0
+				? Math.max(0.12, Math.min(1.2, profile.minCaptionDisplayMs / 1000))
+				: 0.25;
 		const captionOptions: CaptionLineBreakOptions | undefined = isWordByWord
-			? { maxWordsPerChunk: 1, maxCharsPerLine: 30, maxLines: 1, minDisplaySeconds: 0.25 }
+			? {
+					maxWordsPerChunk: maxWordsPerCaption,
+					maxCharsPerLine: 30,
+					maxLines: 1,
+					minDisplaySeconds: minCaptionDisplaySeconds,
+				}
 			: undefined;
+		let finalCutTranscriptWords:
+			| Array<{ text: string; start_ms: number; end_ms: number }>
+			| undefined;
+		try {
+			const freshWords = await this.transcribeCurrentTimelineAudio({
+				rawAsset,
+			});
+			if (freshWords.length > 0) finalCutTranscriptWords = freshWords;
+		} catch {
+			// Fall back to the remapped source transcript if final-cut transcription
+			// is unavailable in this environment.
+		}
 		let captionsGenerated = 0;
 		try {
 			const { generated } = this.generateSceneCaptions({
 				template: captionStyleId,
 				overwriteExisting: false,
 				options: captionOptions,
+				transcriptWords: finalCutTranscriptWords,
 			});
 			captionsGenerated = generated;
 			if (generated > 0) appliedOps += 1;
@@ -2630,12 +2752,13 @@ export class ClipForgeManager {
 			// creator typed manually ("Always Operate from Abundance"), which a
 			// filename alone can't produce.  So: AI hook from the transcript
 			// (primary) → cleaned asset name (fallback) → "Untitled".
-			const codecPatterns = /\b(h264|h265|hevc|avc|aac|mp4|mov|mkv|webm|avi|raw)\b/gi;
+			const codecPatterns =
+				/\b(h264|h265|hevc|avc|aac|mp4|mov|mkv|webm|avi|raw)\b/gi;
 			const assetNameTitle = (() => {
 				const cleaned = rawAsset.name
-					.replace(/\.[^.]+$/, "")       // strip extension
-					.replace(/[-_]/g, " ")          // separators → spaces
-					.replace(codecPatterns, "")      // strip codec/container names
+					.replace(/\.[^.]+$/, "") // strip extension
+					.replace(/[-_]/g, " ") // separators → spaces
+					.replace(codecPatterns, "") // strip codec/container names
 					.replace(/\s+/g, " ")
 					.trim();
 				if (cleaned.length >= 3) {
@@ -2682,7 +2805,11 @@ export class ClipForgeManager {
 			// titles stay one line.  Keeps the title off the canvas edges.
 			const wrappedTitleText = balanceTitleLines(titleText);
 			// Size in intended output pixels — op engine converts to internal units.
-			// Reference title is ~56px on 1920 canvas (wraps multi-word titles to 2 lines).
+			// Learned reference defaults to ~56px on 1920 canvas.
+			const titleFontSize =
+				typeof profile.titleFontSize === "number" && profile.titleFontSize > 0
+					? Math.max(28, Math.min(96, Math.round(profile.titleFontSize)))
+					: 56;
 			const titleResult = this.applyOps({
 				ops: [
 					{
@@ -2693,7 +2820,7 @@ export class ClipForgeManager {
 						position: titlePosition,
 						style_id: "bold-center",
 						font: "Montserrat",
-						size: 56,
+						size: titleFontSize,
 						color: "#FFFFFF",
 						outline: true,
 						background: false,
@@ -2704,17 +2831,42 @@ export class ClipForgeManager {
 			if (titleResult.applied) appliedOps += titleResult.ops.length;
 		}
 
-		// --- Background music ---
+		// --- Learned dialogue normalization + background music ---
+		// The production mixer applies master gain after combining embedded clip
+		// audio with audio-track elements. Compensate the music element by the same
+		// factor so dialogue receives the learned gain while the effective music bed
+		// remains at the creator-profile level.
+		const autonomousAudioMix = resolveAutonomousAudioMix({ profile });
+		const currentAudioSettings =
+			this.editor.project.getActive().settings.audio ??
+			DEFAULT_PROJECT_AUDIO_SETTINGS;
+		await this.editor.project.updateSettings({
+			settings: {
+				audio: {
+					...DEFAULT_PROJECT_AUDIO_SETTINGS,
+					...currentAudioSettings,
+					masterVolume: autonomousAudioMix.masterVolume,
+					softLimiterEnabled: true,
+					audioPolishPresetId: "voice-forward",
+				},
+			},
+		});
+
 		const musicAsset = musicAssetId
 			? allAssets.find((a) => a.id === musicAssetId && a.type === "audio")
-			: allAssets.find((a) => a.type === "audio" && !a.ephemeral) ?? null;
+			: (allAssets.find((a) => a.type === "audio" && !a.ephemeral) ?? null);
 		if (musicAsset) {
-			const volume = profile.musicVolumeRatio ?? 0.30;
+			const sourceOffsetMs =
+				typeof profile.musicStartOffsetS === "number" &&
+				profile.musicStartOffsetS > 0
+					? Math.round(profile.musicStartOffsetS * 1000)
+					: 0;
 			const loop = profile.musicLoop !== false;
 			await this.insertImportedMusicTrack({
 				asset: musicAsset,
 				startMs: 0,
-				volume,
+				sourceOffsetMs,
+				volume: autonomousAudioMix.musicElementVolume,
 				loopToProjectEnd: loop,
 				replaceExisting: true,
 			});
@@ -2724,15 +2876,45 @@ export class ClipForgeManager {
 		const finalDurationMs = Math.round(
 			this.editor.timeline.getTotalDuration() * 1000,
 		);
+		const qualityProject = ensureClipForgeProjectData({
+			project: this.editor.project.getActive(),
+		});
+		const qualityGate = evaluateAutonomousEditQualityGate({
+			project: qualityProject,
+			profile,
+			rawDurationMs,
+		});
+		this.editor.project.setActiveProject({
+			project: {
+				...qualityProject,
+				metadata: {
+					...qualityProject.metadata,
+					updatedAt: new Date(),
+				},
+				clipforge: {
+					...qualityProject.clipforge,
+					lastAutonomousQualityGate: qualityGate,
+				},
+			},
+		});
+		this.editor.save.markDirty();
 		const summary = [
 			`Auto-produced from raw video "${rawAsset.name}"`,
 			`target keep: ${Math.round(targetKeepRatio * 100)}%`,
+			`target duration: ${Math.round(
+				resolveCreatorProfileTargetDurationMs({
+					profile,
+					rawDurationMs,
+					keepRatioOverride,
+				}) / 1000,
+			)}s`,
 			`${Math.round(rawDurationMs / 1000)}s raw → ${Math.round(finalDurationMs / 1000)}s final`,
 			`silence regions: ${silenceRegions.length}`,
 			transcriptWords.length > 0
 				? `captions: ${captionsGenerated} segments`
 				: "captions: skipped (no transcript)",
 			musicAsset ? `music: "${musicAsset.name}"` : "no music",
+			`quality: ${qualityGate.readiness}`,
 		].join(", ");
 
 		return { appliedOps, summary };
@@ -2753,77 +2935,55 @@ export class ClipForgeManager {
 	}: {
 		rawAsset: MediaAsset;
 	}): Promise<number> {
-		const project = this.editor.project.getActive();
-		if (!project) return 0;
-
-		// Kept raw ranges = each video clip's [trimStart, trimStart+duration],
-		// in timeline order.  Concatenated, these ARE the post-cut timeline audio.
-		const videoEls = this.editor.timeline
-			.getTracks()
-			.filter((t) => t.type === "video")
-			.flatMap((t) => t.elements.filter((e) => e.type === "video"))
-			.slice()
-			.sort((a, b) => a.startTime - b.startTime);
-		if (videoEls.length === 0) return 0;
-
-		const { samples, sampleRate } = await extractMediaAssetAudioToFloat32({
-			mediaAsset: rawAsset,
-		});
-		if (!samples || samples.length === 0) return 0;
-
-		const parts: Float32Array[] = [];
-		for (const el of videoEls) {
-			const meta = el as { trimStart?: number; duration?: number };
-			const startS = meta.trimStart ?? 0;
-			const durS = meta.duration ?? 0;
-			const s = Math.max(0, Math.floor(startS * sampleRate));
-			const e = Math.min(samples.length, Math.floor((startS + durS) * sampleRate));
-			if (e > s) parts.push(samples.subarray(s, e));
-		}
-		const totalLen = parts.reduce((n, p) => n + p.length, 0);
-		if (totalLen < sampleRate * 2) return 0; // < 2s, skip
-
-		const post = new Float32Array(totalLen);
-		let off = 0;
-		for (const p of parts) {
-			post.set(p, off);
-			off += p.length;
-		}
-
-		// Re-transcribe via the CLI route (reveals the collapsed repeats).
-		const wav = encodeWavPcm16({ samples: post, sampleRate });
-		const file = new File([wav], "postcut.wav", { type: "audio/wav" });
-		const fd = new FormData();
-		fd.set("file", file);
-		fd.set("language", "en");
-		const txResp = await fetch("/api/clipforge/transcribe", {
-			method: "POST",
-			body: fd,
-		});
-		if (!txResp.ok) return 0;
-		const tx = (await txResp.json()) as {
-			words?: { text: string; start_ms: number; end_ms: number }[];
-		};
-		const words = tx.words ?? [];
+		const words = await this.transcribeCurrentTimelineAudio({ rawAsset });
 		if (words.length < 6) return 0;
+		const stutterCuts = detectWordStutterCuts({
+			words: words.map((word) => ({
+				text: word.text,
+				start_ms: word.start_ms,
+				end_ms: word.end_ms,
+				segment_id: "postcut",
+			})),
+		}).flatMap((op) =>
+			op.type === "CUT_RANGE"
+				? [{ start_ms: op.start_ms, end_ms: op.end_ms }]
+				: [],
+		);
 
 		// Detect repeats on the FRESH post-cut transcript.
-		const rrResp = await fetch("/api/clipforge/detect-repeats", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				words: words.map((w) => ({
-					text: w.text,
-					start_ms: w.start_ms,
-					end_ms: w.end_ms,
-				})),
-			}),
-		});
-		if (!rrResp.ok) return 0;
-		const rr = (await rrResp.json()) as {
-			cuts?: { start_ms: number; end_ms: number }[];
-		};
-		const cuts = rr.cuts ?? [];
+		let repeatCuts: { start_ms: number; end_ms: number }[] = [];
+		try {
+			const rrResp = await fetch("/api/clipforge/detect-repeats", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					words: words.map((w) => ({
+						text: w.text,
+						start_ms: w.start_ms,
+						end_ms: w.end_ms,
+					})),
+				}),
+			});
+			if (rrResp.ok) {
+				const rr = (await rrResp.json()) as {
+					cuts?: { start_ms: number; end_ms: number }[];
+				};
+				repeatCuts = rr.cuts ?? [];
+			}
+		} catch {
+			// Fresh deterministic stutter cuts remain useful without the AI route.
+		}
+		const cuts = [...stutterCuts, ...repeatCuts]
+			.sort((left, right) => left.start_ms - right.start_ms)
+			.reduce<{ start_ms: number; end_ms: number }[]>((merged, cut) => {
+				const previous = merged[merged.length - 1];
+				if (previous && cut.start_ms <= previous.end_ms + 50) {
+					previous.end_ms = Math.max(previous.end_ms, cut.end_ms);
+				} else if (cut.end_ms > cut.start_ms) {
+					merged.push({ ...cut });
+				}
+				return merged;
+			}, []);
 		if (cuts.length === 0) return 0;
 
 		// Post-cut audio == current timeline audio, so cut times map directly.
@@ -3626,11 +3786,17 @@ export class ClipForgeManager {
 		template,
 		overwriteExisting,
 		options,
+		transcriptWords,
 	}: {
 		language?: string;
 		template: string;
 		overwriteExisting: boolean;
 		options?: CaptionLineBreakOptions;
+		transcriptWords?: Array<{
+			text: string;
+			start_ms: number;
+			end_ms: number;
+		}>;
 	}): { generated: number; trackId: string | null } {
 		void language;
 		const activeProject = this.editor.project.getActive();
@@ -3655,6 +3821,7 @@ export class ClipForgeManager {
 			project: nextProject,
 			styleId: template,
 			options,
+			transcriptWords,
 		});
 		if (captionElements.length === 0) {
 			throw new Error(
@@ -3948,7 +4115,11 @@ export class ClipForgeManager {
 		}
 	}
 
-	async setCaptionSizeMultiplier({ multiplier }: { multiplier: number }): Promise<void> {
+	async setCaptionSizeMultiplier({
+		multiplier,
+	}: {
+		multiplier: number;
+	}): Promise<void> {
 		const activeProject = this.editor.project.getActive();
 		if (!activeProject) {
 			throw new Error("No active project.");
@@ -3961,7 +4132,10 @@ export class ClipForgeManager {
 			project: {
 				...project,
 				metadata: { ...project.metadata, updatedAt: new Date() },
-				clipforge: { ...project.clipforge, captionSizeMultiplier: clampedMultiplier },
+				clipforge: {
+					...project.clipforge,
+					captionSizeMultiplier: clampedMultiplier,
+				},
 			},
 		});
 		this.editor.save.markDirty();
@@ -5390,7 +5564,8 @@ export class ClipForgeManager {
 						buildCommandValidationError({
 							commandIndex,
 							code: "unknown_music_asset",
-							message: "The requested music track does not exist in your library or the bundled tracks.",
+							message:
+								"The requested music track does not exist in your library or the bundled tracks.",
 						}),
 					];
 				}
@@ -6338,7 +6513,9 @@ export class ClipForgeManager {
 			editor: this.editor,
 			item,
 		});
-		const videoEndMs = Math.round(this.editor.timeline.getTotalDuration() * 1000);
+		const videoEndMs = Math.round(
+			this.editor.timeline.getTotalDuration() * 1000,
+		);
 		// Use the video end as the project duration so music never extends the timeline.
 		const projectDurationMs =
 			loopToProjectEnd && videoEndMs > 0
@@ -6386,12 +6563,14 @@ export class ClipForgeManager {
 	private async insertImportedMusicTrack({
 		asset,
 		startMs,
+		sourceOffsetMs = 0,
 		volume,
 		loopToProjectEnd,
 		replaceExisting,
 	}: {
 		asset: MediaAsset;
 		startMs: number;
+		sourceOffsetMs?: number;
 		volume: number | null;
 		loopToProjectEnd: boolean;
 		replaceExisting: boolean;
@@ -6403,8 +6582,11 @@ export class ClipForgeManager {
 			}
 		}
 
-		const assetDuration = typeof asset.duration === "number" ? asset.duration : 0;
-		const videoEndMs = Math.round(this.editor.timeline.getTotalDuration() * 1000);
+		const assetDuration =
+			typeof asset.duration === "number" ? asset.duration : 0;
+		const videoEndMs = Math.round(
+			this.editor.timeline.getTotalDuration() * 1000,
+		);
 		// Clamp to video end — never let music extend the overall timeline duration.
 		const projectDurationMs =
 			loopToProjectEnd && videoEndMs > 0
@@ -6416,10 +6598,18 @@ export class ClipForgeManager {
 		const trackId = this.getOrCreateAudioTrackId();
 		let cursorMs = Math.max(0, startMs);
 		const rawDurationMs = Math.round(assetDuration * 1000);
+		let loopSourceOffsetMs = Math.max(
+			0,
+			Math.min(Math.max(0, rawDurationMs - 1), Math.round(sourceOffsetMs)),
+		);
 
 		while (cursorMs < desiredEndMs) {
 			const remainingMs = desiredEndMs - cursorMs;
-			const clampedDurationSec = Math.min(assetDuration, remainingMs / 1000);
+			const availableMs = Math.max(0, rawDurationMs - loopSourceOffsetMs);
+			const clampedDurationSec = Math.min(
+				availableMs / 1000,
+				remainingMs / 1000,
+			);
 			if (clampedDurationSec <= 0) break;
 			const element = buildUploadAudioElement({
 				mediaId: asset.id,
@@ -6428,6 +6618,8 @@ export class ClipForgeManager {
 				startTime: cursorMs / 1000,
 			});
 			element.role = "music";
+			element.trimStart = loopSourceOffsetMs / 1000;
+			element.trimEnd = element.trimStart + clampedDurationSec;
 			if (typeof volume === "number") {
 				element.volume = Number(Math.max(0, Math.min(2, volume)).toFixed(3));
 			}
@@ -6435,7 +6627,8 @@ export class ClipForgeManager {
 				placement: { mode: "explicit", trackId },
 				element,
 			});
-			cursorMs += Math.max(1, rawDurationMs);
+			cursorMs += Math.max(1, availableMs);
+			loopSourceOffsetMs = 0;
 			if (!loopToProjectEnd || assetDuration <= 0) {
 				break;
 			}
@@ -7739,7 +7932,11 @@ function detectRepeatTakeCuts({
 		// Layer 3: false start — very short utterance before a longer one
 		if (utterances[i].wordCount <= 2) {
 			const next = utterances[i + 1];
-			if (next && !removeIndices.has(i + 1) && isFalseStart(utterances[i].text, next.text)) {
+			if (
+				next &&
+				!removeIndices.has(i + 1) &&
+				isFalseStart(utterances[i].text, next.text)
+			) {
 				removeIndices.add(i);
 				continue;
 			}
@@ -7752,10 +7949,7 @@ function detectRepeatTakeCuts({
 			if (utterances[j].wordCount < minUtteranceWords) continue;
 
 			// Layer 1: Jaccard word-set similarity
-			const sim = jaccardWordSimilarity(
-				utterances[i].text,
-				utterances[j].text,
-			);
+			const sim = jaccardWordSimilarity(utterances[i].text, utterances[j].text);
 			if (sim >= minSimilarity) {
 				removeIndices.add(i);
 				break;
@@ -7930,7 +8124,8 @@ function buildUtterancesFromWords(
 	words: TimelineTranscriptWord[],
 ): { startMs: number; endMs: number; text: string }[] {
 	const utterances: { startMs: number; endMs: number; text: string }[] = [];
-	let current: { startMs: number; endMs: number; words: string[] } | null = null;
+	let current: { startMs: number; endMs: number; words: string[] } | null =
+		null;
 
 	for (const w of words) {
 		if (!current || w.start_ms - current.endMs > 300) {

@@ -28,6 +28,10 @@ import type {
 import { generateUUID } from "@/utils/id";
 import { generateCaptionChunksFromWords } from "./caption-generator";
 import { createCaptionTextElements } from "./caption-studio";
+import {
+	blendCreatorStyleProfiles,
+	buildCreatorProfileFromReferenceEdit,
+} from "./creator-profile";
 import { ensureClipForgeProjectData } from "./project-data";
 import { buildWordsFromSegments } from "./transcription";
 
@@ -211,6 +215,7 @@ export function buildReferenceEditAnalysis({
 			true_peak_db: -0.7,
 			voice_gain_db: 11,
 			music_volume: 0.45,
+			music_start_offset_s: 0,
 			ducking_amount: 0.62,
 			ducking_attack_ms: 70,
 			ducking_release_ms: 260,
@@ -703,17 +708,15 @@ function buildChronologicalFallbackSourceRangesForPlan({
 		const requestedDurationMs = boundary.end_ms - boundary.start_ms;
 		const targetRemainingMs = targetDurationMs - timelineCursorMs;
 		const targetClipMs = Math.min(requestedDurationMs, targetRemainingMs);
-		let selected:
-			| {
-					asset: MediaAsset;
-					range: SourceRecreationAnalysis["speech_ranges"][number];
-					sourceStartMs: number;
-					sourceEndMs: number;
-					durationMs: number;
-					scoreBreakdown: ReferenceRecreationPlan["source_ranges"][number]["score_breakdown"];
-					agentScore: number;
-				}
-			| null = null;
+		let selected: {
+			asset: MediaAsset;
+			range: SourceRecreationAnalysis["speech_ranges"][number];
+			sourceStartMs: number;
+			sourceEndMs: number;
+			durationMs: number;
+			scoreBreakdown: ReferenceRecreationPlan["source_ranges"][number]["score_breakdown"];
+			agentScore: number;
+		} | null = null;
 
 		for (
 			let attemptIndex = sourceIndex;
@@ -942,8 +945,7 @@ function buildSourceRangesForPlan({
 					};
 					const chronologicalScore = clamp(
 						1 -
-							(sourceStartMs - minSourceStartMs) /
-								Math.max(assetDurationMs, 1),
+							(sourceStartMs - minSourceStartMs) / Math.max(assetDurationMs, 1),
 						0,
 						1,
 					);
@@ -1202,9 +1204,10 @@ export function buildReferenceRecreationPlan({
 		sourceRanges.length === 0
 			? "blocked"
 			: durationDeltaMs <= 3000 &&
-				  sourceRanges.length >= Math.max(1, Math.round(boundaries.length * 0.85)) &&
-				  alignmentConfidence >= 0.45 &&
-				  musicAsset
+					sourceRanges.length >=
+						Math.max(1, Math.round(boundaries.length * 0.85)) &&
+					alignmentConfidence >= 0.45 &&
+					musicAsset
 				? "ready-for-review"
 				: "needs-review";
 
@@ -1605,11 +1608,20 @@ function buildAudioTrack({
 			Math.round((musicAsset.duration ?? 0) * 1000),
 		);
 		let cursorMs = 0;
+		let sourceOffsetMs = Math.max(
+			0,
+			Math.min(
+				Math.max(0, musicDurationMs - 1),
+				Math.round((plan.audio_mix.music_start_offset_s ?? 0) * 1000),
+			),
+		);
 		while (cursorMs < plan.target_duration_ms) {
+			const availableMs = Math.max(1, musicDurationMs - sourceOffsetMs);
 			const durationMs = Math.min(
-				musicDurationMs,
+				availableMs,
 				plan.target_duration_ms - cursorMs,
 			);
+			const trimStartS = sourceOffsetMs / 1000;
 			elements.push({
 				id: generateUUID(),
 				type: "audio",
@@ -1618,11 +1630,8 @@ function buildAudioTrack({
 				name: musicAsset.name,
 				duration: durationMs / 1000,
 				startTime: cursorMs / 1000,
-				trimStart: 0,
-				trimEnd: Math.max(
-					0,
-					(musicAsset.duration ?? durationMs / 1000) - durationMs / 1000,
-				),
+				trimStart: trimStartS,
+				trimEnd: trimStartS + durationMs / 1000,
 				role: "music",
 				volume: plan.audio_mix.music_volume,
 				normalizationGainDb: null,
@@ -1634,7 +1643,8 @@ function buildAudioTrack({
 				linkedGroupId: null,
 				animationSfxSync: null,
 			});
-			cursorMs += musicDurationMs;
+			cursorMs += availableMs;
+			sourceOffsetMs = 0;
 		}
 	}
 
@@ -1678,6 +1688,33 @@ export function buildReferenceRecreationDraft({
 			sourceAssetIds,
 			musicAssetId,
 		});
+	const referenceAsset = mediaAssets.find(
+		(asset) => asset.id === referenceAssetId,
+	);
+	const learnedRawDurationS = sourceAssetIds
+		.map((assetId) => mediaAssets.find((asset) => asset.id === assetId))
+		.filter(
+			(asset): asset is MediaAsset & { duration: number } =>
+				Boolean(asset) &&
+				asset?.type === "video" &&
+				typeof asset.duration === "number" &&
+				asset.duration > 0,
+		)
+		.reduce((sum, asset) => sum + asset.duration, 0);
+	const newlyLearnedCreatorProfile = buildCreatorProfileFromReferenceEdit({
+		rawDurationS:
+			learnedRawDurationS > 0
+				? learnedRawDurationS
+				: Math.max(1, plan.target_duration_ms / 1000),
+		referenceEditAnalysis,
+		assetName: referenceAsset?.name ?? null,
+		musicVolumeRatio: plan.audio_mix.music_volume,
+		musicStartOffsetS: plan.audio_mix.music_start_offset_s ?? 0,
+	});
+	const creatorProfile = blendCreatorStyleProfiles({
+		existingProfile: baseProject.clipforge?.creatorProfile ?? null,
+		newProfile: newlyLearnedCreatorProfile,
+	});
 	const existingMainTrack =
 		activeScene.tracks.find(
 			(track): track is VideoTrack =>
@@ -1780,6 +1817,7 @@ export function buildReferenceRecreationDraft({
 			...baseProject.clipforge.referenceRecreationPlansById,
 			[plan.plan_id]: plan,
 		},
+		creatorProfile,
 		activeReferenceRecreationPlanId: plan.plan_id,
 		activeCaptionStyleId: plan.caption_style.style_id,
 		captionStylesById: {

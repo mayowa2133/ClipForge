@@ -1,9 +1,22 @@
-import { DEFAULT_TEXT_ELEMENT, FONT_SIZE_SCALE_REFERENCE } from "@/constants/text-constants";
-import { generateCaptionChunks, generateCaptionChunksFromWords, getCaptionTemplate } from "@/lib/clipforge/caption-generator";
-import { buildTimelineTranscriptSegments, buildTimelineTranscriptWords } from "@/lib/clipforge/timeline-transcript";
+import {
+	DEFAULT_TEXT_ELEMENT,
+	FONT_SIZE_SCALE_REFERENCE,
+} from "@/constants/text-constants";
+import {
+	generateCaptionChunks,
+	generateCaptionChunksFromWords,
+	getCaptionTemplate,
+} from "@/lib/clipforge/caption-generator";
+import {
+	buildTimelineTranscriptSegments,
+	buildTimelineTranscriptWords,
+} from "@/lib/clipforge/timeline-transcript";
 import { buildEmptyTrack } from "@/lib/timeline/track-utils";
 import type { TProject } from "@/types/project";
-import type { CaptionSegmentView, CaptionStyleTemplate } from "@/types/clipforge";
+import type {
+	CaptionSegmentView,
+	CaptionStyleTemplate,
+} from "@/types/clipforge";
 import type { CaptionLineBreakOptions } from "@/lib/clipforge/caption-generator";
 import type { TextElement, TextTrack } from "@/types/timeline";
 import { generateUUID } from "@/utils/id";
@@ -41,7 +54,8 @@ export function adoptLegacyCaptionTracks({
 		);
 		if (existingCaptionTrack) {
 			if (
-				project.clipforge?.captionTrackIdsBySceneId?.[scene.id] === existingCaptionTrack.id
+				project.clipforge?.captionTrackIdsBySceneId?.[scene.id] ===
+				existingCaptionTrack.id
 			) {
 				return scene;
 			}
@@ -49,9 +63,9 @@ export function adoptLegacyCaptionTracks({
 			return scene;
 		}
 
-		const candidates = scene.tracks.filter(
-			(track): track is TextTrack => track.type === "text",
-		).filter(isHighConfidenceLegacyCaptionTrack);
+		const candidates = scene.tracks
+			.filter((track): track is TextTrack => track.type === "text")
+			.filter(isHighConfidenceLegacyCaptionTrack);
 		if (candidates.length !== 1) {
 			return scene;
 		}
@@ -88,7 +102,9 @@ export function adoptLegacyCaptionTracks({
 		return project;
 	}
 
-	const captionTrackIdsBySceneId = { ...project.clipforge.captionTrackIdsBySceneId };
+	const captionTrackIdsBySceneId = {
+		...project.clipforge.captionTrackIdsBySceneId,
+	};
 	for (const scene of nextScenes) {
 		const captionTrack = scene.tracks.find(
 			(track) =>
@@ -123,13 +139,16 @@ export function resolveSceneCaptionTrackId({
 		project.scenes.find((candidate) => candidate.id === sceneId) ?? null;
 	if (!scene) return null;
 
-	const mappedTrackId = project.clipforge?.captionTrackIdsBySceneId?.[sceneId] ?? null;
+	const mappedTrackId =
+		project.clipforge?.captionTrackIdsBySceneId?.[sceneId] ?? null;
 	if (mappedTrackId) {
-		const mappedTrack = scene.tracks.find((track) => track.id === mappedTrackId);
+		const mappedTrack = scene.tracks.find(
+			(track) => track.id === mappedTrackId,
+		);
 		if (
 			mappedTrack?.type === "text" &&
-			mappedTrack.elements.some((element) =>
-				element.type === "text" && isCaptionTextElement(element),
+			mappedTrack.elements.some(
+				(element) => element.type === "text" && isCaptionTextElement(element),
 			)
 		) {
 			return mappedTrackId;
@@ -139,8 +158,8 @@ export function resolveSceneCaptionTrackId({
 	const inferred = scene.tracks.find(
 		(track) =>
 			track.type === "text" &&
-			track.elements.some((element) =>
-				element.type === "text" && isCaptionTextElement(element),
+			track.elements.some(
+				(element) => element.type === "text" && isCaptionTextElement(element),
 			),
 	);
 	return inferred?.id ?? null;
@@ -160,7 +179,11 @@ export function ensureSceneCaptionTrack({
 	const existingTrackId = resolveSceneCaptionTrackId({ project, sceneId });
 	if (existingTrackId) {
 		return {
-			project: syncCaptionTrackId({ project, sceneId, trackId: existingTrackId }),
+			project: syncCaptionTrackId({
+				project,
+				sceneId,
+				trackId: existingTrackId,
+			}),
 			sceneId,
 			trackId: existingTrackId,
 		};
@@ -183,7 +206,11 @@ export function ensureSceneCaptionTrack({
 		index === sceneIndex ? nextScene : candidate,
 	);
 	return {
-		project: syncCaptionTrackId({ project: { ...project, scenes }, sceneId, trackId: nextTrackId }),
+		project: syncCaptionTrackId({
+			project: { ...project, scenes },
+			sceneId,
+			trackId: nextTrackId,
+		}),
 		sceneId,
 		trackId: nextTrackId,
 	};
@@ -213,7 +240,9 @@ export function buildSceneCaptionSegments({
 	project: TProject;
 }): CaptionSegmentView[] {
 	const scene =
-		project.scenes.find((candidate) => candidate.id === project.currentSceneId) ??
+		project.scenes.find(
+			(candidate) => candidate.id === project.currentSceneId,
+		) ??
 		project.scenes[0] ??
 		null;
 	if (!scene) return [];
@@ -222,7 +251,9 @@ export function buildSceneCaptionSegments({
 		.flatMap((track) => {
 			if (track.type !== "text") return [];
 			return track.elements
-				.filter((element): element is TextElement => isCaptionTextElement(element))
+				.filter((element): element is TextElement =>
+					isCaptionTextElement(element),
+				)
 				.map((element) => ({
 					elementId: element.id,
 					trackId: track.id,
@@ -233,7 +264,10 @@ export function buildSceneCaptionSegments({
 					words: element.captionTiming?.words ?? null,
 				}));
 		})
-		.sort((a, b) => a.startTime - b.startTime || a.elementId.localeCompare(b.elementId));
+		.sort(
+			(a, b) =>
+				a.startTime - b.startTime || a.elementId.localeCompare(b.elementId),
+		);
 }
 
 export function applyCaptionStyleToTextElement({
@@ -252,7 +286,8 @@ export function applyCaptionStyleToTextElement({
 	// style.size is intended output pixels; convert to internal fontSize units.
 	// Renderer does: fontSize * (canvasHeight / FONT_SIZE_SCALE_REFERENCE) = output pixels.
 	// So: fontSize = style.size * (FONT_SIZE_SCALE_REFERENCE / canvasHeight).
-	const effectiveSizePx = style.size * Math.max(0.5, Math.min(3, sizeMultiplier));
+	const effectiveSizePx =
+		style.size * Math.max(0.5, Math.min(3, sizeMultiplier));
 	const fontSize = effectiveSizePx * (FONT_SIZE_SCALE_REFERENCE / canvasHeight);
 
 	// Outline = text stroke (ctx.strokeText), NOT a background box.
@@ -270,9 +305,11 @@ export function applyCaptionStyleToTextElement({
 		fontFamily: style.font,
 		fontSize,
 		color: style.color ?? "#ffffff",
-		fontWeight: style.font_weight ?? (
-			style.style_id === "bold-center" || style.position === "center" ? "bold" : "normal"
-		),
+		fontWeight:
+			style.font_weight ??
+			(style.style_id === "bold-center" || style.position === "center"
+				? "bold"
+				: "normal"),
 		fontStyle: style.font_style ?? "normal",
 		textAlign: "center",
 		stroke: strokeOutline,
@@ -297,12 +334,16 @@ export function createCaptionTextElements({
 	project,
 	styleId,
 	options = DEFAULT_CAPTION_OPTIONS,
+	transcriptWords,
 }: {
 	project: TProject;
 	styleId: string;
 	options?: CaptionLineBreakOptions;
+	transcriptWords?: Array<{ text: string; start_ms: number; end_ms: number }>;
 }): TextElement[] {
-	const timelineWords = buildTimelineTranscriptWords({ project }).map((word) => ({
+	const timelineWords = (
+		transcriptWords ?? buildTimelineTranscriptWords({ project })
+	).map((word) => ({
 		text: word.text,
 		startTime: word.start_ms / 1000,
 		endTime: word.end_ms / 1000,
@@ -311,9 +352,9 @@ export function createCaptionTextElements({
 		timelineWords.length > 0
 			? generateCaptionChunksFromWords({ words: timelineWords, options })
 			: generateCaptionChunks({
-				segments: buildTimelineTranscriptSegments({ project }),
-				options,
-			});
+					segments: buildTimelineTranscriptSegments({ project }),
+					options,
+				});
 	const style = getCaptionTemplate({ styleId });
 	const canvasHeight = project.settings.canvasSize.height;
 	const sizeMultiplier = project.clipforge?.captionSizeMultiplier ?? 1;
@@ -386,7 +427,8 @@ export function splitCaptionElement({
 	const firstWords = words.slice(0, splitWordIndex);
 	const secondWords = words.slice(splitWordIndex);
 	const firstStart = firstWords[0]?.startTime ?? element.startTime;
-	const firstEnd = firstWords[firstWords.length - 1]?.endTime ?? element.startTime;
+	const firstEnd =
+		firstWords[firstWords.length - 1]?.endTime ?? element.startTime;
 	const secondStart = secondWords[0]?.startTime ?? firstEnd;
 	const secondEnd = secondWords[secondWords.length - 1]?.endTime ?? secondStart;
 
@@ -426,8 +468,10 @@ export function mergeCaptionElements({
 		content: `${first.content} ${second.content}`.replace(/\s+/g, " ").trim(),
 		startTime: Math.min(first.startTime, second.startTime),
 		duration:
-			Math.max(first.startTime + first.duration, second.startTime + second.duration) -
-			Math.min(first.startTime, second.startTime),
+			Math.max(
+				first.startTime + first.duration,
+				second.startTime + second.duration,
+			) - Math.min(first.startTime, second.startTime),
 		captionTiming: mergedWords ? { words: mergedWords } : null,
 	};
 }
@@ -448,17 +492,21 @@ export function updateSceneCaptionTrack({
 
 	const ensured = ensureSceneCaptionTrack({ project, sceneId });
 	const nextProject = ensured.project;
-	const nextSceneIndex = nextProject.scenes.findIndex((scene) => scene.id === sceneId);
+	const nextSceneIndex = nextProject.scenes.findIndex(
+		(scene) => scene.id === sceneId,
+	);
 	const scene = nextProject.scenes[nextSceneIndex];
 	if (!scene) return nextProject;
 
 	const tracks = scene.tracks.map((track) => {
 		if (track.id !== ensured.trackId || track.type !== "text") return track;
 		const genericElements = track.elements.filter(
-			(element): element is TextElement => element.type === "text" && !isCaptionTextElement(element),
+			(element): element is TextElement =>
+				element.type === "text" && !isCaptionTextElement(element),
 		);
 		const captionElements = track.elements.filter(
-			(element): element is TextElement => element.type === "text" && isCaptionTextElement(element),
+			(element): element is TextElement =>
+				element.type === "text" && isCaptionTextElement(element),
 		);
 		const nextCaptionElements = updateElements(captionElements)
 			.map((element) => ({ ...element, role: "caption" as const }))

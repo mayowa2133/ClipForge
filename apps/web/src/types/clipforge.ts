@@ -465,6 +465,7 @@ export interface ReferenceEditAudioMixTarget {
 	true_peak_db: number;
 	voice_gain_db: number;
 	music_volume: number;
+	music_start_offset_s?: number | null;
 	ducking_amount: number;
 	ducking_attack_ms: number;
 	ducking_release_ms: number;
@@ -596,6 +597,23 @@ export interface ReferenceRecreationPlan {
 		canvas_height: number;
 		strategy: "center-face-safe" | "center-crop";
 	};
+	warnings: string[];
+}
+
+export interface AutonomousEditQualityGate {
+	evaluatedAt: string;
+	target_duration_ms: number;
+	actual_duration_ms: number;
+	target_duration_delta_ms: number;
+	target_cut_density_per_minute: number | null;
+	actual_cut_density_per_minute: number;
+	cut_density_delta_per_minute: number | null;
+	video_cut_count: number;
+	caption_count: number;
+	title_present: boolean;
+	music_present: boolean;
+	portrait_canvas: boolean;
+	readiness: "ready-for-review" | "needs-review" | "blocked";
 	warnings: string[];
 }
 
@@ -786,7 +804,10 @@ export interface SmartZoomOp extends TimelineDiffBaseOp {
 	ease: SmartZoomEasing;
 }
 
-export type HighlightExtractionStrategy = "visual-peaks" | "speech-density" | "combined";
+export type HighlightExtractionStrategy =
+	| "visual-peaks"
+	| "speech-density"
+	| "combined";
 
 export interface ExtractHighlightOp extends TimelineDiffBaseOp {
 	type: "EXTRACT_HIGHLIGHT";
@@ -1289,6 +1310,11 @@ export interface ClipForgeProjectData {
 	 * Drives the one-command auto-produce pipeline.
 	 */
 	creatorProfile?: CreatorStyleProfile | null;
+	/**
+	 * Latest no-reference autonomous edit quality gate. This is intentionally
+	 * measured against creatorProfile rather than an active reference video.
+	 */
+	lastAutonomousQualityGate?: AutonomousEditQualityGate | null;
 }
 
 /**
@@ -1301,6 +1327,8 @@ export interface CreatorStyleProfile {
 	learnedAt: string;
 	/** Name/ID of the asset the profile was learned from (for display). */
 	learnedFromAssetName: string | null;
+	/** Number of finished edits represented by this reusable style profile. */
+	learnedReferenceCount?: number | null;
 	/** Raw duration used when computing the keep ratio (seconds). */
 	rawDurationS: number;
 	/** Finished duration used when computing the keep ratio (seconds). */
@@ -1310,6 +1338,27 @@ export interface CreatorStyleProfile {
 	 * e.g. 0.28 means keep 28 % of the raw clip.
 	 */
 	targetKeepRatio: number;
+	/**
+	 * Finished duration learned from the reference edit. Raw-only production uses
+	 * this when the new raw clip is close to the learned raw duration; otherwise
+	 * it scales by targetKeepRatio.
+	 */
+	targetDurationS?: number | null;
+	/** Number of cuts in the learned finished edit. */
+	referenceCutCount?: number | null;
+	/** Learned average distance between cuts in the finished edit. */
+	averageCutMs?: number | null;
+	/** Learned cut density, normalized to cuts per finished minute. */
+	cutDensityPerMinute?: number | null;
+	/**
+	 * Reusable editorial selection signals learned from prior finished edits.
+	 * These are not reference timestamps; they are durable content preferences
+	 * that guide future raw-only cuts toward the creator's proven themes.
+	 */
+	editorialKeepKeywords?: string[] | null;
+	editorialHookKeywords?: string[] | null;
+	editorialPayoffKeywords?: string[] | null;
+	editorialAvoidKeywords?: string[] | null;
 	/** Minimum silence gap to cut (ms). */
 	silenceThresholdMs: number;
 	/** Padding to leave on each side of a silence cut (ms). */
@@ -1318,15 +1367,28 @@ export interface CreatorStyleProfile {
 	captionStyleId: string;
 	/** Caption reveal preset — e.g. "word-by-word". */
 	captionRevealPreset: string | null;
+	/** Learned caption chunk size. Reference-style shorts usually use 1. */
+	maxWordsPerCaption?: number | null;
+	/** Minimum display duration for a caption word/chunk. */
+	minCaptionDisplayMs?: number | null;
 	/** Title overlay enabled. */
 	titleEnabled: boolean;
 	/** Title text overlay position. */
 	titlePosition: "top" | "bottom" | "center";
+	/** Learned title font size in output pixels. */
+	titleFontSize?: number | null;
+	/** Dialogue normalization gain learned from the reference mix, in dB. */
+	voiceGainDb?: number | null;
 	/**
 	 * Background music volume (0–1).
 	 * 0.30 means music plays at 30% relative to dialogue.
 	 */
 	musicVolumeRatio: number;
+	/**
+	 * Offset inside the music source to start from. Learned from references when
+	 * the creator consistently uses a later section of the track as the bed.
+	 */
+	musicStartOffsetS?: number | null;
 	/** Whether to loop music to fill the project duration. */
 	musicLoop: boolean;
 }
