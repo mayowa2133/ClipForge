@@ -18,6 +18,9 @@
 		"test": "bun test",
 		"test:ci": "bun run typecheck:web && bun test && bun run test:clipforge-evals",
 		"test:clipforge-evals": "bun run apps/web/scripts/run-clipforge-evals.ts",
+		"desktop:build": "node apps/desktop/scripts/build-macos-app.mjs",
+		"desktop:configure": "node apps/desktop/scripts/configure-macos-app.mjs",
+		"desktop:open": "open dist/ClipForge.app",
 		"generate:fonts": "npx tsx apps/web/scripts/generate-font-sprites.ts"
 	},
 	"dependencies": {

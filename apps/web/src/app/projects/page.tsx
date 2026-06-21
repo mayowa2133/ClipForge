@@ -7,6 +7,7 @@ import type { KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CloudProjectsPanel } from "@/components/projects/cloud-projects-panel";
+import { webEnv } from "@opencut/env/web";
 import { MigrationDialog } from "@/components/editor/dialogs/migration-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -103,7 +104,7 @@ export default function ProjectsPage() {
 			<ProjectsToolbar projectIds={projectsToDisplay.map((p) => p.id)} />
 			<main className="mx-auto px-4 pt-2 pb-6 flex flex-col gap-4">
 				<ProjectsQuickStart />
-				<CloudProjectsPanel />
+				{webEnv.CLIPFORGE_MODE === "cloud" ? <CloudProjectsPanel /> : null}
 				{isLoading || !isInitialized ? (
 					<ProjectsSkeleton />
 				) : projectsToDisplay.length === 0 ? (
@@ -149,12 +150,16 @@ function ProjectsQuickStart() {
 						size="sm"
 						variant="outline"
 						onClick={() =>
-							void createDemoProjectAndRoute({ editor, router }).catch((error) => {
-								toast.error("Failed to create demo project", {
-									description:
-										error instanceof Error ? error.message : "Please try again",
-								});
-							})
+							void createDemoProjectAndRoute({ editor, router }).catch(
+								(error) => {
+									toast.error("Failed to create demo project", {
+										description:
+											error instanceof Error
+												? error.message
+												: "Please try again",
+									});
+								},
+							)
 						}
 					>
 						Try Demo
@@ -466,7 +471,11 @@ async function createProjectAndRoute({
 	starter?: "import";
 }) {
 	const projectId = await editor.project.createNewProject({ name });
-	router.push(starter ? `/editor/${projectId}?starter=${starter}` : `/editor/${projectId}`);
+	router.push(
+		starter
+			? `/editor/${projectId}?starter=${starter}`
+			: `/editor/${projectId}`,
+	);
 }
 
 async function createDemoProjectAndRoute({

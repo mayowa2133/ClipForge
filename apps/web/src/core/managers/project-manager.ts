@@ -48,7 +48,11 @@ import {
 import { DEFAULT_TIMELINE_VIEW_STATE } from "@/constants/timeline-constants";
 import { loadFonts } from "@/lib/fonts/google-fonts";
 import { collectFontFamilies } from "@/lib/timeline/element-utils";
-import { buildDefaultClipForgeProjectData } from "@/lib/clipforge";
+import {
+	buildDefaultClipForgeProjectData,
+	persistCreatorStyleProfile,
+	readPersistedCreatorStyleProfile,
+} from "@/lib/clipforge";
 import { buildProjectKitPayload } from "@/lib/timeline";
 
 export interface MigrationState {
@@ -102,6 +106,8 @@ export class ProjectManager {
 
 	async createNewProject({ name }: { name: string }): Promise<string> {
 		const mainScene = buildDefaultScene({ name: "Main scene", isMain: true });
+		const clipforge = buildDefaultClipForgeProjectData();
+		clipforge.creatorProfile = readPersistedCreatorStyleProfile();
 		const newProject: TProject = {
 			metadata: {
 				id: generateUUID(),
@@ -131,7 +137,7 @@ export class ProjectManager {
 				polishProfileId: null,
 			},
 			version: CURRENT_PROJECT_VERSION,
-			clipforge: buildDefaultClipForgeProjectData(),
+			clipforge,
 		};
 
 		this.active = newProject;
@@ -172,6 +178,9 @@ export class ProjectManager {
 			}
 
 			const project = result.project;
+			persistCreatorStyleProfile({
+				profile: project.clipforge?.creatorProfile,
+			});
 
 			this.active = project;
 			this.notify();

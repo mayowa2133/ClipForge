@@ -1,0 +1,10 @@
+{
+	"name": "@clipforge/desktop",
+	"version": "0.1.0",
+	"private": true,
+	"scripts": {
+		"build": "node scripts/build-macos-app.mjs",
+		"configure": "node scripts/configure-macos-app.mjs",
+		"open": "open ../../dist/ClipForge.app"
+	}
+}

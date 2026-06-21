@@ -6,6 +6,11 @@ import {
 	resolveCreatorProfileTargetDurationMs,
 } from "@/lib/clipforge/creator-profile";
 import { normalizeClipForgeProjectData } from "@/lib/clipforge/project-data";
+import {
+	persistCreatorStyleProfile,
+	readPersistedCreatorStyleProfile,
+	type CreatorProfileStorage,
+} from "@/lib/clipforge/creator-profile-store";
 import type { ReferenceEditAnalysis } from "@/types/clipforge";
 
 function buildReferenceEditAnalysis(): ReferenceEditAnalysis {
@@ -90,6 +95,30 @@ function buildReferenceEditAnalysis(): ReferenceEditAnalysis {
 }
 
 describe("creator style profile", () => {
+	test("persists the newest learned profile across projects", () => {
+		const values = new Map<string, string>();
+		const storage: CreatorProfileStorage = {
+			getItem: (key) => values.get(key) ?? null,
+			setItem: (key, value) => values.set(key, value),
+		};
+		const newer = buildCreatorProfileFromReferenceEdit({
+			rawDurationS: 120,
+			referenceEditAnalysis: buildReferenceEditAnalysis(),
+			assetName: "newer.mov",
+		});
+		const older = {
+			...newer,
+			learnedAt: "2025-01-01T00:00:00.000Z",
+			learnedFromAssetName: "older.mov",
+		};
+
+		expect(persistCreatorStyleProfile({ profile: newer, storage })).toBe(true);
+		expect(persistCreatorStyleProfile({ profile: older, storage })).toBe(false);
+		expect(
+			readPersistedCreatorStyleProfile({ storage })?.learnedFromAssetName,
+		).toBe("newer.mov");
+	});
+
 	test("learns reusable pacing and style targets from a reference edit", () => {
 		const profile = buildCreatorProfileFromReferenceEdit({
 			rawDurationS: 127.5,

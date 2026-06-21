@@ -292,6 +292,25 @@ The local-first editor, deterministic assistant, bundled library, and browser ex
 
 The application will be available at [http://localhost:3000](http://localhost:3000).
 
+### macOS desktop application
+
+ClipForge can be packaged as a self-contained macOS application. The bundle
+embeds the production Next.js server and Node runtime, opens directly to the
+Projects screen, and keeps media and project data local to the Mac.
+
+```bash
+npm run desktop:configure
+npm run desktop:build
+npm run desktop:open
+```
+
+`desktop:configure` copies `apps/web/.env.local` to `dist/ClipForge.env` with
+user-only permissions. This keeps API credentials outside the application
+bundle. For an installed app, the same file can live at
+`~/Library/Application Support/ClipForge/.env`. The app uses locally installed
+`ffmpeg`, `ffprobe`, and `whisper` commands when those features are enabled.
+Build output is written to `dist/ClipForge.app` and ad-hoc signed for local use.
+
 The `.env.example` has sensible defaults that match the Docker Compose config — it should work out of the box.
 
 ## Contributing

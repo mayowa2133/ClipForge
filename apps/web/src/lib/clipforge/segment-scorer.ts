@@ -54,9 +54,7 @@ export function extractSpeechSegments({
 	}
 
 	// Sort silence regions by start time
-	const sorted = [...silenceRegions].sort(
-		(a, b) => a.start_ms - b.start_ms,
-	);
+	const sorted = [...silenceRegions].sort((a, b) => a.start_ms - b.start_ms);
 
 	// Find the gaps between silence regions — these are speech segments
 	const speech: Array<{ startMs: number; endMs: number }> = [];
@@ -199,10 +197,7 @@ export function selectBestSegments({
 	let keptDurationMs = 0;
 
 	for (const seg of byScore) {
-		if (
-			keptDurationMs >= targetDurationMs &&
-			kept.size >= minSegmentsToKeep
-		) {
+		if (keptDurationMs >= targetDurationMs && kept.size >= minSegmentsToKeep) {
 			break;
 		}
 		kept.add(seg.startMs);
@@ -260,12 +255,144 @@ export function buildCutOpsFromKeptSegments({
 	}
 
 	// Gap after last kept segment
-	const lastEnd = keptSegments[keptSegments.length - 1]?.endMs ?? totalDurationMs;
+	const lastEnd =
+		keptSegments[keptSegments.length - 1]?.endMs ?? totalDurationMs;
 	if (totalDurationMs - lastEnd >= minGapMs) {
-		cuts.push({ type: "CUT_RANGE", start_ms: lastEnd, end_ms: totalDurationMs });
+		cuts.push({
+			type: "CUT_RANGE",
+			start_ms: lastEnd,
+			end_ms: totalDurationMs,
+		});
 	}
 
 	// Sort by start time (cuts must be applied in reverse order by the engine
 	// or the engine handles them — sort ascending for consistency)
 	return cuts.sort((a, b) => a.start_ms - b.start_ms);
+}
+
+/**
+ * Close a residual duration gap after semantic editorial cuts.
+ *
+ * The LLM decides which ideas are weak, but it can return too few cuts to hit
+ * the requested duration. This pass keeps the hook and payoff, ranks the
+ * remaining utterances, then adds bounded context around the selected speech
+ * so the result lands on target without chopping words.
+ */
+export function buildDurationClosingCutOps({
+	segments,
+	transcriptWords,
+	totalDurationMs,
+	targetDurationMs,
+	minSegmentsToKeep = 3,
+}: {
+	segments: Array<{ startMs: number; endMs: number }>;
+	transcriptWords: TranscriptWordLike[];
+	totalDurationMs: number;
+	targetDurationMs: number;
+	minSegmentsToKeep?: number;
+}): Array<{ type: "CUT_RANGE"; start_ms: number; end_ms: number }> {
+	const normalized = segments
+		.map((segment) => ({
+			startMs: Math.max(0, Math.round(segment.startMs)),
+			endMs: Math.min(totalDurationMs, Math.round(segment.endMs)),
+		}))
+		.filter((segment) => segment.endMs - segment.startMs >= 80)
+		.sort((left, right) => left.startMs - right.startMs);
+	if (
+		normalized.length === 0 ||
+		totalDurationMs <= 0 ||
+		targetDurationMs <= 0 ||
+		totalDurationMs <= targetDurationMs
+	) {
+		return [];
+	}
+
+	const scored = scoreSpeechSegments({
+		segments: normalized,
+		transcriptWords,
+	});
+	const requiredCount = Math.min(scored.length, Math.max(1, minSegmentsToKeep));
+	const selectedStarts = new Set<number>();
+	const first = scored[0];
+	const last = scored[scored.length - 1];
+	if (first) selectedStarts.add(first.startMs);
+	if (last) selectedStarts.add(last.startMs);
+
+	let selectedSpeechMs = scored
+		.filter((segment) => selectedStarts.has(segment.startMs))
+		.reduce((sum, segment) => sum + segment.durationMs, 0);
+	const speechBudgetMs = Math.round(targetDurationMs * 0.72);
+	for (const segment of [...scored].sort((a, b) => b.score - a.score)) {
+		if (
+			selectedStarts.size >= requiredCount &&
+			selectedSpeechMs >= speechBudgetMs
+		) {
+			break;
+		}
+		if (selectedStarts.has(segment.startMs)) continue;
+		selectedStarts.add(segment.startMs);
+		selectedSpeechMs += segment.durationMs;
+	}
+
+	const selected = scored
+		.filter((segment) => selectedStarts.has(segment.startMs))
+		.sort((a, b) => a.startMs - b.startMs);
+	if (selected.length === 0) return [];
+
+	const baseDurationMs = selected.reduce(
+		(sum, segment) => sum + segment.durationMs,
+		0,
+	);
+	const desiredContextMs = Math.max(0, targetDurationMs - baseDurationMs);
+	const cells = selected.map((segment, index) => {
+		const previous = selected[index - 1];
+		const next = selected[index + 1];
+		const leftBound = previous
+			? Math.round((previous.endMs + segment.startMs) / 2)
+			: 0;
+		const rightBound = next
+			? Math.round((segment.endMs + next.startMs) / 2)
+			: totalDurationMs;
+		return {
+			segment,
+			leftAvailableMs: Math.max(0, segment.startMs - leftBound),
+			rightAvailableMs: Math.max(0, rightBound - segment.endMs),
+		};
+	});
+	const totalAvailableContextMs = cells.reduce(
+		(sum, cell) => sum + cell.leftAvailableMs + cell.rightAvailableMs,
+		0,
+	);
+	const contextToKeepMs = Math.min(desiredContextMs, totalAvailableContextMs);
+
+	const keptSegments: ScoredSegment[] = cells.map((cell) => {
+		const available = cell.leftAvailableMs + cell.rightAvailableMs;
+		const allocation =
+			totalAvailableContextMs > 0
+				? (contextToKeepMs * available) / totalAvailableContextMs
+				: 0;
+		const leftAllocation =
+			available > 0 ? allocation * (cell.leftAvailableMs / available) : 0;
+		const rightAllocation = allocation - leftAllocation;
+		const startMs = Math.max(
+			0,
+			Math.round(cell.segment.startMs - leftAllocation),
+		);
+		const endMs = Math.min(
+			totalDurationMs,
+			Math.round(cell.segment.endMs + rightAllocation),
+		);
+		return {
+			...cell.segment,
+			startMs,
+			endMs,
+			durationMs: endMs - startMs,
+		};
+	});
+
+	return buildCutOpsFromKeptSegments({
+		keptSegments,
+		totalDurationMs,
+		minGapMs: 120,
+	});
 }

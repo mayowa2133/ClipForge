@@ -40,6 +40,7 @@ export * from "./transcribers/whisper-cli";
 export * from "./demo/manifest";
 export * from "./demo/create-demo-project";
 export * from "./creator-profile";
+export * from "./creator-profile-store";
 export * from "./segment-scorer";
 export * from "./autonomous-quality";
 export * from "./autonomous-editor";

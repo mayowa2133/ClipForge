@@ -62,6 +62,8 @@ import {
 	resolveAutonomousAudioMix,
 	resolveCreatorProfileTargetDurationMs,
 	evaluateAutonomousEditQualityGate,
+	buildDurationClosingCutOps,
+	persistCreatorStyleProfile,
 } from "@/lib/clipforge";
 import type { MusicSelectionResult } from "@/lib/clipforge/music-auto-select";
 import type { ThumbnailRecommendation } from "@/lib/clipforge/thumbnail-optimizer";
@@ -2274,6 +2276,7 @@ export class ClipForgeManager {
 			},
 		});
 		this.editor.save.markDirty();
+		persistCreatorStyleProfile({ profile });
 		return profile;
 	}
 
@@ -2577,6 +2580,11 @@ export class ClipForgeManager {
 		// Runs up to 2 passes — first pass does bulk, second pass
 		// tightens if still over.
 		// ──────────────────────────────────────────────────────────────────
+		const editorialTargetMs = resolveCreatorProfileTargetDurationMs({
+			profile,
+			rawDurationMs,
+			keepRatioOverride,
+		});
 		{
 			// Target: use profile ratio against RAW duration.
 			// Reference: 255s raw → 72s final ≈ 0.28 keep ratio.
@@ -2592,11 +2600,6 @@ export class ClipForgeManager {
 				/* re-transcription unavailable (no CLI/cloud transcriber) — skip */
 			}
 
-			const editorialTargetMs = resolveCreatorProfileTargetDurationMs({
-				profile,
-				rawDurationMs,
-				keepRatioOverride,
-			});
 			const MAX_EDITORIAL_PASSES = 2;
 
 			for (let editPass = 0; editPass < MAX_EDITORIAL_PASSES; editPass++) {
@@ -2683,6 +2686,39 @@ export class ClipForgeManager {
 				} catch {
 					// Non-fatal — editorial pass is enhancement, not critical path.
 					break;
+				}
+			}
+		}
+
+		// The semantic model can correctly identify weak ideas while returning too
+		// few cuts to close a large duration gap. Compact the remaining timeline
+		// around the strongest complete utterances so the learned duration target is
+		// an enforced output contract rather than advisory guidance.
+		{
+			const closingProject = this.editor.project.getActive();
+			const currentDurationMs = Math.round(
+				this.editor.timeline.getTotalDuration() * 1000,
+			);
+			if (currentDurationMs > editorialTargetMs + 250) {
+				const closingWords = buildTimelineTranscriptWords({
+					project: closingProject,
+				});
+				const closingUtterances = buildUtterancesFromWords(closingWords);
+				const closingOps = buildDurationClosingCutOps({
+					segments: closingUtterances.map((utterance) => ({
+						startMs: utterance.startMs,
+						endMs: utterance.endMs,
+					})),
+					transcriptWords: closingWords,
+					totalDurationMs: currentDurationMs,
+					targetDurationMs: editorialTargetMs,
+				});
+				if (closingOps.length > 0) {
+					const result = this.applyOps({
+						ops: closingOps,
+						source: "auto-edit",
+					});
+					if (result.applied) appliedOps += result.ops.length;
 				}
 			}
 		}
@@ -4844,6 +4880,9 @@ export class ClipForgeManager {
 			sourceAssetIds,
 			musicAssetId:
 				command.music_asset_id ?? command.plan?.music_asset_id ?? null,
+		});
+		persistCreatorStyleProfile({
+			profile: result.project.clipforge?.creatorProfile,
 		});
 		this.editor.command.execute({
 			command: new BuildReferenceGuidedDraftCommand(result.project),
