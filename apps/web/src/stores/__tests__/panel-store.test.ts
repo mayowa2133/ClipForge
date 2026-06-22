@@ -30,10 +30,10 @@ describe("panel-store migration", () => {
 		});
 
 		expect(migrated.panels.tools).toBe(22);
-		expect(migrated.panels.preview).toBe(50);
-		expect(migrated.panels.rightSidebar).toBe(25);
-		expect(migrated.panels.mainContent).toBe(50);
-		expect(migrated.panels.timeline).toBe(50);
+		expect(migrated.panels.preview).toBe(44);
+		expect(migrated.panels.rightSidebar).toBe(28);
+		expect(migrated.panels.mainContent).toBe(60);
+		expect(migrated.panels.timeline).toBe(40);
 		expect(migrated.panels.inspector).toBe(55);
 		expect(migrated.panels.chat).toBe(45);
 	});

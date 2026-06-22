@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { PanelView } from "@/components/editor/panels/assets/views/base-view";
 import { MediaDragOverlay } from "@/components/editor/panels/assets/drag-overlay";
@@ -519,7 +520,12 @@ export function MediaView() {
 		includeAudio: true,
 	});
 
-	const hasVideoAssets = filteredMediaItems.some((item) => item.type === "video");
+	const hasVideoAssets = filteredMediaItems.some(
+		(item) => item.type === "video",
+	);
+	const hasIndexableAssets = filteredMediaItems.some(
+		(item) => item.type === "video" || item.type === "audio",
+	);
 
 	const previewComponents = useMemo(() => {
 		const previews = new Map<string, React.ReactNode>();
@@ -548,7 +554,7 @@ export function MediaView() {
 		!hasCompletedFirstExport;
 
 	const mediaActions = (
-		<div>
+		<div className="flex min-w-0 items-center gap-0.5">
 			<TooltipProvider>
 				<Tooltip>
 					<TooltipTrigger asChild>
@@ -575,79 +581,21 @@ export function MediaView() {
 								: "Switch to grid view"}
 						</p>
 					</TooltipContent>
+				</Tooltip>
+				<DropdownMenu>
 					<Tooltip>
-						<DropdownMenu>
-							<TooltipTrigger asChild>
-								<DropdownMenuTrigger asChild>
-									<Button
-										size="icon"
-										variant="ghost"
-										disabled={isProcessing}
-										className="items-center justify-center"
-									>
-										<HugeiconsIcon icon={SortingOneNineIcon} />
-									</Button>
-								</DropdownMenuTrigger>
-							</TooltipTrigger>
-							<DropdownMenuContent align="end">
-								<SortMenuItem
-									label="Name"
-									sortKey="name"
-									currentSortBy={sortBy}
-									currentSortOrder={sortOrder}
-									onSort={({ key }) => {
-										if (sortBy === key) {
-											setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-										} else {
-											setSortBy(key);
-											setSortOrder("asc");
-										}
-									}}
-								/>
-								<SortMenuItem
-									label="Type"
-									sortKey="type"
-									currentSortBy={sortBy}
-									currentSortOrder={sortOrder}
-									onSort={({ key }) => {
-										if (sortBy === key) {
-											setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-										} else {
-											setSortBy(key);
-											setSortOrder("asc");
-										}
-									}}
-								/>
-								<SortMenuItem
-									label="Duration"
-									sortKey="duration"
-									currentSortBy={sortBy}
-									currentSortOrder={sortOrder}
-									onSort={({ key }) => {
-										if (sortBy === key) {
-											setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-										} else {
-											setSortBy(key);
-											setSortOrder("asc");
-										}
-									}}
-								/>
-								<SortMenuItem
-									label="File size"
-									sortKey="size"
-									currentSortBy={sortBy}
-									currentSortOrder={sortOrder}
-									onSort={({ key }) => {
-										if (sortBy === key) {
-											setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-										} else {
-											setSortBy(key);
-											setSortOrder("asc");
-										}
-									}}
-								/>
-							</DropdownMenuContent>
-						</DropdownMenu>
+						<TooltipTrigger asChild>
+							<DropdownMenuTrigger asChild>
+								<Button
+									size="icon"
+									variant="ghost"
+									disabled={isProcessing}
+									className="items-center justify-center"
+								>
+									<HugeiconsIcon icon={SortingOneNineIcon} />
+								</Button>
+							</DropdownMenuTrigger>
+						</TooltipTrigger>
 						<TooltipContent>
 							<p>
 								Sort by {sortBy} (
@@ -655,72 +603,138 @@ export function MediaView() {
 							</p>
 						</TooltipContent>
 					</Tooltip>
+					<DropdownMenuContent align="end">
+						<SortMenuItem
+							label="Name"
+							sortKey="name"
+							currentSortBy={sortBy}
+							currentSortOrder={sortOrder}
+							onSort={({ key }) => {
+								if (sortBy === key) {
+									setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+								} else {
+									setSortBy(key);
+									setSortOrder("asc");
+								}
+							}}
+						/>
+						<SortMenuItem
+							label="Type"
+							sortKey="type"
+							currentSortBy={sortBy}
+							currentSortOrder={sortOrder}
+							onSort={({ key }) => {
+								if (sortBy === key) {
+									setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+								} else {
+									setSortBy(key);
+									setSortOrder("asc");
+								}
+							}}
+						/>
+						<SortMenuItem
+							label="Duration"
+							sortKey="duration"
+							currentSortBy={sortBy}
+							currentSortOrder={sortOrder}
+							onSort={({ key }) => {
+								if (sortBy === key) {
+									setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+								} else {
+									setSortBy(key);
+									setSortOrder("asc");
+								}
+							}}
+						/>
+						<SortMenuItem
+							label="File size"
+							sortKey="size"
+							currentSortBy={sortBy}
+							currentSortOrder={sortOrder}
+							onSort={({ key }) => {
+								if (sortBy === key) {
+									setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+								} else {
+									setSortBy(key);
+									setSortOrder("asc");
+								}
+							}}
+						/>
+					</DropdownMenuContent>
+				</DropdownMenu>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							variant="outline"
+							onClick={openFilePicker}
+							disabled={isProcessing}
+							size="icon"
+							className="items-center justify-center"
+							aria-label={
+								ENABLE_CLIPFORGE_AUTO_EDIT ? "Import Clips" : "Import"
+							}
+						>
+							<HugeiconsIcon icon={CloudUploadIcon} />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>
+						<p>{ENABLE_CLIPFORGE_AUTO_EDIT ? "Import Clips" : "Import"}</p>
+					</TooltipContent>
 				</Tooltip>
+				{ENABLE_CLIPFORGE_AUTO_EDIT ? (
+					<DropdownMenu>
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<DropdownMenuTrigger asChild>
+									<Button
+										variant="default"
+										size="icon"
+										className="items-center justify-center"
+										aria-label="AI media actions"
+									>
+										<Sparkles />
+									</Button>
+								</DropdownMenuTrigger>
+							</TooltipTrigger>
+							<TooltipContent>
+								<p>AI media actions</p>
+							</TooltipContent>
+						</Tooltip>
+						<DropdownMenuContent align="end" className="w-52">
+							<DropdownMenuItem
+								disabled={isProcessing || !hasIndexableAssets}
+								onSelect={() => void runIndexing({})}
+							>
+								Index all clips
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								disabled={isProcessing || !hasVideoAssets}
+								onSelect={() => invokeAction("clipforge-auto-edit-tiktok")}
+							>
+								Auto edit TikTok
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								disabled={isProcessing || !hasVideoAssets}
+								onSelect={() => invokeAction("clipforge-generate-draft")}
+							>
+								Generate draft
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								disabled={isProcessing || !hasVideoAssets}
+								onSelect={() => invokeAction("clipforge-refine-edit")}
+							>
+								Refine edit
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								disabled={isProcessing || !hasVideoAssets}
+								onSelect={() => invokeAction("clipforge-full-pipeline")}
+							>
+								Full pipeline
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				) : null}
 			</TooltipProvider>
-			<Button
-				variant="outline"
-				onClick={openFilePicker}
-				disabled={isProcessing}
-				size="sm"
-				className="items-center justify-center gap-1.5 ml-1.5"
-			>
-				<HugeiconsIcon icon={CloudUploadIcon} />
-				{ENABLE_CLIPFORGE_AUTO_EDIT ? "Import Clips" : "Import"}
-			</Button>
-			{ENABLE_CLIPFORGE_AUTO_EDIT && (
-				<>
-					<Button
-						variant="outline"
-						onClick={() => void runIndexing({})}
-						disabled={
-							isProcessing ||
-							!filteredMediaItems.some(
-								(item) => item.type === "video" || item.type === "audio",
-							)
-						}
-						size="sm"
-						className="items-center justify-center gap-1.5 ml-1.5"
-					>
-						Index All Clips
-					</Button>
-					<Button
-						variant="outline"
-						onClick={() => invokeAction("clipforge-auto-edit-tiktok")}
-						disabled={isProcessing || !hasVideoAssets}
-						size="sm"
-						className="items-center justify-center gap-1.5 ml-1.5"
-					>
-						Auto Edit TikTok
-					</Button>
-					<Button
-						variant="default"
-						onClick={() => invokeAction("clipforge-generate-draft")}
-						disabled={isProcessing || !hasVideoAssets}
-						size="sm"
-						className="items-center justify-center gap-1.5 ml-1.5"
-					>
-						Generate Draft
-					</Button>
-					<Button
-						variant="outline"
-						onClick={() => invokeAction("clipforge-refine-edit")}
-						disabled={isProcessing || !hasVideoAssets}
-						size="sm"
-						className="items-center justify-center gap-1.5 ml-1.5"
-					>
-						Refine Edit
-					</Button>
-					<Button
-						variant="default"
-						onClick={() => invokeAction("clipforge-full-pipeline")}
-						disabled={isProcessing || !hasVideoAssets}
-						size="sm"
-						className="items-center justify-center gap-1.5 ml-1.5 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-					>
-						Full Pipeline
-					</Button>
-				</>
-			)}
 		</div>
 	);
 

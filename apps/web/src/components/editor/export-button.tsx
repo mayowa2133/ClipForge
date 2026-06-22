@@ -521,7 +521,7 @@ function ExportPopover({
 					targetVersionId: target.id,
 					closeOnSuccess: false,
 				});
-				if (!result || !result.success) {
+				if (!result?.success) {
 					return;
 				}
 			}
@@ -556,7 +556,11 @@ function ExportPopover({
 		}
 		return getExportRecoveryRecommendation({
 			diagnostics: exportResult.diagnostics,
-			options: latestAttemptOptions,
+			options: {
+				format: latestAttemptOptions.format,
+				quality: latestAttemptOptions.quality,
+				includeAudio: latestAttemptOptions.includeAudio,
+			},
 		});
 	}, [
 		exportResult,
@@ -621,7 +625,7 @@ function ExportPopover({
 	};
 
 	return (
-		<PopoverContent className="bg-background mr-4 flex w-80 flex-col p-0">
+		<PopoverContent className="bg-background mr-4 flex max-h-[var(--radix-popover-content-available-height)] w-80 flex-col overflow-hidden p-0">
 			<input
 				ref={relinkInputRef}
 				type="file"
@@ -646,16 +650,16 @@ function ExportPopover({
 				/>
 			) : (
 				<>
-					<div className="flex items-center justify-between p-3 border-b">
+					<div className="flex shrink-0 items-center justify-between border-b p-3">
 						<h3 className="font-medium text-sm">
 							{isExporting ? "Exporting video" : "Export"}
 						</h3>
 					</div>
 
-					<div className="flex flex-col gap-4">
+					<div className="flex min-h-0 flex-1 flex-col">
 						{!isExporting && (
 							<>
-								<div className="flex flex-col">
+								<div className="min-h-0 flex-1 overflow-y-auto">
 									<Section hasBorderTop={false}>
 										<SectionHeader title="Format" />
 										<SectionContent>
@@ -1059,9 +1063,9 @@ function ExportPopover({
 												</p>
 												{previewFidelityReport?.issues.length ? (
 													<div className="space-y-1">
-														{previewFidelityReport.issues.map((issue, index) => (
-															<p
-																key={`${issue.code}-${issue.time ?? "none"}-${index}`}
+												{previewFidelityReport.issues.map((issue) => (
+													<p
+														key={`${issue.code}-${issue.time ?? "none"}-${issue.message}`}
 																className="text-xs leading-4"
 															>
 																{issue.message}
@@ -1084,7 +1088,7 @@ function ExportPopover({
 									</Section>
 								</div>
 
-								<div className="p-3 pt-0">
+								<div className="bg-background shrink-0 border-t p-3">
 									<Button
 										onClick={handleExport}
 										className="w-full gap-2"

@@ -25,14 +25,16 @@ export function PanelView({
 }: PanelViewProps) {
 	return (
 		<div
-			className={cn("relative flex h-full flex-col", className)}
+			className={cn("relative flex h-full min-w-0 flex-col", className)}
 			ref={ref}
 			{...rest}
 		>
 			{!hideHeader && (
-				<div className="bg-background h-11 shrink-0 px-4 pr-2 flex items-center justify-between border-b">
-					<span className="text-muted-foreground text-sm">{title}</span>
-					{actions}
+				<div className="bg-background flex h-11 min-w-0 shrink-0 items-center justify-between gap-2 border-b px-3 pr-2">
+					<span className="text-muted-foreground shrink-0 text-sm">
+						{title}
+					</span>
+					<div className="min-w-0">{actions}</div>
 				</div>
 			)}
 			<div

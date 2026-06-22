@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { TAB_KEYS, tabs } from "@/stores/assets-panel-store";
+import {
+	TAB_KEYS,
+	tabs,
+	useAssetsPanelStore,
+} from "@/stores/assets-panel-store";
 
 describe("assets panel tab registry", () => {
 	test("does not expose chat tab", () => {
@@ -17,5 +21,9 @@ describe("assets panel tab registry", () => {
 	test("exposes templates as a first-class authoring workflow", () => {
 		expect(TAB_KEYS.includes("templates" as (typeof TAB_KEYS)[number])).toBe(true);
 		expect(tabs.templates.label).toBe("Templates");
+	});
+
+	test("starts with compact tool labels for desktop editor space", () => {
+		expect(useAssetsPanelStore.getInitialState().showTabLabels).toBe(false);
 	});
 });

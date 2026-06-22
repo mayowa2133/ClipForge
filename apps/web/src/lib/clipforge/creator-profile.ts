@@ -539,7 +539,9 @@ function buildEditorialSignalsFromReference({ words }: { words: string[] }): {
 		.slice(0, 24);
 
 	const hookKeywords = uniqueEditorialTokens(tokens.slice(0, 32)).slice(0, 10);
-	const payoffKeywords = uniqueEditorialTokens(tokens.slice(-32)).slice(0, 10);
+	const payoffKeywords = uniqueEditorialTokens(
+		[...tokens.slice(-32)].reverse(),
+	).slice(0, 10);
 
 	return { keepKeywords, hookKeywords, payoffKeywords };
 }

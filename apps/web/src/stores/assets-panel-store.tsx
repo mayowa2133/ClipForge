@@ -121,7 +121,7 @@ export const useAssetsPanelStore = create<AssetsPanelStore>()(
 		(set) => ({
 			activeTab: "media",
 			setActiveTab: (tab) => set({ activeTab: tab }),
-			showTabLabels: true,
+			showTabLabels: false,
 			toggleTabLabels: () =>
 				set((state) => ({ showTabLabels: !state.showTabLabels })),
 			graphicsTab: "titles",
@@ -138,7 +138,7 @@ export const useAssetsPanelStore = create<AssetsPanelStore>()(
 		}),
 		{
 			name: "clipforge-assets-panel",
-			version: 1,
+			version: 2,
 			partialize: (state) => ({ showTabLabels: state.showTabLabels }),
 		},
 	),
